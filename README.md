@@ -186,6 +186,220 @@ Detalles de índices y constraints en cada archivo.
 
 ## 7. Modelos y relaciones (resumen)
 
+### Diagrama entidad-relación
+
+```mermaid
+erDiagram
+    TENANTS ||--o{ USERS : "agrupa"
+    TENANTS ||--o{ PIPELINES : "configura"
+    TENANTS ||--o{ CONTACTS : "almacena"
+    TENANTS ||--o{ LEAD_SOURCES : "define"
+    TENANTS ||--o{ LANDING_PAGES : "publica"
+    TENANTS ||--o{ AD_INTEGRATIONS : "conecta"
+    TENANTS ||--o{ EXPORTS : "audita"
+
+    PIPELINES ||--o{ PIPELINE_STAGES : "tiene"
+
+    CONTACTS ||--o{ OPPORTUNITIES : "genera"
+    PIPELINE_STAGES ||--o{ OPPORTUNITIES : "agrupa por etapa"
+    USERS ||--o{ OPPORTUNITIES : "es dueño de"
+    LEAD_SOURCES ||--o{ OPPORTUNITIES : "origina"
+
+    OPPORTUNITIES ||--o{ OPPORTUNITY_LOGS : "audita cambios en"
+    OPPORTUNITIES ||--o{ REMINDERS : "agenda"
+    OPPORTUNITIES ||--o{ WHATSAPP_MESSAGES : "conversa por"
+    OPPORTUNITIES ||--o{ DUPLICATE_FLAGS : "marca colisiones"
+
+    USERS ||--o{ REMINDERS : "recibe"
+    USERS ||--o{ REFERRAL_NETWORKS : "refiere"
+    USERS ||--o{ DUPLICATE_FLAGS : "detecta"
+    USERS ||--o{ EXPORTS : "ejecuta"
+
+    LANDING_PAGES ||--o{ LANDING_FORM_SUBMISSIONS : "captura"
+    LANDING_FORM_SUBMISSIONS ||--o| CONTACTS : "crea"
+    LANDING_FORM_SUBMISSIONS ||--o| OPPORTUNITIES : "crea"
+
+    TENANTS {
+        bigint id PK
+        string name
+        string slug "subdominio del tenant"
+        jsonb settings
+        string timezone
+        boolean active
+    }
+
+    USERS {
+        bigint id PK
+        bigint tenant_id FK
+        string email
+        string encrypted_password
+        string name
+        string phone
+        string role "admin|manager|consultant|viewer"
+        boolean active
+        datetime last_sign_in_at
+    }
+
+    PIPELINES {
+        bigint id PK
+        bigint tenant_id FK
+        string name
+        string description
+        boolean is_default
+        boolean active
+    }
+
+    PIPELINE_STAGES {
+        bigint id PK
+        bigint pipeline_id FK
+        string name
+        int position
+        int probability "0-100"
+        boolean closed_won
+        boolean closed_lost
+    }
+
+    CONTACTS {
+        bigint id PK
+        bigint tenant_id FK
+        string kind "person|company"
+        string first_name
+        string last_name
+        string company_name
+        string email
+        string phone_e164
+        string phone_normalized
+        string document_id
+        bigint owner_user_id FK
+    }
+
+    OPPORTUNITIES {
+        bigint id PK
+        bigint tenant_id FK
+        bigint contact_id FK
+        bigint pipeline_id FK
+        bigint pipeline_stage_id FK
+        bigint owner_user_id FK
+        bigint lead_source_id FK
+        string title
+        decimal estimated_value
+        string currency
+        int bant_score
+        boolean qualified
+        string status "new|contacted|qualified|proposal|won|lost"
+        datetime last_activity_at
+        date expected_close_on
+    }
+
+    OPPORTUNITY_LOGS {
+        bigint id PK
+        bigint tenant_id FK
+        bigint opportunity_id FK
+        bigint user_id FK
+        string action "create|update|stage_change|assign|merge|export|note"
+        jsonb changes
+        text note
+        datetime created_at
+    }
+
+    REMINDERS {
+        bigint id PK
+        bigint tenant_id FK
+        bigint opportunity_id FK
+        bigint user_id FK
+        datetime remind_at
+        string channel "email|whatsapp|in_app"
+        string status "pending|sent|failed|done"
+        text message
+        datetime sent_at
+    }
+
+    DUPLICATE_FLAGS {
+        bigint id PK
+        bigint tenant_id FK
+        bigint opportunity_id FK
+        bigint duplicate_of_opportunity_id FK
+        bigint detected_by_user_id FK
+        bigint resolved_by_user_id FK
+        string matched_on "phone|email|both"
+        string resolution "pending|reassigned|merged|ignored"
+        datetime resolved_at
+    }
+
+    REFERRAL_NETWORKS {
+        bigint id PK
+        bigint tenant_id FK
+        bigint referrer_user_id FK
+        bigint referred_user_id FK
+        int depth
+        boolean active
+    }
+
+    LEAD_SOURCES {
+        bigint id PK
+        bigint tenant_id FK
+        string name
+        string kind "web|whatsapp|meta|google|manual|referral"
+        jsonb config
+    }
+
+    LANDING_PAGES {
+        bigint id PK
+        bigint tenant_id FK
+        string slug
+        string title
+        boolean published
+        jsonb content "estructura GrapeJS"
+        string thumbnail_url
+        datetime published_at
+    }
+
+    LANDING_FORM_SUBMISSIONS {
+        bigint id PK
+        bigint landing_page_id FK
+        bigint contact_id FK
+        bigint opportunity_id FK
+        jsonb payload
+        string ip
+        string user_agent
+        datetime created_at
+    }
+
+    AD_INTEGRATIONS {
+        bigint id PK
+        bigint tenant_id FK
+        string provider "meta|google|twilio|whatsapp_cloud"
+        jsonb credentials_encrypted
+        string status
+        datetime last_sync_at
+    }
+
+    WHATSAPP_MESSAGES {
+        bigint id PK
+        bigint tenant_id FK
+        bigint opportunity_id FK
+        bigint contact_id FK
+        string direction "in|out"
+        string provider_message_id
+        string from_number
+        string to_number
+        text body
+        string status
+        datetime sent_at
+    }
+
+    EXPORTS {
+        bigint id PK
+        bigint tenant_id FK
+        bigint user_id FK
+        string format "csv|xlsx"
+        jsonb filters
+        string status
+        string file_url
+        datetime expires_at
+    }
+```
+
 ### Core
 
 - **Tenant** — raíz. `has_many` virtualmente todo. Único por `slug`.

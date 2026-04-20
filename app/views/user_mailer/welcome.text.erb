@@ -1,0 +1,11 @@
+¡Bienvenido/a, <%= @user.first_name.presence || @user.email %>!
+
+Tu cuenta en el CRM de <%= @user.tenant.name %> ya está lista.
+
+Email: <%= @user.email %>
+Rol:   <%= @user.role.titleize %>
+
+Entrar al CRM:
+<%= @login_url %>
+
+Si no esperabas este correo, ignóralo o avisa al administrador del CRM.

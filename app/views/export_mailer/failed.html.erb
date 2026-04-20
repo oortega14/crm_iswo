@@ -1,0 +1,18 @@
+<h2 style="margin-top:0;">Tu export falló</h2>
+
+<p>Hola <%= @user.first_name.presence || @user.email %>,</p>
+
+<p>
+  El export de <strong><%= @export.resource.titleize %></strong> (ID
+  <%= @export.id %>) no pudo generarse.
+</p>
+
+<p style="background:#fef2f2; padding:12px 16px; border-radius:8px; color:#991b1b;">
+  <strong>Error:</strong>
+  <%= @export.error_message.presence || "Sin detalle disponible" %>
+</p>
+
+<p>
+  Intenta nuevamente desde el CRM. Si el problema persiste, contacta al
+  administrador del sistema.
+</p>

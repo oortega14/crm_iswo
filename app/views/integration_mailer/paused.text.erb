@@ -1,0 +1,11 @@
+Atención <%= @user.first_name.presence || @user.email %>,
+
+Pausamos automáticamente la integración <%= @integration.provider.titleize %>
+(cuenta <%= @integration.account_identifier %>) tras varios intentos fallidos
+de conexión.
+
+Último error: <%= @integration.last_error_message.presence || "Sin detalle" %>
+Detectado:    <%= @integration.last_error_at %>
+
+Revisa las credenciales en el CRM y reactívala desde el panel de Integraciones.
+Mientras tanto, los leads de este canal NO se están ingresando.

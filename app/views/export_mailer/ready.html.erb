@@ -1,0 +1,19 @@
+<h2 style="margin-top:0;">Tu export está listo</h2>
+
+<p>Hola <%= @user.first_name.presence || @user.email %>,</p>
+
+<p>
+  El export de <strong><%= @export.resource.titleize %></strong> en formato
+  <%= @export.format.upcase %> quedó listo. Tamaño:
+  <%= number_to_human_size(@export.file_size) rescue @export.file_size %> bytes.
+</p>
+
+<p>
+  <a href="<%= @export.file_url %>" class="btn">Descargar archivo</a>
+</p>
+
+<p class="muted">
+  El enlace expira el <%= @export.expires_at %> (7 días desde su generación).
+  Después de esa fecha el archivo se elimina automáticamente por política de
+  retención ISO 27001.
+</p>

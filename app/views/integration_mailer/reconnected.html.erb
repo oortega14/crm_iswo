@@ -1,0 +1,11 @@
+<h2 style="margin-top:0;">Buenas noticias, <%= @user.first_name.presence || @user.email %></h2>
+
+<p>
+  La integración <strong><%= @integration.provider.titleize %></strong>
+  (cuenta <code><%= @integration.account_identifier %></code>) volvió a sincronizar
+  correctamente.
+</p>
+
+<p style="background:#ecfdf5; padding:12px 16px; border-radius:8px; color:#065f46;">
+  Último sync exitoso: <%= @integration.last_synced_at %>
+</p>

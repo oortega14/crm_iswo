@@ -1,0 +1,10 @@
+Tu export falló
+
+Hola <%= @user.first_name.presence || @user.email %>,
+
+El export de <%= @export.resource.titleize %> (ID <%= @export.id %>)
+no pudo generarse.
+
+Error: <%= @export.error_message.presence || "Sin detalle disponible" %>
+
+Intenta nuevamente desde el CRM.

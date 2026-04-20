@@ -1,0 +1,11 @@
+Tu export está listo
+
+Hola <%= @user.first_name.presence || @user.email %>,
+
+El export de <%= @export.resource.titleize %> en formato <%= @export.format.upcase %>
+quedó listo. Tamaño: <%= @export.file_size %> bytes.
+
+Descargar:
+<%= @export.file_url %>
+
+El enlace expira el <%= @export.expires_at %> (7 días).

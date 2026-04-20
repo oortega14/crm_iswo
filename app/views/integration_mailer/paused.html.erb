@@ -1,0 +1,19 @@
+<h2 style="margin-top:0;">Atención <%= @user.first_name.presence || @user.email %>,</h2>
+
+<p>
+  Pausamos automáticamente la integración
+  <strong><%= @integration.provider.titleize %></strong>
+  (cuenta <code><%= @integration.account_identifier %></code>) tras varios
+  intentos fallidos de conexión.
+</p>
+
+<p style="background:#fef2f2; padding:12px 16px; border-radius:8px; color:#991b1b;">
+  <strong>Último error:</strong>
+  <%= @integration.last_error_message.presence || "Sin detalle disponible" %><br>
+  <span class="muted">Detectado: <%= @integration.last_error_at %></span>
+</p>
+
+<p>
+  Revisa las credenciales en el CRM y reactívala desde el panel de Integraciones.
+  Mientras tanto, los leads de este canal NO se están ingresando.
+</p>

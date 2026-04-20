@@ -1,0 +1,22 @@
+Hola <%= @user.first_name.presence || @user.email %>,
+
+Tienes un recordatorio que vence ahora:
+
+  <%= @reminder.title %>
+  Programado: <%= @reminder.remind_at %>
+
+<% if @reminder.body.present? -%>
+<%= @reminder.body %>
+
+<% end -%>
+<% if @opportunity -%>
+Oportunidad: <%= @opportunity.title %>
+<% if @contact -%>
+Contacto: <%= [@contact.first_name, @contact.last_name].compact.join(" ") %>
+<% if @contact.phone_e164.present? -%> (<%= @contact.phone_e164 %>)<% end -%>
+<% if @contact.email.present? -%> · <%= @contact.email %><% end -%>
+
+<% end -%>
+<% end -%>
+
+Abre el CRM para revisarlo y marcarlo como completado.

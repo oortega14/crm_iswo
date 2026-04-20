@@ -1,0 +1,8 @@
+Tu cuenta fue reactivada
+
+Hola <%= @user.first_name.presence || @user.email %>,
+
+Tu cuenta en <%= @user.tenant.name %> fue reactivada y ya puedes volver
+a entrar al CRM.
+
+<%= @login_url %>

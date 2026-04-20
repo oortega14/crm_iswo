@@ -1,0 +1,18 @@
+<h2 style="margin-top:0;">¡Bienvenido/a, <%= @user.first_name.presence || @user.email %>!</h2>
+
+<p>
+  Tu cuenta en el CRM de <strong><%= @user.tenant.name %></strong> ya está lista.
+</p>
+
+<p>
+  <strong>Email:</strong> <%= @user.email %><br>
+  <strong>Rol:</strong> <%= @user.role.titleize %>
+</p>
+
+<p>
+  <a href="<%= @login_url %>" class="btn">Entrar al CRM</a>
+</p>
+
+<p class="muted">
+  Si no esperabas este correo, ignóralo o avisa al administrador del CRM.
+</p>

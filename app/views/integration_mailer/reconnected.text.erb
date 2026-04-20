@@ -1,0 +1,6 @@
+Buenas noticias, <%= @user.first_name.presence || @user.email %>
+
+La integración <%= @integration.provider.titleize %>
+(cuenta <%= @integration.account_identifier %>) volvió a sincronizar correctamente.
+
+Último sync exitoso: <%= @integration.last_synced_at %>

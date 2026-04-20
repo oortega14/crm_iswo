@@ -1,16 +1,26 @@
-# Be sure to restart your server when you modify this file.
+# frozen_string_literal: true
 
-# Avoid CORS issues when API is called from the frontend app.
-# Handle Cross-Origin Resource Sharing (CORS) in order to accept cross-origin Ajax requests.
+# ============================================================================
+# CORS — permite al SPA React (TanStack) en otro origen consumir el API.
+# ============================================================================
+# Configurar `CORS_ALLOWED_ORIGINS` como lista separada por comas.
+# Para producción, usar el dominio completo del SPA (ej.
+# https://app.crm.iswo.com.co).
+# ----------------------------------------------------------------------------
 
-# Read more: https://github.com/cyu/rack-cors
+allowed = ENV.fetch("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+             .split(",")
+             .map(&:strip)
 
-# Rails.application.config.middleware.insert_before 0, Rack::Cors do
-#   allow do
-#     origins "example.com"
-#
-#     resource "*",
-#       headers: :any,
-#       methods: [:get, :post, :put, :patch, :delete, :options, :head]
-#   end
-# end
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
+  allow do
+    origins(*allowed)
+
+    resource "/api/*",
+      headers: :any,
+      methods: %i[get post put patch delete options head],
+      expose: %w[Authorization Current-Page Page-Items Total-Pages Total-Count],
+      credentials: true,
+      max_age: 600
+  end
+end

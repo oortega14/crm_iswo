@@ -1,0 +1,39 @@
+# ============================================================================
+# Sidekiq workers
+# ============================================================================
+:concurrency: 10
+:queues:
+  - [critical, 4]
+  - [default, 2]
+  - [integrations, 2]
+  - [exports, 1]
+  - [low, 1]
+
+:scheduler:
+  :schedule:
+    reminder_notification_job:
+      cron: "* * * * *"              # cada minuto
+      class: ReminderNotificationJob
+      queue: critical
+      description: Dispara recordatorios vencidos (SLA ≤ 5 min)
+
+    ad_sync_job:
+      cron: "*/15 * * * *"           # cada 15 min
+      class: AdSyncJob
+      queue: integrations
+      description: Sincroniza Meta/Google Ads
+
+    cleanup_exports_job:
+      cron: "0 3 * * *"              # 03:00 AM
+      class: CleanupExportsJob
+      queue: low
+      description: Borra exportaciones expiradas
+
+    refresh_duplicate_cache_job:
+      cron: "0 4 * * *"              # 04:00 AM
+      class: RefreshDuplicateCacheJob
+      queue: low
+      description: Reconstruye índices de phone_normalized
+
+production:
+  :concurrency: 25

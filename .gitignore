@@ -26,6 +26,7 @@
 
 # Ignore key files for decrypting credentials and more.
 /api/config/*.key
+/api/config/master.key
 
 # Kamal secrets (never commit)
 /api/.kamal/secrets

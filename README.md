@@ -93,44 +93,56 @@ MAIL_FROM=no-reply@crm.iswo.com.co
 
 ## 4. Estructura del proyecto
 
+Monorepo con dos paquetes: `api/` (Rails) y `client/` (React).
+
 ```
 crm_iswo/
-├── app/
-│   ├── controllers/
-│   │   └── api/v1/…            # Controladores RESTful JSON
-│   ├── models/                 # 17 modelos AR (ver §7)
-│   ├── policies/               # Pundit policies por modelo
-│   ├── serializers/            # JSON:API serializers
-│   ├── services/               # Lógica de dominio reutilizable
-│   │   ├── opportunities/
-│   │   │   ├── duplicate_detector.rb
-│   │   │   └── lead_importer.rb
-│   │   ├── whatsapp/message_sender.rb
-│   │   └── ads/
-│   │       ├── meta_lead_processor.rb
-│   │       └── google_lead_processor.rb
-│   ├── jobs/
-│   │   ├── reminder_notification_job.rb
-│   │   ├── ad_sync_job.rb
-│   │   ├── export_generation_job.rb
-│   │   └── webhook_processor_job.rb
-│   └── mailers/
-├── config/
-│   ├── initializers/
-│   │   ├── acts_as_tenant.rb
-│   │   ├── cors.rb
-│   │   ├── sidekiq.rb
-│   │   └── devise_jwt.rb
-│   ├── sidekiq.yml
-│   ├── routes.rb
-│   └── application.rb
-├── db/
-│   ├── migrate/                # 20 migraciones (ver §6)
-│   ├── schema.rb
-│   └── seeds.rb
-├── spec/                       # RSpec
-├── Gemfile
-└── README.md
+├── .gitignore
+├── README.md
+│
+├── api/                                   # Rails 8.1 API-only
+│   ├── app/
+│   │   ├── controllers/
+│   │   │   └── api/v1/…                  # Controladores RESTful JSON
+│   │   │       └── webhooks/             # Meta Ads, Google Ads, WhatsApp
+│   │   ├── models/                       # 17 modelos AR (ver §7)
+│   │   ├── policies/                     # Pundit policies por modelo
+│   │   ├── serializers/                  # JSON:API serializers
+│   │   ├── services/                     # Lógica de dominio reutilizable
+│   │   │   ├── opportunities/
+│   │   │   │   ├── duplicate_detector.rb
+│   │   │   │   └── lead_importer.rb
+│   │   │   ├── whatsapp/message_sender.rb
+│   │   │   └── ads/
+│   │   │       ├── meta_lead_processor.rb
+│   │   │       └── google_lead_processor.rb
+│   │   ├── jobs/
+│   │   │   ├── reminder_notification_job.rb
+│   │   │   ├── ad_sync_job.rb
+│   │   │   ├── export_generation_job.rb
+│   │   │   └── webhook_processor_job.rb
+│   │   └── mailers/
+│   ├── config/
+│   │   ├── initializers/
+│   │   │   ├── acts_as_tenant.rb
+│   │   │   ├── cors.rb
+│   │   │   ├── sidekiq.rb
+│   │   │   └── devise_jwt.rb
+│   │   ├── sidekiq.yml
+│   │   ├── routes.rb
+│   │   └── application.rb
+│   ├── db/
+│   │   ├── migrate/                      # 20 migraciones (ver §6)
+│   │   ├── schema.rb
+│   │   └── seeds.rb
+│   ├── spec/                             # RSpec
+│   ├── .env.example
+│   ├── .kamal/                           # Deploy config (secrets excluido de git)
+│   ├── Dockerfile
+│   └── Gemfile
+│
+└── client/                               # React 19 + Vite (repo separado pendiente)
+    └── …
 ```
 
 ---

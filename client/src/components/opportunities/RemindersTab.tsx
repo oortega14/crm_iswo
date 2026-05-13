@@ -6,6 +6,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -71,6 +77,17 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
     onError: (e: unknown) => {
       toast.error(formatRailsError(e))
     },
+  })
+
+  const snoozeMutation = useMutation({
+    mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
+      await api.post(`/reminders/${id}/snooze`, { minutes })
+    },
+    onSuccess: () => {
+      toast.success('Recordatorio pospuesto')
+      invalidate()
+    },
+    onError: (e: unknown) => toast.error(formatRailsError(e)),
   })
 
   const deleteMutation = useMutation({
@@ -216,6 +233,41 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
                   {channelLabel[reminder.channel] ?? reminder.channel}
                 </Badge>
                 {statusBadge(reminder.status)}
+                {reminder.status === 'pending' && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Posponer">
+                        <Clock className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      {([
+                        { label: '15 minutos', minutes: 15 },
+                        { label: '30 minutos', minutes: 30 },
+                        { label: '1 hora', minutes: 60 },
+                        { label: '2 horas', minutes: 120 },
+                      ] as const).map(opt => (
+                        <DropdownMenuItem
+                          key={opt.minutes}
+                          onClick={() => snoozeMutation.mutate({ id: reminder.id, minutes: opt.minutes })}
+                        >
+                          {opt.label}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuItem
+                        onClick={() => {
+                          const t = new Date()
+                          t.setDate(t.getDate() + 1)
+                          t.setHours(9, 0, 0, 0)
+                          const minutes = Math.round((t.getTime() - Date.now()) / 60000)
+                          snoozeMutation.mutate({ id: reminder.id, minutes })
+                        }}
+                      >
+                        Mañana (9:00)
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

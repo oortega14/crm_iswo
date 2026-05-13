@@ -60,7 +60,7 @@ class ReminderNotificationJob < ApplicationJob
   end
 
   def enqueue_whatsapp(reminder)
-    contact = reminder.opportunity&.contact || reminder.contact
+    contact = reminder.opportunity&.contact
     return reminder.mark_failed!("missing_contact") if contact.nil? || contact.phone_e164.blank?
 
     tenant = reminder.tenant
@@ -74,7 +74,7 @@ class ReminderNotificationJob < ApplicationJob
       provider:    provider,
       from_number: from,
       to_number:   contact.phone_e164,
-      body:        reminder.body.presence || reminder.title,
+      body:        reminder.message.presence || reminder.subject,
       status:      "queued"
     )
     WhatsappDeliveryJob.perform_later(msg.id)

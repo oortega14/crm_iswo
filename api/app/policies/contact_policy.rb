@@ -24,10 +24,9 @@ class ContactPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        # Contacto propio (owner_user_id) o vinculado a una opp suya.
-        scope.left_joins(:opportunities)
-             .where("contacts.owner_user_id = :uid OR opportunities.owner_user_id = :uid", uid: user.id)
-             .distinct
+        # Propios o contacto de alguna oportunidad suya (sin DISTINCT+JOIN: evita errores SQL en PG con ORDER).
+        opp_contact_ids = Opportunity.where(owner_user_id: user.id).where.not(contact_id: nil).select(:contact_id).distinct
+        scope.where(owner_user_id: user.id).or(scope.where(id: opp_contact_ids))
       else
         scope.none
       end

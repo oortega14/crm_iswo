@@ -27,7 +27,7 @@ module Api
       def tenant_params
         params.require(:tenant).permit(
           :name, :legal_name, :tax_id, :logo_url, :brand_color,
-          :timezone, :locale, :currency, :country_code, settings: {}
+          :timezone, :locale, :currency, settings: {}
         )
       end
     end

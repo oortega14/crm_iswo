@@ -38,6 +38,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { NotificationDropdown } from '@/components/common/NotificationDropdown'
+import { PageAmbientBackground } from '@/components/layout/PageAmbientBackground'
 import type { UserRole } from '@/types'
 
 interface NavItem {
@@ -56,15 +57,15 @@ const mainNavItems: NavItem[] = [
   { label: 'Red de Referidos', href: '/network', icon: Network, roles: ['admin', 'manager', 'consultant'] },
   { label: 'Duplicados', href: '/duplicates', icon: Flag, roles: ['admin', 'manager'] },
   { label: 'Exportaciones', href: '/exports', icon: Download, roles: ['admin', 'manager'] },
-  { label: 'Landing Pages', href: '/landing-pages', icon: FileText, roles: ['admin'] },
+  { label: 'Landing Pages', href: '/landings', icon: FileText, roles: ['admin'] },
 ]
 
 const settingsNavItems: NavItem[] = [
   { label: 'Pipelines', href: '/settings/pipelines', icon: Target, roles: ['admin'] },
-  { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin'] },
-  { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin'] },
+  { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin', 'manager'] },
+  { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin', 'manager'] },
   { label: 'Fuentes de Lead', href: '/settings/lead-sources', icon: Target, roles: ['admin'] },
-  { label: 'Registro de Auditoría', href: '/settings/audit-log', icon: FileText, roles: ['admin'] },
+  { label: 'Registro de Auditoría', href: '/settings/audit', icon: FileText, roles: ['admin', 'manager'] },
 ]
 
 interface AppLayoutProps {
@@ -84,10 +85,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: overdueCount } = useQuery({
     queryKey: queryKeys.reminders.overdue,
     queryFn: async () => {
-      const response = await api.get<{ meta: { total: number } }>(
-        '/reminders?status=pending&overdue=true'
-      )
-      return response.data.meta?.total || 0
+      const response = await api.get<{
+        meta?: { pagination?: { count?: number } }
+      }>('/reminders?status=pending&overdue=true')
+      return response.data.meta?.pagination?.count ?? 0
     },
     refetchInterval: 60000, // Poll every 60s
   })
@@ -312,8 +313,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-auto">
+        {/* Page content — mismo fondo ambiental que el dashboard en toda la app */}
+        <main className="relative flex-1 overflow-auto">
+          <PageAmbientBackground />
           {children}
         </main>
       </div>

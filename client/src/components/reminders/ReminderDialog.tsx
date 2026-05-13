@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import api from '@/lib/api'
+import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,37 +31,71 @@ interface ReminderDialogProps {
 
 export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
   const queryClient = useQueryClient()
+  // Get tomorrow's date as default
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const defaultDate = tomorrow.toISOString().split('T')[0]
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    dueDate: '',
+    dueDate: defaultDate,
     dueTime: '',
-    priority: 'medium',
+    channel: 'in_app',
     linkedOpportunity: '',
-    linkedContact: '',
+  })
+
+  const { data: opportunities = [] } = useQuery({
+    queryKey: ['opportunities', 'reminder-dialog'],
+    queryFn: async () => {
+      const response = await api.get('/opportunities', { params: { items: 100 } })
+      const data = response.data?.data || []
+      return data.map((item: { id: string; attributes?: { title?: string } }) => ({
+        id: item.id,
+        label: item.attributes?.title || `Oportunidad ${item.id}`,
+      }))
+    },
+    enabled: open,
   })
 
   const createReminderMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { id: `rem-${Date.now()}`, ...data }
+      if (!data.linkedOpportunity) {
+        throw new Error('Debes seleccionar una oportunidad')
+      }
+      const remindAt = data.dueTime
+        ? `${data.dueDate}T${data.dueTime}:00`
+        : `${data.dueDate}T09:00:00`
+
+      return api.post(`/opportunities/${data.linkedOpportunity}/reminders`, {
+        reminder: {
+          remind_at: remindAt,
+          channel: data.channel,
+          subject: data.title,
+          message: data.description || undefined,
+        },
+      })
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['reminders'] })
+      if (variables.linkedOpportunity) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.reminders.byOpportunity(variables.linkedOpportunity),
+        })
+      }
       toast.success('Recordatorio creado exitosamente')
       onOpenChange(false)
       setFormData({
         title: '',
         description: '',
-        dueDate: '',
+        dueDate: defaultDate,
         dueTime: '',
-        priority: 'medium',
+        channel: 'in_app',
         linkedOpportunity: '',
-        linkedContact: '',
       })
     },
-    onError: () => {
-      toast.error('Error al crear el recordatorio')
+    onError: (error: Error) => {
+      toast.error(error.message || 'Error al crear el recordatorio')
     }
   })
 
@@ -71,11 +107,6 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
-
-  // Get tomorrow's date as default
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const defaultDate = tomorrow.toISOString().split('T')[0]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -116,7 +147,7 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
               <Input
                 id="dueDate"
                 type="date"
-                value={formData.dueDate || defaultDate}
+                value={formData.dueDate}
                 onChange={(e) => handleChange('dueDate', e.target.value)}
                 required
               />
@@ -133,18 +164,18 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="priority">Prioridad</Label>
+            <Label htmlFor="channel">Canal</Label>
             <Select 
-              value={formData.priority} 
-              onValueChange={(value) => handleChange('priority', value)}
+              value={formData.channel} 
+              onValueChange={(value) => handleChange('channel', value)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="high">Alta</SelectItem>
-                <SelectItem value="medium">Media</SelectItem>
-                <SelectItem value="low">Baja</SelectItem>
+                <SelectItem value="in_app">In App</SelectItem>
+                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="whatsapp">WhatsApp</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -159,26 +190,11 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
                 <SelectValue placeholder="Seleccionar oportunidad" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="opp-1">Proyecto CRM TechCorp</SelectItem>
-                <SelectItem value="opp-2">Consultoria InnoSoft</SelectItem>
-                <SelectItem value="opp-3">Implementacion CloudNet</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="linkedContact">Vincular a Contacto (opcional)</Label>
-            <Select 
-              value={formData.linkedContact} 
-              onValueChange={(value) => handleChange('linkedContact', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar contacto" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contact-1">Juan Garcia</SelectItem>
-                <SelectItem value="contact-2">Maria Lopez</SelectItem>
-                <SelectItem value="contact-3">Pedro Martinez</SelectItem>
+                {opportunities.map((opportunity: { id: string; label: string }) => (
+                  <SelectItem key={opportunity.id} value={opportunity.id}>
+                    {opportunity.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

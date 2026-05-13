@@ -11,6 +11,9 @@ module Api
       #   - `key` query param contra GOOGLE_ADS_WEBHOOK_KEY.
       # ========================================================================
       class GoogleAdsController < BaseController
+        include WebhookEnqueue
+        include WebhookJsonPayload
+
         skip_before_action :authenticate_user!,            raise: false
         skip_before_action :verify_user_belongs_to_tenant, raise: false
         skip_before_action :resolve_tenant!,               raise: false
@@ -20,18 +23,15 @@ module Api
 
         # POST /api/v1/webhooks/google
         def create
-          payload = request.request_parameters.presence || JSON.parse(request.raw_post)
+          payload = parsed_webhook_payload
+          return head :bad_request if payload == WebhookJsonPayload::INVALID_JSON_BODY
 
-          if defined?(WebhookProcessorJob)
-            WebhookProcessorJob.perform_later(
-              "google_ads",
-              payload.merge("received_at" => Time.current.iso8601)
-            )
-          end
+          enqueue_webhook_processor(
+            "google",
+            payload.merge("received_at" => Time.current.iso8601)
+          )
 
           head :ok
-        rescue JSON::ParserError
-          head :bad_request
         end
 
         private

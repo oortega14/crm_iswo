@@ -30,7 +30,7 @@ RSpec.describe "Api::V1::Webhooks::GoogleAds", type: :request do
         ENV.delete("GOOGLE_ADS_WEBHOOK_KEY")
 
         expect(WebhookProcessorJob).to receive(:perform_later).with(
-          "google_ads",
+          "google",
           hash_including("received_at" => kind_of(String))
         )
 

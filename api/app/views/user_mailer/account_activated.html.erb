@@ -1,6 +1,6 @@
 <h2 style="margin-top:0;">Tu cuenta fue reactivada</h2>
 
-<p>Hola <%= @user.first_name.presence || @user.email %>,</p>
+<p>Hola <%= @user.name.presence || @user.email %>,</p>
 
 <p>
   Tu cuenta en <strong><%= @user.tenant.name %></strong> fue reactivada y ya puedes

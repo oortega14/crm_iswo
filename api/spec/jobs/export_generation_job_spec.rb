@@ -18,11 +18,11 @@ RSpec.describe ExportGenerationJob, type: :job do
         create_list(:contact, 2, tenant: tenant)
       end
 
-      it "genera el CSV y marca el export como ready" do
+      it "genera el CSV y marca el export como succeeded" do
         described_class.new.perform(export.id)
 
         export.reload
-        expect(export.status).to eq("ready")
+        expect(export.status).to eq("succeeded")
         expect(export.file_url).to be_present
         expect(export.file_size).to be > 0
         expect(export.finished_at).to be_present

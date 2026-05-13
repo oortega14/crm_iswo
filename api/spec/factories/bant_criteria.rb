@@ -8,6 +8,5 @@ FactoryBot.define do
     need_weight      { 25 }
     timeline_weight  { 25 }
     threshold_qualified { 60 }
-    active           { true }
   end
 end

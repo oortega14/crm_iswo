@@ -1,14 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, 
-  MoreHorizontal,
-  Shield,
-  Mail,
-  Search,
-  UserPlus
-} from 'lucide-react'
+import { MoreHorizontal, Shield, Mail, Search, UserPlus, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -48,165 +41,236 @@ import {
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-import type { User } from '@/types'
+import type { UserRole } from '@/types'
 import { formatDate } from '@/lib/utils'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
+import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/settings/users')({
   component: UsersSettingsPage,
 })
 
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
+  }
+  if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase()
+  return '?'
+}
+
 function UsersSettingsPage() {
   const queryClient = useQueryClient()
-  const [searchTerm, setSearchTerm] = useState('')
-  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState('user')
+  const currentUser = useAuthStore((s) => s.user)
+  const isAdmin = currentUser?.role === 'admin'
 
-  const { data: users, isLoading } = useQuery({
-    queryKey: ['users', searchTerm],
+  const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedQ(searchTerm.trim()), 350)
+    return () => window.clearTimeout(id)
+  }, [searchTerm])
+
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<UserRole>('consultant')
+
+  const {
+    data: users = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: queryKeys.users.list({ q: debouncedQ, role: roleFilter, active: activeFilter }),
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const mockUsers: User[] = [
-        {
-          id: 'user-1',
-          email: 'admin@iswo.com',
-          name: 'Carlos Admin',
-          role: 'admin',
-          avatar: 'https://avatar.vercel.sh/admin@iswo.com',
-          createdAt: new Date(Date.now() - 90 * 86400000).toISOString(),
-          lastLogin: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: 'user-2',
-          email: 'maria@iswo.com',
-          name: 'Maria Ventas',
-          role: 'manager',
-          avatar: 'https://avatar.vercel.sh/maria@iswo.com',
-          createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
-          lastLogin: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: 'user-3',
-          email: 'juan@iswo.com',
-          name: 'Juan Consultor',
-          role: 'user',
-          avatar: 'https://avatar.vercel.sh/juan@iswo.com',
-          createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-          lastLogin: new Date(Date.now() - 2 * 86400000).toISOString(),
-        },
-        {
-          id: 'user-4',
-          email: 'ana@iswo.com',
-          name: 'Ana Marketing',
-          role: 'user',
-          avatar: 'https://avatar.vercel.sh/ana@iswo.com',
-          createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
-          lastLogin: new Date(Date.now() - 5 * 86400000).toISOString(),
-        },
-        {
-          id: 'user-5',
-          email: 'pedro@iswo.com',
-          name: 'Pedro Soporte',
-          role: 'readonly',
-          avatar: 'https://avatar.vercel.sh/pedro@iswo.com',
-          createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-          lastLogin: null,
-        },
-      ]
-      
-      return mockUsers.filter(
-        u => 
-          u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          u.email.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    }
+      const params = new URLSearchParams()
+      if (debouncedQ) params.set('q', debouncedQ)
+      if (roleFilter !== 'all') params.set('role', roleFilter)
+      if (activeFilter !== 'all') params.set('active', activeFilter)
+      const qs = params.toString()
+      const response = await api.get(`/users${qs ? `?${qs}` : ''}`)
+      const rows = jsonApiPrimaryList(response.data)
+      return rows.filter((r) => r.id).map(mapUserResource)
+    },
   })
 
+  const invalidateUsers = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
+  }
+
   const inviteUserMutation = useMutation({
-    mutationFn: async ({ email, role }: { email: string; role: string }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { email, role }
+    mutationFn: async (payload: { name: string; email: string; role: UserRole }) => {
+      await api.post('/users', {
+        user: {
+          name: payload.name.trim(),
+          email: payload.email.trim().toLowerCase(),
+          role: payload.role,
+        },
+      })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
-      toast.success('Invitacion enviada exitosamente')
+      invalidateUsers()
+      toast.success('Usuario creado; recibirá correo para establecer contraseña si el mailer está configurado.')
       setIsInviteDialogOpen(false)
+      setInviteName('')
       setInviteEmail('')
-      setInviteRole('user')
+      setInviteRole('consultant')
     },
-    onError: () => {
-      toast.error('Error al enviar la invitacion')
-    }
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'Error al crear el usuario')),
   })
 
   const changeRoleMutation = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      return { userId, role }
+    mutationFn: async ({ userId, role }: { userId: string; role: UserRole }) => {
+      await api.patch(`/users/${userId}`, { user: { role } })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+      invalidateUsers()
       toast.success('Rol actualizado')
-    }
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'Error al actualizar el rol')),
   })
 
   const removeUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      return userId
+      await api.delete(`/users/${userId}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users'] })
+      invalidateUsers()
       toast.success('Usuario eliminado')
-    }
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'Error al eliminar el usuario')),
   })
 
-  const getRoleBadge = (role: string) => {
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ userId, active }: { userId: string; active: boolean }) => {
+      if (active) {
+        await api.post(`/users/${userId}/activate`)
+      } else {
+        await api.post(`/users/${userId}/deactivate`)
+      }
+    },
+    onSuccess: (_, vars) => {
+      invalidateUsers()
+      toast.success(vars.active ? 'Usuario activado' : 'Usuario desactivado')
+    },
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'Error al cambiar el estado del usuario')),
+  })
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await api.post(`/users/${userId}/reset_password`)
+    },
+    onSuccess: () => {
+      toast.success('Se enviaron instrucciones para restablecer la contraseña.')
+    },
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'Error al enviar el correo de restablecimiento')),
+  })
+
+  const getRoleBadge = (role: UserRole | string) => {
     switch (role) {
       case 'admin':
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Admin</Badge>
       case 'manager':
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Manager</Badge>
-      case 'user':
-        return <Badge variant="secondary">Usuario</Badge>
-      case 'readonly':
+        return (
+          <Badge className="border border-primary/25 bg-primary/12 text-primary hover:bg-primary/15 dark:border-primary/35 dark:bg-primary/18">
+            Manager
+          </Badge>
+        )
+      case 'consultant':
+        return <Badge variant="secondary">Consultor</Badge>
+      case 'viewer':
         return <Badge variant="outline">Solo lectura</Badge>
       default:
         return <Badge variant="secondary">{role}</Badge>
     }
   }
 
+  const roleCounts = users.reduce(
+    (acc, user) => {
+      if (user.role === 'admin') acc.admin += 1
+      else if (user.role === 'manager') acc.manager += 1
+      else if (user.role === 'consultant') acc.consultant += 1
+      else if (user.role === 'viewer') acc.viewer += 1
+      return acc
+    },
+    { admin: 0, manager: 0, consultant: 0, viewer: 0 }
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-medium">Usuarios</h2>
-          <p className="text-sm text-muted-foreground">
-            Administra los usuarios y sus permisos
-          </p>
+          <p className="text-sm text-muted-foreground">Usuarios del tenant (listado en vivo desde el servidor).</p>
         </div>
-        <Button size="sm" onClick={() => setIsInviteDialogOpen(true)}>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Invitar Usuario
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+            Recargar
+          </Button>
+          <Button size="sm" onClick={() => setIsInviteDialogOpen(true)}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Invitar usuario
+          </Button>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="relative w-64">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar usuarios..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="relative w-full md:max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre o correo..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as 'all' | UserRole)}>
+          <SelectTrigger className="w-full md:w-52">
+            <SelectValue placeholder="Filtrar por rol" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los roles</SelectItem>
+            <SelectItem value="admin">Admin</SelectItem>
+            <SelectItem value="manager">Manager</SelectItem>
+            <SelectItem value="consultant">Consultor</SelectItem>
+            <SelectItem value="viewer">Solo lectura</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={activeFilter} onValueChange={(v) => setActiveFilter(v as 'all' | 'true' | 'false')}>
+          <SelectTrigger className="w-full md:w-44">
+            <SelectValue placeholder="Estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="true">Activos</SelectItem>
+            <SelectItem value="false">Inactivos</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Users Table */}
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError && (
+            <div className="p-6 text-sm">
+              <p className="text-destructive">
+                No se pudo cargar la lista: {formatRailsError(error, 'error desconocido')}
+              </p>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => void refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          )}
+          {!isError && isLoading ? (
             <div className="p-4 space-y-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-4">
@@ -218,171 +282,261 @@ function UsersSettingsPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !isError ? (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Usuario</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Fecha de registro</TableHead>
-                  <TableHead>Ultimo acceso</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Registro</TableHead>
+                  <TableHead>Último acceso</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users?.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarImage src={user.avatar} />
-                          <AvatarFallback>
-                            {user.name.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{user.name}</p>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{getRoleBadge(user.role)}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {formatDate(user.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {user.lastLogin ? formatDate(user.lastLogin) : 'Nunca'}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem 
-                            onClick={() => changeRoleMutation.mutate({ userId: user.id, role: 'admin' })}
-                          >
-                            <Shield className="mr-2 h-4 w-4" />
-                            Hacer Admin
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => changeRoleMutation.mutate({ userId: user.id, role: 'manager' })}
-                          >
-                            Hacer Manager
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => changeRoleMutation.mutate({ userId: user.id, role: 'user' })}
-                          >
-                            Hacer Usuario
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => changeRoleMutation.mutate({ userId: user.id, role: 'readonly' })}
-                          >
-                            Solo Lectura
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>
-                            <Mail className="mr-2 h-4 w-4" />
-                            Reenviar invitacion
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            className="text-destructive"
-                            onClick={() => removeUserMutation.mutate(user.id)}
-                          >
-                            Eliminar usuario
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                {users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                      No hay usuarios que coincidan con la búsqueda.
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar>
+                            <AvatarImage src={user.avatar_url} />
+                            <AvatarFallback>{initialsFromName(user.name)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{user.name}</p>
+                            <p className="text-sm text-muted-foreground">{user.email}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>{getRoleBadge(user.role)}</TableCell>
+                      <TableCell>
+                        {user.active ? (
+                          <Badge variant="outline" className="border-primary/35 text-primary">
+                            Activo
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Inactivo</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {user.created_at ? formatDate(user.created_at) : '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {user.last_sign_in_at ? formatDate(user.last_sign_in_at) : 'Nunca'}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() =>
+                                changeRoleMutation.mutate({ userId: user.id, role: 'admin' })
+                              }
+                            >
+                              <Shield className="mr-2 h-4 w-4" />
+                              Rol: Admin
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                changeRoleMutation.mutate({ userId: user.id, role: 'manager' })
+                              }
+                            >
+                              Rol: Manager
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                changeRoleMutation.mutate({ userId: user.id, role: 'consultant' })
+                              }
+                            >
+                              Rol: Consultor
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                changeRoleMutation.mutate({ userId: user.id, role: 'viewer' })
+                              }
+                            >
+                              Rol: Solo lectura
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() =>
+                                toggleActiveMutation.mutate({ userId: user.id, active: !user.active })
+                              }
+                              disabled={toggleActiveMutation.isPending}
+                            >
+                              {user.active ? 'Desactivar usuario' : 'Activar usuario'}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {isAdmin && (
+                              <DropdownMenuItem
+                                onClick={() => resetPasswordMutation.mutate(user.id)}
+                                disabled={resetPasswordMutation.isPending}
+                              >
+                                <Mail className="mr-2 h-4 w-4" />
+                                Enviar restablecimiento de contraseña
+                              </DropdownMenuItem>
+                            )}
+                            {isAdmin && <DropdownMenuSeparator />}
+                            {isAdmin && currentUser?.id !== user.id && (
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => removeUserMutation.mutate(user.id)}
+                              >
+                                Eliminar usuario
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
-      {/* Roles Description */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Admins</p>
+            <p className="text-2xl font-semibold">{roleCounts.admin}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Managers</p>
+            <p className="text-2xl font-semibold">{roleCounts.manager}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Consultores</p>
+            <p className="text-2xl font-semibold">{roleCounts.consultant}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Solo lectura</p>
+            <p className="text-2xl font-semibold">{roleCounts.viewer}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardContent className="pt-6">
-          <h3 className="font-medium mb-4">Descripcion de Roles</h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex gap-4">
-              {getRoleBadge('admin')}
-              <span className="text-muted-foreground">
-                Acceso completo. Puede gestionar usuarios, configuracion y todos los datos.
-              </span>
+          <h3 className="font-medium mb-4">Descripción de roles</h3>
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="rounded-lg border p-3">
+              <div className="mb-2">{getRoleBadge('admin')}</div>
+              <p className="text-muted-foreground">
+                Acceso completo; puede gestionar usuarios y configuración del tenant.
+              </p>
             </div>
-            <div className="flex gap-4">
-              {getRoleBadge('manager')}
-              <span className="text-muted-foreground">
-                Puede ver y editar todas las oportunidades y contactos. Sin acceso a configuracion.
-              </span>
+            <div className="rounded-lg border p-3">
+              <div className="mb-2">{getRoleBadge('manager')}</div>
+              <p className="text-muted-foreground">
+                Ve y edita oportunidades y contactos del tenant; gestiona usuarios con límites de
+                política.
+              </p>
             </div>
-            <div className="flex gap-4">
-              {getRoleBadge('user')}
-              <span className="text-muted-foreground">
-                Puede ver y editar sus propias oportunidades y contactos asignados.
-              </span>
+            <div className="rounded-lg border p-3">
+              <div className="mb-2">{getRoleBadge('consultant')}</div>
+              <p className="text-muted-foreground">
+                Trabaja sus oportunidades y contactos asignados.
+              </p>
             </div>
-            <div className="flex gap-4">
-              {getRoleBadge('readonly')}
-              <span className="text-muted-foreground">
-                Solo puede ver datos. No puede crear ni editar.
-              </span>
+            <div className="rounded-lg border p-3">
+              <div className="mb-2">{getRoleBadge('viewer')}</div>
+              <p className="text-muted-foreground">Solo lectura.</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Invite Dialog */}
       <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invitar Usuario</DialogTitle>
+            <DialogTitle>Invitar usuario</DialogTitle>
             <DialogDescription>
-              Envia una invitacion por email para unirse al equipo
+              Crea el usuario en el tenant; se genera una contraseña provisional y puede recibir
+              correo de bienvenida según la configuración del servidor.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="invite-name">Nombre completo</Label>
               <Input
-                id="email"
+                id="invite-name"
+                value={inviteName}
+                onChange={(e) => setInviteName(e.target.value)}
+                placeholder="María López"
+                autoComplete="name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Correo</Label>
+              <Input
+                id="invite-email"
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="usuario@empresa.com"
+                autoComplete="email"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">Rol</Label>
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger>
+              <Label htmlFor="invite-role">Rol</Label>
+              <Select
+                value={inviteRole}
+                onValueChange={(v) => setInviteRole(v as UserRole)}
+              >
+                <SelectTrigger id="invite-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="user">Usuario</SelectItem>
-                  <SelectItem value="readonly">Solo Lectura</SelectItem>
+                  <SelectItem value="consultant">Consultor</SelectItem>
+                  <SelectItem value="viewer">Solo lectura</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsInviteDialogOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setIsInviteDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={() => inviteUserMutation.mutate({ email: inviteEmail, role: inviteRole })}
-              disabled={!inviteEmail || inviteUserMutation.isPending}
+            <Button
+              type="button"
+              onClick={() =>
+                inviteUserMutation.mutate({
+                  name: inviteName,
+                  email: inviteEmail,
+                  role: inviteRole,
+                })
+              }
+              disabled={
+                !inviteName.trim() ||
+                !inviteEmail.trim() ||
+                inviteUserMutation.isPending
+              }
             >
               {inviteUserMutation.isPending && <Spinner className="mr-2" />}
-              Enviar Invitacion
+              Crear usuario
             </Button>
           </DialogFooter>
         </DialogContent>

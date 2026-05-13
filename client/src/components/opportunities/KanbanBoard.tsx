@@ -45,61 +45,41 @@ export function KanbanBoard({
     useSensor(KeyboardSensor)
   )
 
-  // Group opportunities by stage
+  const firstStageId = pipeline?.stages?.[0]?.id
+
+  // Group opportunities by stage (si la etapa no coincide con el embudo, cae en la 1.ª columna)
   const opportunitiesByStage = useMemo(() => {
     const grouped: Record<string, Opportunity[]> = {}
-    
-    // Initialize all stages with empty arrays
     pipeline?.stages?.forEach((stage) => {
       grouped[stage.id] = []
     })
-    
-    // Group opportunities
+    if (!pipeline?.stages?.length) return grouped
+
     opportunities.forEach((opp) => {
-      if (grouped[opp.stage_id]) {
-        grouped[opp.stage_id].push(opp)
+      const sid = opp.stage_id
+      if (sid && grouped[sid]) {
+        grouped[sid].push(opp)
+      } else if (firstStageId && grouped[firstStageId]) {
+        grouped[firstStageId].push(opp)
       }
     })
-    
     return grouped
-  }, [opportunities, pipeline?.stages])
+  }, [opportunities, pipeline?.stages, firstStageId])
 
   // Update stage mutation with optimistic updates
   const updateStageMutation = useMutation({
     mutationFn: async ({ id, stage_id }: { id: string; stage_id: string }) => {
-      const response = await api.patch(`/opportunities/${id}`, {
-        data: { stage_id },
-      })
+      const response = await api.patch(
+        `/opportunities/${id}`,
+        JSON.stringify({ opportunity: { pipeline_stage_id: stage_id } }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
       return response.data.data
     },
-    onMutate: async ({ id, stage_id }) => {
-      // Cancel outgoing refetches
+    onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.opportunities.all })
-      
-      // Snapshot previous value
-      const previousOpportunities = queryClient.getQueryData(
-        queryKeys.opportunities.list({})
-      )
-      
-      // Optimistically update
-      queryClient.setQueryData(
-        queryKeys.opportunities.list({}),
-        (old: Opportunity[] | undefined) =>
-          old?.map((opp) =>
-            opp.id === id ? { ...opp, stage_id } : opp
-          )
-      )
-      
-      return { previousOpportunities }
     },
-    onError: (_err, _vars, context) => {
-      // Rollback on error
-      if (context?.previousOpportunities) {
-        queryClient.setQueryData(
-          queryKeys.opportunities.list({}),
-          context.previousOpportunities
-        )
-      }
+    onError: () => {
       toast.error('Error al mover la oportunidad')
     },
     onSettled: () => {
@@ -119,16 +99,15 @@ export function KanbanBoard({
     if (!over) return
 
     const activeOpp = opportunities.find((o) => o.id === active.id)
-    if (!activeOpp) return
+    if (!activeOpp || !pipeline?.stages?.length) return
 
-    // Check if dropped on a column
-    const targetStage = pipeline?.stages?.find((s) => s.id === over.id)
-    if (targetStage && activeOpp.stage_id !== targetStage.id) {
-      updateStageMutation.mutate({
-        id: activeOpp.id,
-        stage_id: targetStage.id,
-      })
-    }
+    const overId = String(over.id)
+    const stageHit = pipeline.stages.find((s) => s.id === overId)
+    const overCard = opportunities.find((o) => o.id === overId)
+    const targetStageId = stageHit?.id ?? overCard?.stage_id
+    if (!targetStageId || targetStageId === activeOpp.stage_id) return
+
+    updateStageMutation.mutate({ id: activeOpp.id, stage_id: targetStageId })
   }
 
   const activeOpportunity = activeId

@@ -14,8 +14,13 @@ module Api
       # POST /api/v1/password/forgot  { email }
       def forgot
         user = current_tenant.users.find_by(email: params[:email].to_s.downcase.strip)
-        user&.send_reset_password_instructions
+        Users::PasswordResetIssuer.new(user: user).call
         # Respuesta uniforme aunque no exista para no leakear cuentas
+        head :accepted
+      rescue StandardError => e
+        Rails.logger.error(
+          "[PasswordsController#forgot] #{e.class}: #{e.message}\n#{e.backtrace&.first(20)&.join("\n")}"
+        )
         head :accepted
       end
 
@@ -26,7 +31,7 @@ module Api
           head :no_content
         else
           render json: { error: "invalid_token", details: result.errors.as_json(full_messages: true) },
-                 status: :unprocessable_entity
+                 status: :unprocessable_content
         end
       end
 
@@ -36,7 +41,7 @@ module Api
           head :no_content
         else
           render json: { error: "invalid_password", details: current_user.errors.as_json(full_messages: true) },
-                 status: :unprocessable_entity
+                 status: :unprocessable_content
         end
       end
 

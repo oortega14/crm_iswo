@@ -14,37 +14,84 @@ module Api
 
         scope = scope.where(status: params[:status])                       if params[:status].present?
         scope = scope.where(pipeline_id: params[:pipeline_id])             if params[:pipeline_id].present?
-        scope = scope.where(pipeline_stage_id: params[:pipeline_stage_id]) if params[:pipeline_stage_id].present?
+        if params[:pipeline_stage_id].present?
+          scope = scope.where(pipeline_stage_id: params[:pipeline_stage_id])
+        elsif params[:stage_id].present?
+          scope = scope.where(pipeline_stage_id: params[:stage_id])
+        end
         scope = scope.where(owner_user_id: params[:owner_id])              if params[:owner_id].present?
         scope = scope.where("title ILIKE ?", "%#{params[:q]}%")            if params[:q].present?
         scope = scope.stale(params[:stale_days].to_i)                      if params[:stale_days].present?
 
-        render_collection(scope.order(last_activity_at: :desc), with: OpportunitySerializer)
+        render_collection(
+          scope.order(last_activity_at: :desc),
+          with:  OpportunitySerializer,
+          include: [:owner_user]
+        )
       end
 
       def show
         authorize @opportunity
-        render_resource(@opportunity, with: OpportunitySerializer)
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
       end
 
       def create
         authorize Opportunity
-        @opportunity = current_tenant.opportunities.new(create_params.merge(owner_user: current_user))
+        attrs = opportunity_create_attributes
+        h     = attrs.to_h.symbolize_keys
+        contact = resolve_contact_for_opportunity!(h)
+        stage_id = h[:pipeline_stage_id].presence || h[:stage_id].presence
+        if stage_id.blank?
+          @opportunity = current_tenant.opportunities.new
+          @opportunity.errors.add(:pipeline_stage_id, "no puede estar en blanco")
+          return render_unprocessable(@opportunity)
+        end
+
+        # Siempre derivar el pipeline de la etapa: evita 422 cuando el SPA envía un pipeline_id
+        # desfasado respecto a la etapa (p. ej. tras cambiar embudo sin actualizar etapa).
+        stage = current_tenant.pipeline_stages.find_by(id: stage_id)
+        unless stage
+          @opportunity = current_tenant.opportunities.new
+          @opportunity.errors.add(:pipeline_stage_id, "no es válida o no pertenece a este tenant")
+          return render_unprocessable(@opportunity)
+        end
+
+        @opportunity = current_tenant.opportunities.new(
+          title:             h[:title].presence || default_opportunity_title(contact, h),
+          notes:             h[:notes],
+          estimated_value:   h[:estimated_value],
+          pipeline_id:       stage.pipeline_id,
+          pipeline_stage_id: stage.id,
+          contact:           contact,
+          owner_user:        current_user,
+          currency:          current_tenant.currency
+        )
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
-          render_created(@opportunity, with: OpportunitySerializer)
+          render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user])
         else
           render_unprocessable(@opportunity)
         end
+      rescue ActiveRecord::RecordInvalid => e
+        render json: {
+          error:   "unprocessable_entity",
+          message: "Validación fallida",
+          details: e.record.errors.as_json(full_messages: true)
+        }, status: :unprocessable_entity
       end
 
       def update
         authorize @opportunity
         before = @opportunity.attributes.dup
+        bant_in = params.dig(:opportunity, :bant_data).present?
         if @opportunity.update(update_params)
+          if bant_in && defined?(Opportunities::BantScorer)
+            Opportunities::BantScorer.new(@opportunity).call_and_persist!
+            @opportunity.reload
+          end
           @opportunity.touch_activity!
           log_action!("update", diff(before, @opportunity.attributes))
-          render_resource(@opportunity, with: OpportunitySerializer)
+          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
         else
           render_unprocessable(@opportunity)
         end
@@ -68,7 +115,7 @@ module Api
         @opportunity.touch_activity!
         log_action!("stage_change", { from_stage_id: from, to_stage_id: new_stage.id })
 
-        render_resource(@opportunity, with: OpportunitySerializer)
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
       end
 
       # POST /api/v1/opportunities/:id/assign  { owner_user_id }
@@ -78,7 +125,7 @@ module Api
         from = @opportunity.owner_user_id
         @opportunity.update!(owner_user_id: new_owner.id)
         log_action!("assign", { from: from, to: new_owner.id })
-        render_resource(@opportunity, with: OpportunitySerializer)
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
       end
 
       # POST /api/v1/opportunities/:id/merge  { target_id }
@@ -88,14 +135,14 @@ module Api
         if defined?(Opportunities::Merger)
           Opportunities::Merger.new(source: @opportunity, target: target, performed_by: current_user).call
         end
-        render_resource(target.reload, with: OpportunitySerializer)
+        render_resource(target.reload, with: OpportunitySerializer, include: [:owner_user])
       end
 
       # POST /api/v1/opportunities/:id/recalculate_bant
       def recalculate_bant
         authorize @opportunity, :recalculate_bant?
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
-        render_resource(@opportunity, with: OpportunitySerializer)
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
       end
 
       # GET /api/v1/opportunities/kanban?pipeline_id=...
@@ -123,10 +170,10 @@ module Api
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: "opportunities",
-          format:   params.fetch(:format, "xlsx"),
-          filters:  params.fetch(:filters, {}).permit!.to_h
+          format:   resolve_export_file_format,
+          filters:  normalize_export_filters_param
         )
-        ExportGenerationJob.perform_later(export.id) if defined?(ExportGenerationJob)
+        safe_enqueue_export_generation_job(export.id)
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
@@ -136,19 +183,81 @@ module Api
         @opportunity = current_tenant.opportunities.kept.find(params[:id])
       end
 
-      def create_params
-        params.require(:opportunity).permit(
-          :contact_id, :pipeline_id, :pipeline_stage_id, :lead_source_id,
+      def opportunity_create_attributes
+        raw = params[:opportunity].presence || params[:data]
+        raise ActionController::ParameterMissing, :opportunity if raw.blank?
+
+        raw.permit(
+          :contact_id, :pipeline_id, :pipeline_stage_id, :stage_id,
+          :contact_name, :contact_email, :contact_phone, :company_name,
           :title, :notes, :estimated_value, :status,
-          :expected_close_date, custom_fields: {}, bant_data: {}
+          :expected_close_date, :lead_source_id,
+          custom_fields: {}, bant_data: {}
         )
+      end
+
+      def resolve_contact_for_opportunity!(attrs)
+        attrs = attrs.symbolize_keys
+        if attrs[:contact_id].present?
+          return current_tenant.contacts.kept.find(attrs[:contact_id])
+        end
+
+        name = attrs[:contact_name].to_s.strip
+        if name.blank?
+          c = current_tenant.contacts.new
+          c.errors.add(:contact_name, "es obligatorio")
+          raise ActiveRecord::RecordInvalid.new(c)
+        end
+
+        parts  = name.split(/\s+/, 2)
+        email  = attrs[:contact_email].to_s.strip.presence
+        phone  = attrs[:contact_phone].to_s.strip.presence
+        company = attrs[:company_name].to_s.strip.presence
+
+        if email.present?
+          hit = current_tenant.contacts.kept.where("LOWER(email) = ?", email.downcase).first
+          return hit if hit
+        end
+
+        if phone.present?
+          parsed = Phonelib.parse(phone, "CO")
+          if parsed.valid?
+            hit = current_tenant.contacts.kept.find_by(phone_e164: parsed.e164)
+            return hit if hit
+          end
+        end
+
+        contact = current_tenant.contacts.new(
+          first_name:   parts[0],
+          last_name:    parts[1],
+          email:        email,
+          phone_e164:   phone,
+          company_name: company,
+          kind:         "person",
+          owner_user:   current_user
+        )
+        contact.save!
+        contact
+      end
+
+      def default_opportunity_title(contact, h)
+        base = contact.display_name
+        comp = h[:company_name].to_s.strip.presence
+        comp ? "#{base} — #{comp}" : base
       end
 
       def update_params
         params.require(:opportunity).permit(
           :title, :notes, :estimated_value, :status,
           :expected_close_date, :bant_score, :lost_reason, :lead_source_id,
-          custom_fields: {}, bant_data: {}
+          :pipeline_stage_id,
+          custom_fields: {},
+          bant_data: {
+            budget:    [:score, :answer],
+            authority: [:score, :answer],
+            need:      [:score, :answer],
+            timeline:  [:score, :answer]
+          }
         )
       end
 

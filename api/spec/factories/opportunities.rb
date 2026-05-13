@@ -14,7 +14,6 @@ FactoryBot.define do
     estimated_value   { 5_000_000 }
     currency          { "COP" }
     bant_score        { 0 }
-    bant_data         { {} }
     custom_fields     { {} }
     expected_close_date { 30.days.from_now.to_date }
     last_activity_at  { Time.current }

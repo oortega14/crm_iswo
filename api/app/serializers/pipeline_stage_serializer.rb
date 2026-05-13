@@ -3,7 +3,8 @@
 class PipelineStageSerializer < ApplicationSerializer
   set_type :pipeline_stage
 
-  attributes :name, :description, :position, :probability,
+  # La tabla no tiene columna `description` (no inventar atributos: rompe el JSON al crear/actualizar etapa).
+  attributes :name, :position, :probability,
              :closed_won, :closed_lost, :color
 
   attribute :terminal do |s|

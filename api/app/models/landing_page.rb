@@ -21,6 +21,12 @@ class LandingPage < ApplicationRecord
 
   scope :published, -> { where(published: true) }
 
+  def conversion_rate
+    return 0.0 if view_count.zero?
+
+    (lead_count.to_f / view_count * 100).round(2)
+  end
+
   def public_url
     "https://#{tenant.slug}.crm.iswo.com.co/#{slug}"
   end

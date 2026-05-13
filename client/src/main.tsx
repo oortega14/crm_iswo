@@ -33,7 +33,7 @@ function App() {
   
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="system" storageKey="crm-iswo-theme">
+      <ThemeProvider defaultTheme="dark" storageKey="crm-iswo-theme">
         <RouterProvider router={router} context={{ auth, queryClient }} />
         <Toaster position="top-right" richColors closeButton />
       </ThemeProvider>

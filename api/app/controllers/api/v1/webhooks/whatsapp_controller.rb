@@ -17,6 +17,9 @@ module Api
       #   4. dispara notificaciones (reminders, asignación automática, etc.)
       # ========================================================================
       class WhatsappController < BaseController
+        include WebhookEnqueue
+        include WebhookJsonPayload
+
         skip_before_action :authenticate_user!,            raise: false
         skip_before_action :verify_user_belongs_to_tenant, raise: false
         skip_before_action :resolve_tenant!,               raise: false
@@ -28,12 +31,10 @@ module Api
         # POST /api/v1/webhooks/whatsapp/twilio
         def twilio
           payload = request.request_parameters
-          if defined?(WebhookProcessorJob)
-            WebhookProcessorJob.perform_later(
-              "whatsapp_twilio",
-              payload.merge("received_at" => Time.current.iso8601)
-            )
-          end
+          enqueue_webhook_processor(
+            "whatsapp_twilio",
+            payload.merge("received_at" => Time.current.iso8601)
+          )
           head :ok
         end
 
@@ -48,16 +49,14 @@ module Api
 
         # POST /api/v1/webhooks/whatsapp/cloud
         def cloud
-          payload = request.request_parameters.presence || JSON.parse(request.raw_post)
-          if defined?(WebhookProcessorJob)
-            WebhookProcessorJob.perform_later(
-              "whatsapp_cloud",
-              payload.merge("received_at" => Time.current.iso8601)
-            )
-          end
+          payload = parsed_webhook_payload
+          return head :bad_request if payload == WebhookJsonPayload::INVALID_JSON_BODY
+
+          enqueue_webhook_processor(
+            "whatsapp_cloud",
+            payload.merge("received_at" => Time.current.iso8601)
+          )
           head :ok
-        rescue JSON::ParserError
-          head :bad_request
         end
 
         private

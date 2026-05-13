@@ -8,7 +8,7 @@
 # https://app.crm.iswo.com.co).
 # ----------------------------------------------------------------------------
 
-allowed = ENV.fetch("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+allowed = ENV.fetch("CORS_ALLOWED_ORIGINS", "http://localhost:3001,http://localhost:3000,http://localhost:5173")
              .split(",")
              .map(&:strip)
 

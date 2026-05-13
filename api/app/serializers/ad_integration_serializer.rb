@@ -10,11 +10,10 @@ class AdIntegrationSerializer < ApplicationSerializer
   set_type :ad_integration
 
   attributes :provider, :account_identifier, :status, :metadata,
-             :last_synced_at, :last_error_at, :last_error_message,
-             :consecutive_failures
+             :last_sync_at, :last_error_at, :last_error_message
 
   attribute :healthy do |i|
-    i.status == "active" && i.consecutive_failures.to_i.zero?
+    i.status == "active" && i.last_error_at.blank?
   end
 
   attribute :has_credentials do |i|

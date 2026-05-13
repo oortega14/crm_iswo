@@ -31,6 +31,7 @@ class User < ApplicationRecord
   has_many :owned_contacts,       class_name: "Contact",     foreign_key: :owner_user_id, dependent: :nullify
   has_many :owned_opportunities,  class_name: "Opportunity", foreign_key: :owner_user_id, dependent: :nullify
   has_many :reminders,            dependent: :destroy
+  has_many :notifications,        dependent: :destroy
   has_many :opportunity_logs,     dependent: :nullify
   has_many :exports,              dependent: :nullify
 

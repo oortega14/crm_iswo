@@ -19,4 +19,9 @@ class AuditEvent < ApplicationRecord
   scope :global, -> { where(tenant_id: nil) }
   scope :for_entity, ->(record) { where(entity_type: record.class.name, entity_id: record.id) }
   scope :recent, -> { order(created_at: :desc) }
+
+  # La tabla no tiene `updated_at`; JSON:API base expone timestamps.
+  def updated_at
+    created_at
+  end
 end

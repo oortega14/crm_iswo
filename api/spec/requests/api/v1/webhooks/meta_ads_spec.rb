@@ -50,7 +50,7 @@ RSpec.describe "Api::V1::Webhooks::MetaAds", type: :request do
 
     it "encola WebhookProcessorJob por cada change con leadgen_id" do
       expect(WebhookProcessorJob).to receive(:perform_later).with(
-        "meta_ads",
+        "meta",
         hash_including("leadgen_id" => "LEAD_ID_ABC", "page_id" => "PAGE_ID_123", "received_at" => kind_of(String))
       )
 

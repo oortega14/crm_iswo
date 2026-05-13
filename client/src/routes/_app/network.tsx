@@ -1,23 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { 
-  Search, 
-  Filter,
+import {
+  Search,
   Network as NetworkIcon,
-  Building2,
   User,
-  Link as LinkIcon,
   ZoomIn,
   ZoomOut,
   Maximize2,
-  LayoutGrid
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -27,148 +23,349 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
+import { useAuthStore } from '@/stores/auth'
+import { toast } from 'sonner'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 export const Route = createFileRoute('/_app/network')({
   component: NetworkPage,
 })
 
-interface NetworkNode {
-  id: string
-  type: 'contact' | 'company' | 'opportunity'
+/** Respuesta JSON de `GET /referral_networks/my_network` o `tree` */
+type ReferralTreeUser = {
+  id: number
   name: string
-  email?: string
-  industry?: string
-  value?: number
+  role: string
+  active: boolean
+}
+
+type ReferralTreeEdge = {
+  referrer_id: number
+  referred_id: number
+  depth: number
+  referred: ReferralTreeUser | null
+}
+
+type ReferralTreePayload = {
+  root: ReferralTreeUser | null
+  edges: ReferralTreeEdge[]
+}
+
+interface ConsultantNode {
+  id: string
+  name: string
+  role: string
+  active: boolean
   connections: string[]
+  treeDepth: number
   x?: number
   y?: number
 }
 
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
+  }
+  if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase()
+  return '?'
+}
+
+type UserStub = {
+  id: number
+  name: string
+  role: string
+  active: boolean
+  treeDepth: number
+}
+
+/** Construye nodos y adyacencia a partir del árbol del backend (sin datos inventados). */
+function buildConsultantNodes(payload: ReferralTreePayload): ConsultantNode[] {
+  const byId = new Map<string, UserStub>()
+
+  const upsertFull = (u: ReferralTreeUser, depth: number) => {
+    const key = String(u.id)
+    const prev = byId.get(key)
+    const treeDepth = prev ? Math.min(prev.treeDepth, depth) : depth
+    byId.set(key, {
+      id: u.id,
+      name: u.name || prev?.name || '',
+      role: u.role || prev?.role || '',
+      active: typeof u.active === 'boolean' ? u.active : (prev?.active ?? true),
+      treeDepth,
+    })
+  }
+
+  const touchId = (id: number, depth: number) => {
+    const key = String(id)
+    const prev = byId.get(key)
+    const treeDepth = prev ? Math.min(prev.treeDepth, depth) : depth
+    byId.set(key, {
+      id,
+      name: prev?.name ?? '',
+      role: prev?.role ?? '',
+      active: prev?.active ?? true,
+      treeDepth,
+    })
+  }
+
+  if (payload.root) upsertFull(payload.root, 0)
+
+  const adjacency = new Map<string, Set<string>>()
+  const addConn = (a: string, b: string) => {
+    if (a === b) return
+    if (!adjacency.has(a)) adjacency.set(a, new Set())
+    if (!adjacency.has(b)) adjacency.set(b, new Set())
+    adjacency.get(a)!.add(b)
+    adjacency.get(b)!.add(a)
+  }
+
+  for (const edge of payload.edges) {
+    addConn(String(edge.referrer_id), String(edge.referred_id))
+    if (edge.referred) upsertFull(edge.referred, edge.depth)
+    else touchId(edge.referred_id, edge.depth)
+    touchId(edge.referrer_id, Math.max(0, edge.depth - 1))
+  }
+
+  const ids = new Set<string>()
+  if (payload.root) ids.add(String(payload.root.id))
+  for (const e of payload.edges) {
+    ids.add(String(e.referrer_id))
+    ids.add(String(e.referred_id))
+  }
+
+  const nodes: ConsultantNode[] = []
+  for (const idStr of ids) {
+    const stub = byId.get(idStr)
+    const root = payload.root
+    const resolved =
+      stub ||
+      (root && String(root.id) === idStr
+        ? {
+            id: root.id,
+            name: root.name,
+            role: root.role,
+            active: root.active,
+            treeDepth: 0,
+          }
+        : {
+            id: Number(idStr),
+            name: '',
+            role: '',
+            active: true,
+            treeDepth: 0,
+          })
+    nodes.push({
+      id: idStr,
+      name: resolved.name,
+      role: resolved.role,
+      active: resolved.active,
+      treeDepth: resolved.treeDepth,
+      connections: Array.from(adjacency.get(idStr) ?? []),
+    })
+  }
+
+  return nodes.sort((a, b) => a.treeDepth - b.treeDepth || a.name.localeCompare(b.name))
+}
+
+/** Posiciones por niveles concéntricos (profundidad = distancia desde la raíz en el modelo API). */
+function layoutNodes(nodes: ConsultantNode[]): ConsultantNode[] {
+  const byDepth = new Map<number, ConsultantNode[]>()
+  for (const n of nodes) {
+    const d = n.treeDepth
+    if (!byDepth.has(d)) byDepth.set(d, [])
+    byDepth.get(d)!.push(n)
+  }
+  const depths = [...byDepth.keys()].sort((a, b) => a - b)
+  const cx = 400
+  const cy = 280
+
+  for (const d of depths) {
+    const ring = byDepth.get(d)!
+    const radius = d === 0 ? 0 : 70 + (d - 1) * 95
+    ring.forEach((node, i) => {
+      const n = ring.length
+      const angleStart = -Math.PI / 2
+      const angle =
+        n === 1 && d === 0 ? angleStart : angleStart + (i / Math.max(n, 1)) * 2 * Math.PI
+      node.x = cx + radius * Math.cos(angle)
+      node.y = cy + radius * Math.sin(angle)
+    })
+  }
+  return nodes
+}
+
 function NetworkPage() {
+  const currentUser = useAuthStore((s) => s.user)
+  const canPickRoot = currentUser?.role === 'admin' || currentUser?.role === 'manager'
+
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterType, setFilterType] = useState<'all' | 'contact' | 'company' | 'opportunity'>('all')
-  const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null)
   const [zoom, setZoom] = useState(1)
+  const [selectedNode, setSelectedNode] = useState<ConsultantNode | null>(null)
+  /** `null`: raíz del usuario actual (`my_network`). Otro valor: `/tree?root_user_id=` */
+  const [rootUserId, setRootUserId] = useState<string | null>(null)
+  /** Profundidad enviada al backend en `tree` (my_network usa 5 fijo en servidor). */
+  const [treeDepth, setTreeDepth] = useState(5)
 
-  const { data: networkData, isLoading } = useQuery({
-    queryKey: ['network'],
+  const {
+    data: staffUsers,
+    isLoading: usersLoadingForPicker,
+    isError: usersPickerError,
+  } = useQuery({
+    enabled: !!canPickRoot,
+    queryKey: queryKeys.users.list({ q: '', forReferralPicker: true }),
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 800))
-      
-      const nodes: NetworkNode[] = [
-        // Companies
-        { id: 'company-1', type: 'company', name: 'TechCorp', industry: 'Technology', connections: ['contact-1', 'contact-2', 'opp-1'] },
-        { id: 'company-2', type: 'company', name: 'InnoSoft', industry: 'Software', connections: ['contact-3', 'opp-2'] },
-        { id: 'company-3', type: 'company', name: 'DataSystems', industry: 'Data Analytics', connections: ['contact-4', 'contact-5'] },
-        { id: 'company-4', type: 'company', name: 'CloudNet', industry: 'Cloud Services', connections: ['contact-6', 'opp-3'] },
-        { id: 'company-5', type: 'company', name: 'DevPro', industry: 'Development', connections: ['contact-7'] },
-        
-        // Contacts
-        { id: 'contact-1', type: 'contact', name: 'Juan Garcia', email: 'juan@techcorp.com', connections: ['company-1', 'opp-1'] },
-        { id: 'contact-2', type: 'contact', name: 'Maria Lopez', email: 'maria@techcorp.com', connections: ['company-1'] },
-        { id: 'contact-3', type: 'contact', name: 'Carlos Rodriguez', email: 'carlos@innosoft.com', connections: ['company-2', 'opp-2'] },
-        { id: 'contact-4', type: 'contact', name: 'Ana Martinez', email: 'ana@datasystems.com', connections: ['company-3'] },
-        { id: 'contact-5', type: 'contact', name: 'Pedro Gonzalez', email: 'pedro@datasystems.com', connections: ['company-3'] },
-        { id: 'contact-6', type: 'contact', name: 'Sofia Hernandez', email: 'sofia@cloudnet.com', connections: ['company-4', 'opp-3'] },
-        { id: 'contact-7', type: 'contact', name: 'Luis Sanchez', email: 'luis@devpro.com', connections: ['company-5'] },
-        
-        // Opportunities
-        { id: 'opp-1', type: 'opportunity', name: 'Proyecto CRM', value: 50000, connections: ['company-1', 'contact-1'] },
-        { id: 'opp-2', type: 'opportunity', name: 'Consultoria IT', value: 30000, connections: ['company-2', 'contact-3'] },
-        { id: 'opp-3', type: 'opportunity', name: 'Migracion Cloud', value: 75000, connections: ['company-4', 'contact-6'] },
-      ]
-
-      // Calculate positions in a circular layout
-      const centerX = 400
-      const centerY = 300
-      const companies = nodes.filter(n => n.type === 'company')
-      const contacts = nodes.filter(n => n.type === 'contact')
-      const opportunities = nodes.filter(n => n.type === 'opportunity')
-
-      companies.forEach((node, i) => {
-        const angle = (i / companies.length) * 2 * Math.PI
-        node.x = centerX + Math.cos(angle) * 200
-        node.y = centerY + Math.sin(angle) * 200
-      })
-
-      contacts.forEach((node, i) => {
-        const angle = (i / contacts.length) * 2 * Math.PI + 0.3
-        node.x = centerX + Math.cos(angle) * 120
-        node.y = centerY + Math.sin(angle) * 120
-      })
-
-      opportunities.forEach((node, i) => {
-        const angle = (i / opportunities.length) * 2 * Math.PI + 0.6
-        node.x = centerX + Math.cos(angle) * 280
-        node.y = centerY + Math.sin(angle) * 280
-      })
-
-      return nodes
-    }
+      const response = await api.get('/users', { params: { items: 500 } })
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapUserResource)
+    },
   })
 
+  const {
+    data: treePayload,
+    isLoading: treeLoading,
+    isError: treeError,
+    error: treeQueryError,
+    refetch,
+  } = useQuery({
+    queryKey: queryKeys.referralNetworks.tree(rootUserId, treeDepth),
+    queryFn: async (): Promise<ReferralTreePayload> => {
+      if (rootUserId) {
+        const response = await api.get('/referral_networks/tree', {
+          params: { root_user_id: rootUserId, depth: treeDepth },
+        })
+        const data = response.data?.data as ReferralTreePayload | undefined
+        if (!data) throw new Error('Respuesta sin datos de red')
+        return data
+      }
+      const response = await api.get('/referral_networks/my_network')
+      const data = response.data?.data as ReferralTreePayload | undefined
+      if (!data) throw new Error('Respuesta sin datos de red')
+      return data
+    },
+  })
+
+  const graphNodes = useMemo(() => {
+    if (!treePayload) return [] as ConsultantNode[]
+    const hasEdges = (treePayload.edges?.length ?? 0) > 0
+    if (!treePayload.root && !hasEdges) return [] as ConsultantNode[]
+    return layoutNodes(buildConsultantNodes(treePayload))
+  }, [treePayload])
+
   const filteredNodes = useMemo(() => {
-    if (!networkData) return []
-    
-    return networkData.filter(node => {
-      const matchesSearch = node.name.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesFilter = filterType === 'all' || node.type === filterType
-      return matchesSearch && matchesFilter
-    })
-  }, [networkData, searchTerm, filterType])
-
-  const getNodeColor = (type: string) => {
-    switch (type) {
-      case 'company': return 'bg-blue-500'
-      case 'contact': return 'bg-green-500'
-      case 'opportunity': return 'bg-amber-500'
-      default: return 'bg-gray-500'
-    }
-  }
-
-  const getNodeIcon = (type: string) => {
-    switch (type) {
-      case 'company': return Building2
-      case 'contact': return User
-      case 'opportunity': return LinkIcon
-      default: return NetworkIcon
-    }
-  }
+    const q = searchTerm.trim().toLowerCase()
+    if (!q) return graphNodes
+    return graphNodes.filter(
+      (node) =>
+        node.name.toLowerCase().includes(q) ||
+        node.role.toLowerCase().includes(q) ||
+        node.id.includes(q),
+    )
+  }, [graphNodes, searchTerm])
 
   const stats = useMemo(() => {
-    if (!networkData) return { companies: 0, contacts: 0, opportunities: 0, connections: 0 }
-    
-    return {
-      companies: networkData.filter(n => n.type === 'company').length,
-      contacts: networkData.filter(n => n.type === 'contact').length,
-      opportunities: networkData.filter(n => n.type === 'opportunity').length,
-      connections: networkData.reduce((acc, n) => acc + n.connections.length, 0) / 2
-    }
-  }, [networkData])
+    const n = graphNodes.length
+    const e = Math.round(
+      graphNodes.reduce((acc, node) => acc + node.connections.length, 0) / 2,
+    )
+    const maxDepth = graphNodes.reduce((m, node) => Math.max(m, node.treeDepth), 0)
+    return { consultants: n, links: e, maxDepth }
+  }, [graphNodes])
+
+  useEffect(() => {
+    if (!treeError || !treeQueryError) return
+    toast.error(formatRailsError(treeQueryError, 'No se pudo cargar la red de referidos'))
+  }, [treeError, treeQueryError])
+
+  const isLoading = treeLoading || (canPickRoot && usersLoadingForPicker)
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Red de Contactos</h1>
-          <p className="text-sm text-muted-foreground">
-            Visualiza las conexiones entre contactos, empresas y oportunidades
-          </p>
-        </div>
-      </div>
+    <AppPageShell contentClassName="gap-8">
+      <PageHeader
+        title="Red de referidos"
+        description="Árbol de consultores enlazados por referencias del tenant (datos desde el API)."
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {canPickRoot && (
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="space-y-2 min-w-[220px]">
+            <label className="text-sm font-medium">Raíz del árbol</label>
+            <Select
+              value={rootUserId ?? '__me__'}
+              onValueChange={(v) => {
+                setRootUserId(v === '__me__' ? null : v)
+                setSelectedNode(null)
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar usuario raíz" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__me__">
+                  Mi red ({currentUser?.name ?? currentUser?.email ?? 'usuario actual'})
+                </SelectItem>
+                {staffUsers
+                  ?.filter((u) => u.name || u.email || u.id)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email || `Usuario ${u.id}`}
+                      {u.role ? ` · ${u.role}` : ''}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Profundidad (solo vista por árbol)</label>
+            <Select
+              value={String(treeDepth)}
+              onValueChange={(v) => {
+                setTreeDepth(Number(v))
+                setSelectedNode(null)
+              }}
+              disabled={!rootUserId}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[2, 3, 5, 7, 10].map((d) => (
+                  <SelectItem key={d} value={String(d)}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!rootUserId && (
+              <p className="text-xs text-muted-foreground">
+                Para &quot;Mi red&quot;, el servidor usa profundidad 5.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+      {canPickRoot && usersPickerError && (
+        <p className="text-sm text-muted-foreground">
+          No se pudo cargar la lista de usuarios para cambiar la raíz. Puedes seguir usando &quot;Mi red&quot;.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                <Building2 className="h-5 w-5 text-blue-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
+                <User className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">{stats.companies}</p>
-                <p className="text-xs text-muted-foreground">Empresas</p>
+                <p className="text-2xl font-semibold">{stats.consultants}</p>
+                <p className="text-xs text-muted-foreground">Consultores en el árbol</p>
               </div>
             </div>
           </CardContent>
@@ -176,77 +373,51 @@ function NetworkPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <User className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{stats.contacts}</p>
-                <p className="text-xs text-muted-foreground">Contactos</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-                <LinkIcon className="h-5 w-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{stats.opportunities}</p>
-                <p className="text-xs text-muted-foreground">Oportunidades</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
                 <NetworkIcon className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">{stats.connections}</p>
-                <p className="text-xs text-muted-foreground">Conexiones</p>
+                <p className="text-2xl font-semibold">{stats.links}</p>
+                <p className="text-xs text-muted-foreground">Relaciones referrer → referido</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <Maximize2 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{stats.maxDepth}</p>
+                <p className="text-xs text-muted-foreground">Nivel máximo desde la raíz</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 w-64"
-            />
-          </div>
-          <Select value={filterType} onValueChange={(v) => setFilterType(v as typeof filterType)}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="company">Empresas</SelectItem>
-              <SelectItem value="contact">Contactos</SelectItem>
-              <SelectItem value="opportunity">Oportunidades</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, rol o ID…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 w-64"
+          />
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            Actualizar
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.max(0.5, z - 0.1))}>
             <ZoomOut className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground w-12 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button variant="outline" size="icon" onClick={() => setZoom(z => Math.min(2, z + 0.1))}>
+          <span className="text-sm text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.min(2, z + 0.1))}>
             <ZoomIn className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="icon" onClick={() => setZoom(1)}>
@@ -255,46 +426,56 @@ function NetworkPage() {
         </div>
       </div>
 
-      {/* Network Visualization */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* Graph Area */}
         <Card className="lg:col-span-3">
           <CardContent className="p-0">
             {isLoading ? (
               <div className="h-[500px] flex items-center justify-center">
                 <Skeleton className="h-full w-full" />
               </div>
+            ) : treeError ? (
+              <div className="h-[240px] flex flex-col items-center justify-center gap-2 p-6 text-center">
+                <p className="text-sm text-destructive">
+                  {formatRailsError(treeQueryError, 'Error al cargar la red')}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                  Reintentar
+                </Button>
+              </div>
+            ) : graphNodes.length === 0 ? (
+              <div className="h-[240px] flex items-center justify-center p-6 text-center text-muted-foreground text-sm">
+                No hay referidos registrados bajo esta raíz. Cuando existan relaciones en el tenant, aparecerán aquí.
+              </div>
             ) : (
-              <div className="relative h-[500px] overflow-hidden bg-muted/30">
-                <svg 
-                  className="w-full h-full"
+              <div className="relative h-[520px] overflow-hidden bg-muted/30">
+                <svg
+                  className="w-full h-full select-none"
                   style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+                  viewBox="0 0 800 560"
+                  preserveAspectRatio="xMidYMid meet"
                 >
-                  {/* Draw connections */}
-                  {filteredNodes.map(node => 
-                    node.connections.map(connId => {
-                      const connNode = networkData?.find(n => n.id === connId)
-                      if (!connNode || !filteredNodes.includes(connNode)) return null
-                      if (node.id > connId) return null // Avoid duplicate lines
-                      
+                  {/* Aristas */}
+                  {filteredNodes.map((node) =>
+                    node.connections.map((connId) => {
+                      const other = graphNodes.find((n) => n.id === connId)
+                      if (!other || node.id >= connId) return null
+                      if (!filteredNodes.includes(other)) return null
                       return (
                         <line
                           key={`${node.id}-${connId}`}
                           x1={node.x}
                           y1={node.y}
-                          x2={connNode.x}
-                          y2={connNode.y}
+                          x2={other.x}
+                          y2={other.y}
                           stroke="currentColor"
-                          strokeOpacity={0.2}
-                          strokeWidth={1}
+                          strokeOpacity={0.25}
+                          strokeWidth={1.5}
                         />
                       )
-                    })
+                    }),
                   )}
-                  
-                  {/* Draw nodes */}
-                  {filteredNodes.map(node => {
-                    const Icon = getNodeIcon(node.type)
+                  {filteredNodes.map((node) => {
+                    const r = node.treeDepth === 0 ? 22 : 16
                     return (
                       <g
                         key={node.id}
@@ -303,40 +484,35 @@ function NetworkPage() {
                         onClick={() => setSelectedNode(node)}
                       >
                         <circle
-                          r={node.type === 'company' ? 24 : node.type === 'opportunity' ? 20 : 16}
+                          r={r}
                           className={cn(
-                            "transition-all",
-                            node.type === 'company' ? 'fill-blue-500' : 
-                            node.type === 'contact' ? 'fill-green-500' : 'fill-amber-500',
-                            selectedNode?.id === node.id && 'stroke-2 stroke-foreground'
+                            node.active ? 'fill-primary/90' : 'fill-muted-foreground/50',
+                            selectedNode?.id === node.id && 'stroke-2 stroke-foreground',
                           )}
                         />
+                        <title>{[node.name, node.role ? `(${node.role})` : ''].filter(Boolean).join(' ')}</title>
                         <text
-                          y={node.type === 'company' ? 40 : 32}
+                          y={r + 14}
                           textAnchor="middle"
-                          className="text-xs fill-foreground"
-                          style={{ fontSize: '10px' }}
+                          className="fill-foreground text-[11px]"
                         >
-                          {node.name.length > 12 ? node.name.slice(0, 12) + '...' : node.name}
+                          {(node.name || `ID ${node.id}`).length > 14
+                            ? `${(node.name || node.id).slice(0, 14)}…`
+                            : node.name || node.id}
                         </text>
                       </g>
                     )
                   })}
                 </svg>
 
-                {/* Legend */}
-                <div className="absolute bottom-4 left-4 flex gap-4 bg-background/80 backdrop-blur-sm rounded-lg p-3">
+                <div className="absolute bottom-4 left-4 flex gap-4 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-blue-500" />
-                    <span className="text-xs">Empresa</span>
+                    <div className="h-3 w-3 rounded-full bg-primary/90" />
+                    <span className="text-xs">Activo</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-green-500" />
-                    <span className="text-xs">Contacto</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-amber-500" />
-                    <span className="text-xs">Oportunidad</span>
+                    <div className="h-3 w-3 rounded-full bg-muted-foreground/50" />
+                    <span className="text-xs">Inactivo</span>
                   </div>
                 </div>
               </div>
@@ -344,103 +520,59 @@ function NetworkPage() {
           </CardContent>
         </Card>
 
-        {/* Details Panel */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Detalles</CardTitle>
+            <CardTitle className="text-base">Detalle</CardTitle>
           </CardHeader>
           <CardContent>
             {selectedNode ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className={cn(
-                    "flex h-12 w-12 items-center justify-center rounded-lg",
-                    selectedNode.type === 'company' ? 'bg-blue-100' :
-                    selectedNode.type === 'contact' ? 'bg-green-100' : 'bg-amber-100'
-                  )}>
-                    {(() => {
-                      const Icon = getNodeIcon(selectedNode.type)
-                      return <Icon className={cn(
-                        "h-6 w-6",
-                        selectedNode.type === 'company' ? 'text-blue-500' :
-                        selectedNode.type === 'contact' ? 'text-green-500' : 'text-amber-500'
-                      )} />
-                    })()}
-                  </div>
+                  <Avatar className="h-12 w-12">
+                    <AvatarFallback>{initialsFromName(selectedNode.name || selectedNode.id)}</AvatarFallback>
+                  </Avatar>
                   <div>
-                    <h3 className="font-medium">{selectedNode.name}</h3>
+                    <h3 className="font-medium">{selectedNode.name || `Usuario ${selectedNode.id}`}</h3>
                     <Badge variant="secondary" className="text-xs">
-                      {selectedNode.type === 'company' ? 'Empresa' :
-                       selectedNode.type === 'contact' ? 'Contacto' : 'Oportunidad'}
+                      {selectedNode.role || 'sin rol'}
+                    </Badge>{' '}
+                    <Badge variant={selectedNode.active ? 'outline' : 'destructive'} className="text-xs">
+                      {selectedNode.active ? 'Activo' : 'Inactivo'}
                     </Badge>
                   </div>
                 </div>
-
-                {selectedNode.email && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Email</p>
-                    <p className="text-sm">{selectedNode.email}</p>
-                  </div>
-                )}
-
-                {selectedNode.industry && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Industria</p>
-                    <p className="text-sm">{selectedNode.industry}</p>
-                  </div>
-                )}
-
-                {selectedNode.value && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Valor</p>
-                    <p className="text-sm font-medium">
-                      {new Intl.NumberFormat('es-ES', { 
-                        style: 'currency', 
-                        currency: 'EUR' 
-                      }).format(selectedNode.value)}
-                    </p>
-                  </div>
-                )}
-
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Conexiones ({selectedNode.connections.length})
+                    Referidos enlazados ({selectedNode.connections.length})
                   </p>
-                  <div className="space-y-2">
-                    {selectedNode.connections.map(connId => {
-                      const connNode = networkData?.find(n => n.id === connId)
-                      if (!connNode) return null
-                      const Icon = getNodeIcon(connNode.type)
-                      
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {selectedNode.connections.map((connId) => {
+                      const other = graphNodes.find((n) => n.id === connId)
+                      if (!other) return null
                       return (
-                        <div 
+                        <button
+                          type="button"
                           key={connId}
-                          className="flex items-center gap-2 p-2 rounded-md hover:bg-muted cursor-pointer"
-                          onClick={() => setSelectedNode(connNode)}
+                          className="flex w-full items-center gap-2 rounded-md p-2 text-left hover:bg-muted"
+                          onClick={() => setSelectedNode(other)}
                         >
-                          <Icon className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm">{connNode.name}</span>
-                        </div>
+                          <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="text-sm">{other.name || `Usuario ${other.id}`}</span>
+                        </button>
                       )
                     })}
                   </div>
                 </div>
-
-                <Button variant="outline" className="w-full" size="sm">
-                  Ver Perfil Completo
-                </Button>
               </div>
             ) : (
               <div className="text-center py-8">
                 <NetworkIcon className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground mt-2">
-                  Selecciona un nodo para ver sus detalles
-                </p>
+                <p className="text-sm text-muted-foreground mt-2">Selecciona un consultor en el gráfico</p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-    </div>
+    </AppPageShell>
   )
 }

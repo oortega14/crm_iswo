@@ -67,7 +67,7 @@ module Api
 
       def stage_params
         params.require(:pipeline_stage).permit(
-          :name, :description, :position, :probability,
+          :name, :position, :probability,
           :closed_won, :closed_lost, :color
         )
       end

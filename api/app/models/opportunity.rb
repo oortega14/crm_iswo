@@ -46,6 +46,11 @@ class Opportunity < ApplicationRecord
            foreign_key: :duplicate_of_opportunity_id,
            dependent: :destroy
 
+  # API/SPA usan `notes` y `expected_close_date`; en BD son description / expected_close_on.
+  alias_attribute :notes, :description
+  alias_attribute :expected_close_date, :expected_close_on
+  alias_attribute :lost_reason, :close_reason
+
   # ---- Validaciones ---------------------------------------------------------
   validates :title, presence: true
   validates :estimated_value,
@@ -73,6 +78,29 @@ class Opportunity < ApplicationRecord
 
   def touch_activity!
     update_column(:last_activity_at, Time.current)
+  end
+
+  # BANT detallado vive en custom_fields["bant_data"] (no hay columna dedicada).
+  def bant_data
+    (custom_fields || {})["bant_data"] || {}
+  end
+
+  def bant_data=(value)
+    return if value.nil?
+
+    incoming =
+      if value.is_a?(Hash)
+        value.deep_stringify_keys
+      else
+        {}
+      end
+    return if incoming.blank?
+
+    existing = (bant_data || {}).deep_stringify_keys
+    merged   = existing.deep_merge(incoming)
+    cf       = (custom_fields || {}).dup
+    cf["bant_data"] = merged
+    self.custom_fields = cf
   end
 
   private

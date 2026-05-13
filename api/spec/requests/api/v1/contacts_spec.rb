@@ -131,21 +131,121 @@ RSpec.describe "Api::V1::Contacts", type: :request do
     end
   end
 
+  describe "GET /api/v1/contacts/import_template" do
+    it "devuelve plantilla Excel .xlsx (200)" do
+      get "/api/v1/contacts/import_template", headers: auth_headers(manager)
+      expect(response).to have_http_status(:ok)
+      expect(response.headers["Content-Type"]).to include("spreadsheet")
+      expect(response.headers["Content-Disposition"]).to include("plantilla_contactos.xlsx")
+      expect(response.body.bytesize).to be_positive
+    end
+
+    it "consultant puede descargar plantilla (create)" do
+      get "/api/v1/contacts/import_template", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "POST /api/v1/contacts/import" do
+    def csv_upload(email_local = nil)
+      suffix = email_local || SecureRandom.hex(4)
+      body = <<~CSV
+        first_name,last_name,email,country
+        Import,Test,import_test_#{suffix}@example.com,CO
+      CSV
+      tempfile = Tempfile.new(["contacts", ".csv"])
+      tempfile.write(body)
+      tempfile.rewind
+      Rack::Test::UploadedFile.new(tempfile.path, "text/csv")
+    end
+
+    it "crea contactos desde CSV (200)" do
+      post "/api/v1/contacts/import",
+           params: { file: csv_upload },
+           headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "created_count")).to eq(1)
+      expect(json.dig("data", "errors")).to eq([])
+    end
+
+    it "crea contactos desde Excel .xlsx (200)" do
+      require "caxlsx"
+
+      tempfile = nil
+      suffix = SecureRandom.hex(4)
+      package = Axlsx::Package.new
+      package.workbook.add_worksheet(name: "Contactos") do |sheet|
+        sheet.add_row %w[first_name last_name email country]
+        sheet.add_row ["Import", "Test", "import_xlsx_#{suffix}@example.com", "CO"]
+      end
+      tempfile = Tempfile.new(["contacts", ".xlsx"], binmode: true)
+      package.serialize(tempfile.path)
+      tempfile.rewind
+      upload = Rack::Test::UploadedFile.new(
+        tempfile.path,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
+
+      post "/api/v1/contacts/import",
+           params: { file: upload },
+           headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "created_count")).to eq(1)
+      expect(json.dig("data", "errors")).to eq([])
+    ensure
+      tempfile&.close!
+    end
+
+    it "viewer no puede importar (403)" do
+      viewer = create(:user, :viewer, tenant: tenant)
+      post "/api/v1/contacts/import",
+           params: { file: csv_upload },
+           headers: auth_headers(viewer)
+
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   describe "POST /api/v1/contacts/export" do
     it "manager encola ExportGenerationJob y devuelve 202" do
       expect(ExportGenerationJob).to receive(:perform_later)
 
       post "/api/v1/contacts/export",
-           params: { format: "csv" }.to_json,
+           params: { export_format: "xlsx" }.to_json,
            headers: auth_headers(manager)
 
       expect(response).to have_http_status(:accepted)
-      expect(json.dig("data", "attributes", "format")).to eq("csv")
+      expect(json.dig("data", "attributes", "format")).to eq("xlsx")
+    end
+
+    it "acepta filters como objeto JSON (sin error 500)" do
+      expect(ExportGenerationJob).to receive(:perform_later)
+
+      post "/api/v1/contacts/export",
+           params: { export_format: "xlsx", filters: { kind_eq: "person" } }.to_json,
+           headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:accepted)
+      expect(json.dig("data", "attributes", "format")).to eq("xlsx")
+      expect(json.dig("data", "attributes", "filters")).to include("kind_eq" => "person")
+    end
+
+    it "usa xlsx por defecto si no se envía export_format (API default format=json no rompe el enum)" do
+      expect(ExportGenerationJob).to receive(:perform_later)
+
+      post "/api/v1/contacts/export",
+           params: { filters: {} }.to_json,
+           headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:accepted)
+      expect(json.dig("data", "attributes", "format")).to eq("xlsx")
     end
 
     it "consultant no puede exportar (403)" do
       post "/api/v1/contacts/export",
-           params: { format: "csv" }.to_json,
+           params: { export_format: "xlsx" }.to_json,
            headers: auth_headers(consultant)
       expect(response).to have_http_status(:forbidden)
     end

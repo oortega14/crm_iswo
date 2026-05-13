@@ -1,13 +1,8 @@
 import { createFileRoute, Outlet, Link, useLocation } from '@tanstack/react-router'
-import { 
-  Settings, 
-  GitBranch, 
-  Users, 
-  Puzzle, 
-  FileText,
-  ChevronRight
-} from 'lucide-react'
+import { GitBranch, Users, Puzzle, FileText, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 export const Route = createFileRoute('/_app/settings')({
   component: SettingsLayout,
@@ -45,14 +40,11 @@ function SettingsLayout() {
   const isSettingsRoot = location.pathname === '/settings'
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Configuracion</h1>
-        <p className="text-sm text-muted-foreground">
-          Administra la configuracion de tu CRM
-        </p>
-      </div>
+    <AppPageShell contentClassName="gap-8">
+      <PageHeader
+        title="Configuración"
+        description="Administra la configuración de tu CRM"
+      />
 
       {isSettingsRoot ? (
         // Settings Index - Show cards
@@ -108,6 +100,6 @@ function SettingsLayout() {
           </div>
         </div>
       )}
-    </div>
+    </AppPageShell>
   )
 }

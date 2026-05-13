@@ -7,11 +7,10 @@
 # Busca todos los Reminder con status="pending" y remind_at <= now,
 # los envía por el canal indicado y los marca como sent / failed.
 #
-# Canales soportados:
+# Canales soportados (RFC-001):
 #   email     → Postmark (ReminderMailer)
 #   whatsapp  → WhatsappDeliveryJob (persiste outbound WhatsappMessage)
 #   in_app    → solo se marca como sent (el SPA lo muestra via polling/ws)
-#   sms       → TODO (Twilio)
 # ============================================================================
 class ReminderNotificationJob < ApplicationJob
   queue_as :critical
@@ -39,25 +38,41 @@ class ReminderNotificationJob < ApplicationJob
     when "whatsapp"
       enqueue_whatsapp(reminder)
     when "in_app"
+      create_in_app_notification(reminder)
       reminder.mark_sent!
-    when "sms"
-      Rails.logger.warn("[ReminderNotificationJob] SMS aún no implementado, marcando failed")
-      reminder.mark_failed!("sms_not_implemented")
     else
       reminder.mark_failed!("channel_unknown:#{reminder.channel}")
     end
+  end
+
+  def create_in_app_notification(reminder)
+    Notification.create!(
+      tenant:        reminder.tenant,
+      user:          reminder.user,
+      kind:          "reminder_due",
+      title:         reminder.subject.presence || "Recordatorio pendiente",
+      body:          reminder.message.presence,
+      resource_type: "Opportunity",
+      resource_id:   reminder.opportunity_id
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[ReminderNotificationJob] in_app notification fallida reminder=#{reminder.id}: #{e.message}")
   end
 
   def enqueue_whatsapp(reminder)
     contact = reminder.opportunity&.contact || reminder.contact
     return reminder.mark_failed!("missing_contact") if contact.nil? || contact.phone_e164.blank?
 
-    msg = reminder.tenant.whatsapp_messages.create!(
+    tenant = reminder.tenant
+    provider = tenant.whatsapp_outbound_provider
+    from     = tenant.whatsapp_outbound_from_number_for(provider)
+
+    msg = tenant.whatsapp_messages.create!(
       contact:     contact,
       opportunity: reminder.opportunity,
       direction:   "out",
-      provider:    ENV.fetch("WHATSAPP_PROVIDER", "twilio"),
-      from_number: reminder.tenant.settings.dig("whatsapp", "number") || ENV.fetch("TWILIO_WHATSAPP_NUMBER", ""),
+      provider:    provider,
+      from_number: from,
       to_number:   contact.phone_e164,
       body:        reminder.body.presence || reminder.title,
       status:      "queued"

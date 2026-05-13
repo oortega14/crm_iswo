@@ -79,6 +79,26 @@ RSpec.describe WhatsApp::Adapters::Cloud do
       expect(stub).to have_been_requested
     end
 
+    it "normaliza token (Bearer duplicado, comillas y saltos) en el header Authorization" do
+      tenant.update!(settings: {
+                       "whatsapp" => {
+                         "cloud_access_token"    => %[  \r\n"Bearer EAAGstripped"\n ],
+                         "cloud_phone_number_id" => "1111222233334444"
+                       }
+                     })
+
+      stub = stub_request(:post, endpoint)
+             .with(headers: { "Authorization" => "Bearer EAAGstripped" })
+             .to_return(
+               status:  200,
+               body:    { messages: [{ id: "wamid.clean" }] }.to_json,
+               headers: { "Content-Type" => "application/json" }
+             )
+
+      adapter.deliver(message)
+      expect(stub).to have_been_requested
+    end
+
     it "eleva DeliveryError con code cuando Meta responde error" do
       stub_request(:post, endpoint).to_return(
         status:  400,
@@ -88,6 +108,22 @@ RSpec.describe WhatsApp::Adapters::Cloud do
 
       expect { adapter.deliver(message) }
         .to raise_error(WhatsApp::MessageSender::DeliveryError, /Invalid parameter.*code 100/)
+    end
+
+    it "mensaje OAuth 190 incluye orientación sobre token válido" do
+      stub_request(:post, endpoint).to_return(
+        status:  401,
+        body:    {
+          error: {
+            message: "Invalid OAuth access token - Cannot parse access token",
+            type: "OAuthException", code: 190
+          }
+        }.to_json,
+        headers: { "Content-Type" => "application/json" }
+      )
+
+      expect { adapter.deliver(message) }
+        .to raise_error(WhatsApp::MessageSender::DeliveryError, /code 190.*Probar conexión|whatsapp_business_messaging/)
     end
 
     it "eleva DeliveryError si faltan credenciales" do

@@ -10,14 +10,14 @@ module Api
 
       # GET /api/v1/users
       def index
-        scope = policy_scope(User).kept.order(:first_name, :last_name)
+        scope = policy_scope(User).kept.order(:name, :email)
         scope = scope.where(role: params[:role])     if params[:role].present?
         scope = scope.where(active: cast_bool(params[:active])) if params[:active].present?
 
         if params[:q].present?
           like = "%#{params[:q]}%"
           scope = scope.where(
-            "first_name ILIKE :q OR last_name ILIKE :q OR email ILIKE :q", q: like
+            "name ILIKE :q OR email ILIKE :q", q: like
           )
         end
 
@@ -77,8 +77,12 @@ module Api
 
       # POST /api/v1/users/:id/reset_password
       def reset_password
-        authorize @user, :update?
-        @user.send_reset_password_instructions
+        authorize @user, :reset_password?
+        Users::PasswordResetIssuer.new(user: @user).call
+        head :accepted
+      rescue StandardError => e
+        # No romper la UI de gestión por fallos de mailer/SMTP en entorno local.
+        Rails.logger.error("[UsersController#reset_password] user_id=#{@user&.id} #{e.class}: #{e.message}")
         head :accepted
       end
 
@@ -89,7 +93,7 @@ module Api
       end
 
       def user_params
-        params.require(:user).permit(:first_name, :last_name, :email, :phone, :role, :active, :avatar_url)
+        params.require(:user).permit(:name, :first_name, :last_name, :email, :phone, :role, :active, :avatar_url)
       end
 
       def cast_bool(v)

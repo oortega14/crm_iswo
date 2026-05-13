@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Plus, Calendar, Clock, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,60 +12,106 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatDistanceToNow, format } from 'date-fns'
+import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import type { Reminder } from '@/types'
+import { toast } from 'sonner'
+import api, { formatRailsError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryClient'
+import type { OpportunityReminderRow } from '@/lib/opportunityApi'
+
+type ReminderChannel = 'email' | 'whatsapp' | 'in_app'
 
 interface RemindersTabProps {
   opportunityId: string
-  reminders: Reminder[]
-  onAddReminder: (reminder: Omit<Reminder, 'id' | 'createdAt' | 'opportunityId'>) => void
-  onDeleteReminder: (id: string) => void
+  reminders: OpportunityReminderRow[]
 }
 
-export function RemindersTab({ 
-  opportunityId, 
-  reminders, 
-  onAddReminder, 
-  onDeleteReminder 
-}: RemindersTabProps) {
-  const [isAdding, setIsAdding] = useState(false)
-  const [title, setTitle] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
+const channelLabel: Record<string, string> = {
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+  in_app: 'En app',
+}
 
-  const handleSubmit = () => {
-    if (!title || !dueDate) return
-    
-    onAddReminder({
-      title,
-      dueDate,
-      priority,
-      completed: false,
-      userId: 'current-user',
-    })
-    
-    setTitle('')
-    setDueDate('')
-    setPriority('medium')
-    setIsAdding(false)
+export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
+  const queryClient = useQueryClient()
+  const [isAdding, setIsAdding] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [remindAt, setRemindAt] = useState('')
+  const [channel, setChannel] = useState<ReminderChannel>('in_app')
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.byOpportunity(opportunityId) })
+    void queryClient.invalidateQueries({ queryKey: ['reminders'] })
   }
 
-  const priorityColors = {
-    low: 'bg-slate-100 text-slate-700',
-    medium: 'bg-amber-100 text-amber-700',
-    high: 'bg-red-100 text-red-700',
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!subject.trim() || !remindAt) {
+        throw new Error('Completa asunto y fecha')
+      }
+      await api.post(`/opportunities/${opportunityId}/reminders`, {
+        reminder: {
+          remind_at: remindAt,
+          channel,
+          subject: subject.trim(),
+          message: message.trim() || undefined,
+        },
+      })
+    },
+    onSuccess: () => {
+      toast.success('Recordatorio creado')
+      invalidate()
+      setSubject('')
+      setMessage('')
+      setRemindAt('')
+      setChannel('in_app')
+      setIsAdding(false)
+    },
+    onError: (e: unknown) => {
+      toast.error(formatRailsError(e))
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/reminders/${id}`)
+    },
+    onSuccess: () => {
+      toast.success('Recordatorio eliminado')
+      invalidate()
+    },
+    onError: (e: unknown) => {
+      toast.error(formatRailsError(e))
+    },
+  })
+
+  const statusBadge = (status: string) => {
+    switch (status) {
+      case 'done':
+        return (
+          <Badge variant="secondary" className="bg-green-100 text-green-800">
+            Hecho
+          </Badge>
+        )
+      case 'failed':
+        return <Badge variant="destructive">Fallido</Badge>
+      case 'sent':
+        return (
+          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+            Enviado
+          </Badge>
+        )
+      default:
+        return <Badge variant="secondary">Pendiente</Badge>
+    }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium">Recordatorios</h4>
-        <Button 
-          variant="outline" 
-          size="sm"
-          onClick={() => setIsAdding(!isAdding)}
-        >
+        <Button variant="outline" size="sm" onClick={() => setIsAdding(!isAdding)}>
           <Plus className="mr-1 h-3 w-3" />
           Agregar
         </Button>
@@ -73,34 +120,43 @@ export function RemindersTab({
       {isAdding && (
         <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
           <div className="space-y-2">
-            <Label htmlFor="title">Titulo</Label>
+            <Label htmlFor="rem-subject">Asunto</Label>
             <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              id="rem-subject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
               placeholder="Ej: Llamar para seguimiento"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="rem-message">Mensaje (opcional)</Label>
+            <Input
+              id="rem-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Detalle breve"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="dueDate">Fecha</Label>
+              <Label htmlFor="rem-at">Fecha y hora</Label>
               <Input
-                id="dueDate"
+                id="rem-at"
                 type="datetime-local"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                value={remindAt}
+                onChange={(e) => setRemindAt(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label>Prioridad</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as 'low' | 'medium' | 'high')}>
+              <Label>Canal</Label>
+              <Select value={channel} onValueChange={(v) => setChannel(v as ReminderChannel)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">Baja</SelectItem>
-                  <SelectItem value="medium">Media</SelectItem>
-                  <SelectItem value="high">Alta</SelectItem>
+                  <SelectItem value="in_app">En app</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -109,8 +165,12 @@ export function RemindersTab({
             <Button variant="outline" size="sm" onClick={() => setIsAdding(false)}>
               Cancelar
             </Button>
-            <Button size="sm" onClick={handleSubmit}>
-              Crear Recordatorio
+            <Button
+              size="sm"
+              disabled={createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              Crear recordatorio
             </Button>
           </div>
         </div>
@@ -128,35 +188,40 @@ export function RemindersTab({
               key={reminder.id}
               className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
             >
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="mt-0.5 shrink-0">
                   <Bell className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium">{reminder.title}</p>
-                  <div className="flex items-center gap-2 mt-1">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{reminder.subject}</p>
+                  {reminder.message ? (
+                    <p className="text-xs text-muted-foreground truncate">{reminder.message}</p>
+                  ) : null}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Calendar className="h-3 w-3" />
-                      {format(new Date(reminder.dueDate), 'dd MMM yyyy', { locale: es })}
+                      {reminder.remind_at
+                        ? format(new Date(reminder.remind_at), 'dd MMM yyyy', { locale: es })
+                        : '—'}
                     </span>
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {format(new Date(reminder.dueDate), 'HH:mm')}
+                      {reminder.remind_at ? format(new Date(reminder.remind_at), 'HH:mm') : '—'}
                     </span>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge className={priorityColors[reminder.priority]}>
-                  {reminder.priority === 'low' && 'Baja'}
-                  {reminder.priority === 'medium' && 'Media'}
-                  {reminder.priority === 'high' && 'Alta'}
+              <div className="flex items-center gap-2 shrink-0">
+                <Badge variant="outline" className="text-[10px]">
+                  {channelLabel[reminder.channel] ?? reminder.channel}
                 </Badge>
+                {statusBadge(reminder.status)}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => onDeleteReminder(reminder.id)}
+                  disabled={deleteMutation.isPending}
+                  onClick={() => deleteMutation.mutate(reminder.id)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>

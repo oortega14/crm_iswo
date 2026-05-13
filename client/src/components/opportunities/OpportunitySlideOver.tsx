@@ -2,18 +2,13 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import {
-  X,
-  Phone,
-  Mail,
-  Building,
-  Calendar,
-  MessageSquare,
-  FileText,
-  Bell,
-  History,
-} from 'lucide-react'
+import { X, Building, MessageSquare, FileText, Bell, History } from 'lucide-react'
 import api from '@/lib/api'
+import {
+  jsonApiPrimaryList,
+  mapOpportunityReminderResource,
+  toOpportunityUpdatePayload,
+} from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import {
   cn,
@@ -35,8 +30,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { BantSliders } from './BantSliders'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
-import { WhatsAppThread } from './WhatsAppThread'
-import type { Opportunity, OpportunityLog, Reminder, WhatsAppMessage } from '@/types'
+import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
+import { ContactActionButtons } from './ContactActionButtons'
+import type { Opportunity, OpportunityLog } from '@/types'
 
 interface OpportunitySlideOverProps {
   opportunity?: Opportunity
@@ -64,34 +60,66 @@ export function OpportunitySlideOver({
     enabled: !!opportunity?.id && activeTab === 'activity',
   })
 
-  // Fetch reminders
+  // Fetch reminders (JSON:API)
   const { data: reminders, isLoading: remindersLoading } = useQuery({
-    queryKey: ['reminders', 'opportunity', opportunity?.id],
+    queryKey: queryKeys.reminders.byOpportunity(opportunity?.id || ''),
     queryFn: async () => {
-      const response = await api.get<{ data: Reminder[] }>(
-        `/opportunities/${opportunity?.id}/reminders`
-      )
-      return response.data.data
+      const response = await api.get(`/opportunities/${opportunity?.id}/reminders`)
+      return jsonApiPrimaryList(response.data).map(mapOpportunityReminderResource)
     },
     enabled: !!opportunity?.id && activeTab === 'reminders',
   })
 
-  // Fetch WhatsApp messages
-  const { data: messages, isLoading: messagesLoading } = useQuery({
+  // Fetch WhatsApp messages (JSON:API)
+  const { data: threadMessages, isLoading: messagesLoading } = useQuery({
     queryKey: queryKeys.opportunities.messages(opportunity?.id || ''),
     queryFn: async () => {
-      const response = await api.get<{ data: WhatsAppMessage[] }>(
-        `/opportunities/${opportunity?.id}/whatsapp_messages`
-      )
-      return response.data.data
+      const response = await api.get(`/opportunities/${opportunity?.id}/whatsapp_messages`)
+      const allowed: ThreadMessage['status'][] = [
+        'pending',
+        'queued',
+        'sent',
+        'delivered',
+        'read',
+        'failed',
+      ]
+      return jsonApiPrimaryList(response.data)
+        .map((r): ThreadMessage => {
+          const a = r.attributes ?? {}
+          const dir = String(a.direction ?? 'in')
+          const st = String(a.status ?? 'sent')
+          return {
+            id: String(r.id ?? ''),
+            content: String(a.body ?? ''),
+            timestamp: String(a.created_at ?? ''),
+            isOutgoing: dir === 'out' || dir.endsWith('_out'),
+            status: (allowed.includes(st as ThreadMessage['status'])
+              ? st
+              : 'sent') as ThreadMessage['status'],
+            errorMessage:
+              typeof a.error_message === 'string' && a.error_message.trim()
+                ? String(a.error_message)
+                : undefined,
+          }
+        })
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
     },
     enabled: !!opportunity?.id && activeTab === 'whatsapp',
   })
 
   // Update opportunity mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<Opportunity>) => {
-      const response = await api.patch(`/opportunities/${opportunity?.id}`, { data })
+    mutationFn: async (
+      data: Partial<Opportunity> & {
+        bant_data?: Record<string, { score?: number; answer?: string }>
+      },
+    ) => {
+      const payload = toOpportunityUpdatePayload(data)
+      const response = await api.patch(
+        `/opportunities/${opportunity?.id}`,
+        JSON.stringify({ opportunity: payload }),
+        { headers: { 'Content-Type': 'application/json' } },
+      )
       return response.data.data
     },
     onSuccess: () => {
@@ -104,7 +132,19 @@ export function OpportunitySlideOver({
   })
 
   const handleBantUpdate = (field: string, value: number) => {
-    updateMutation.mutate({ [field]: value })
+    const dim =
+      field === 'bant_budget'
+        ? 'budget'
+        : field === 'bant_authority'
+          ? 'authority'
+          : field === 'bant_need'
+            ? 'need'
+            : field === 'bant_timeline'
+              ? 'timeline'
+              : null
+    if (!dim) return
+    const score = Math.min(100, Math.max(0, Math.round(value * 4)))
+    updateMutation.mutate({ bant_data: { [dim]: { score } } })
   }
 
   if (!opportunity) return null
@@ -128,7 +168,7 @@ export function OpportunitySlideOver({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-background border-l shadow-xl flex flex-col"
+            className="fixed inset-y-0 right-0 z-50 flex max-h-[100dvh] w-full max-w-lg min-h-0 flex-col border-l bg-background shadow-xl"
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-4 border-b px-4 py-4">
@@ -166,7 +206,11 @@ export function OpportunitySlideOver({
             </div>
 
             {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+            <Tabs
+              value={activeTab}
+              onValueChange={setActiveTab}
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+            >
               <TabsList className="mx-4 mt-4 w-fit">
                 <TabsTrigger value="overview" className="gap-1.5">
                   <FileText className="size-3.5" />
@@ -190,25 +234,24 @@ export function OpportunitySlideOver({
               <TabsContent value="overview" className="flex-1 overflow-hidden mt-0">
                 <ScrollArea className="h-full">
                   <div className="p-4 flex flex-col gap-6">
-                    {/* Contact info */}
-                    <div className="flex flex-col gap-2">
-                      {opportunity.contact_phone && (
-                        <a
-                          href={`tel:${opportunity.contact_phone}`}
-                          className="flex items-center gap-2 text-sm hover:text-primary"
-                        >
-                          <Phone className="size-4 text-muted-foreground" />
-                          {opportunity.contact_phone}
-                        </a>
-                      )}
-                      {opportunity.contact_email && (
-                        <a
-                          href={`mailto:${opportunity.contact_email}`}
-                          className="flex items-center gap-2 text-sm hover:text-primary"
-                        >
-                          <Mail className="size-4 text-muted-foreground" />
-                          {opportunity.contact_email}
-                        </a>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
+                        Contactar
+                      </label>
+                      <ContactActionButtons
+                        phone={opportunity.contact_phone}
+                        email={opportunity.contact_email}
+                        onOpenWhatsAppInApp={() => setActiveTab('whatsapp')}
+                      />
+                      {(opportunity.contact_phone || opportunity.contact_email) && (
+                        <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+                          {opportunity.contact_phone ? (
+                            <span className="font-mono">{opportunity.contact_phone}</span>
+                          ) : null}
+                          {opportunity.contact_email ? (
+                            <span className="truncate">{opportunity.contact_email}</span>
+                          ) : null}
+                        </div>
                       )}
                     </div>
 
@@ -330,18 +373,25 @@ export function OpportunitySlideOver({
               </TabsContent>
 
               {/* WhatsApp tab */}
-              <TabsContent value="whatsapp" className="flex-1 overflow-hidden mt-0">
+              <TabsContent
+                value="whatsapp"
+                className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+              >
                 {messagesLoading ? (
-                  <div className="p-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-3 p-4">
                     {[1, 2, 3].map((i) => (
                       <Skeleton key={i} className="h-16 w-3/4" />
                     ))}
                   </div>
                 ) : (
-                  <WhatsAppThread
-                    messages={messages || []}
-                    opportunityId={opportunity.id}
-                  />
+                  <div className="flex min-h-0 flex-1 flex-col px-3 pb-2 pt-0 sm:px-4">
+                    <WhatsAppThread
+                      opportunityId={opportunity.id}
+                      contactName={opportunity.contact_name}
+                      contactPhone={opportunity.contact_phone ?? ''}
+                      messages={threadMessages ?? []}
+                    />
+                  </div>
                 )}
               </TabsContent>
             </Tabs>

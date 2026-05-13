@@ -63,10 +63,11 @@ gem "pagy", "~> 9.0"                # Paginación ligera
 gem "ransack", "~> 4.2"             # Filtros seguros
 
 # ============================================================================
-# Exportaciones (CSV + XLSX)
+# Exportaciones (CSV + XLSX) e importación Excel (.xlsx/.xls)
 # ============================================================================
 gem "caxlsx_rails", "~> 0.6"
 gem "csv"
+gem "roo", "~> 3.0"
 
 # ============================================================================
 # HTTP client para integraciones (Meta, Google, Twilio)
@@ -96,7 +97,7 @@ end
 group :development do
   gem "rubocop-rails-omakase", require: false
   gem "annotaterb", "~> 4.13"
-  gem "bullet", "~> 7.2"
+#  gem "bullet", "~> 7.2"
   gem "brakeman", require: false
   gem "letter_opener"
 end

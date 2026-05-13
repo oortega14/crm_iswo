@@ -22,15 +22,40 @@ export function formatCurrency(
 }
 
 // Format date in tenant timezone
-export function formatDate(date: string | Date, formatStr: string = 'dd MMM yyyy'): string {
-  const d = typeof date === 'string' ? parseISO(date) : date
-  return format(d, formatStr, { locale: es })
+export function formatDate(date: string | Date | null | undefined, formatStr: string = 'dd MMM yyyy'): string {
+  if (!date) return '—'
+  try {
+    const d = typeof date === 'string' ? parseISO(date) : date
+    if (isNaN(d.getTime())) return '—'
+    return format(d, formatStr, { locale: es })
+  } catch {
+    return '—'
+  }
 }
 
 // Format relative time
-export function formatRelativeTime(date: string | Date): string {
-  const d = typeof date === 'string' ? parseISO(date) : date
-  return formatDistanceToNow(d, { addSuffix: true, locale: es })
+export function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (!date) return '—'
+  try {
+    const d = typeof date === 'string' ? parseISO(date) : date
+    if (isNaN(d.getTime())) return '—'
+    return formatDistanceToNow(d, { addSuffix: true, locale: es })
+  } catch {
+    return '—'
+  }
+}
+
+/** Normaliza a E.164 aproximado para WhatsApp (aligned con backend Phonelib + fallback CO). */
+export function normalizePhoneForWhatsAppDial(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  let s = trimmed.replace(/^whatsapp:/i, '').replace(/[\s\-()]/g, '')
+  if (!s) return ''
+  if (s.startsWith('+')) return s
+  const digitsOnly = s.replace(/\D/g, '').replace(/^0+/, '')
+  if (/^3\d{9}$/.test(digitsOnly)) return `+57${digitsOnly}`
+  if (digitsOnly.length >= 10 && digitsOnly.length <= 15) return `+${digitsOnly}`
+  return `+${digitsOnly}`
 }
 
 // Get BANT score color class
@@ -60,36 +85,47 @@ export function calculateBantScore(
 // Get status badge color
 export function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    new_lead: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    contacted: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-    qualified: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-    proposal: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-    won: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    lost: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-    sent: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    done: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    failed: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    connected: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    disconnected: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
-    error: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    queued: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
-    running: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    succeeded: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    expired: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+    new_lead:
+      'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    contacted: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+    qualified:
+      'border border-chart-3/30 bg-chart-3/15 text-chart-3 dark:border-chart-3/40 dark:bg-chart-3/20',
+    proposal:
+      'border border-chart-5/30 bg-chart-5/15 text-chart-5 dark:border-chart-5/40 dark:bg-chart-5/20',
+    won: 'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    closed_won:
+      'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    lost: 'bg-destructive/15 text-destructive dark:bg-destructive/25',
+    closed_lost: 'bg-destructive/15 text-destructive dark:bg-destructive/25',
+    pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+    sent: 'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    done: 'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    failed: 'bg-destructive/15 text-destructive dark:bg-destructive/25',
+    connected:
+      'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    disconnected: 'bg-muted text-muted-foreground',
+    error: 'bg-destructive/15 text-destructive dark:bg-destructive/25',
+    queued: 'bg-muted text-muted-foreground',
+    running:
+      'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    succeeded:
+      'border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18 dark:text-primary',
+    expired: 'bg-muted text-muted-foreground',
   }
-  return colors[status] || 'bg-gray-100 text-gray-800'
+  return colors[status] || 'bg-muted text-muted-foreground'
 }
 
 // Format status label
 export function formatStatusLabel(status: string): string {
   const labels: Record<string, string> = {
-    new_lead: 'Nuevo',
+    new_lead: 'Nueva',
     contacted: 'Contactado',
-    qualified: 'Calificado',
+    qualified: 'Calificada',
     proposal: 'Propuesta',
-    won: 'Ganado',
+    won: 'Cerrada',
+    closed_won: 'Cerrada',
     lost: 'Perdido',
+    closed_lost: 'Perdida',
     pending: 'Pendiente',
     sent: 'Enviado',
     done: 'Completado',
@@ -125,13 +161,18 @@ export function hasPermission(
 
 // Get subdomain from hostname
 export function getSubdomain(): string {
-  if (typeof window === 'undefined') return 'demo'
+  if (typeof window === 'undefined') return ''
+  const envTenant = import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase()
+  if (envTenant) return envTenant
+  const selectedTenant = window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase()
+  if (selectedTenant) return selectedTenant
   const hostname = window.location.hostname
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return ''
   const parts = hostname.split('.')
   if (parts.length >= 3) {
     return parts[0]
   }
-  return 'demo'
+  return ''
 }
 
 // Debounce function

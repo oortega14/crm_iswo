@@ -9,7 +9,7 @@
 class TenantSerializer < ApplicationSerializer
   set_type :tenant
 
-  attributes :name, :slug, :timezone, :locale, :currency, :country_code,
+  attributes :name, :slug, :timezone, :locale, :currency,
              :brand_color, :logo_url, :settings
 
   attribute :active do |t|

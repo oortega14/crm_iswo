@@ -7,11 +7,11 @@
 # Soporta format   = "xlsx" (caxlsx) | "csv".
 #
 # Flujo:
-#   1. Marca el export como status="processing".
+#   1. Marca el export como status="running" (enum Export).
 #   2. Construye el scope respetando filters (Ransack-friendly hash).
 #   3. Genera archivo en /tmp/exports/<tenant>/<export_id>.<format>.
 #   4. Sube a S3 (si AWS_S3_BUCKET está seteado) o copia a public/exports/.
-#   5. Setea file_url, expires_at = 7 días, status="ready".
+#   5. Setea file_url, expires_at = 7 días, status="succeeded".
 #   6. Notifica al usuario (in_app o email).
 # ============================================================================
 class ExportGenerationJob < ApplicationJob
@@ -24,7 +24,7 @@ class ExportGenerationJob < ApplicationJob
     return unless export
 
     ActsAsTenant.with_tenant(export.tenant) do
-      export.update!(status: "processing", started_at: Time.current)
+      export.update!(status: "running", started_at: Time.current)
 
       path = case export.format
              when "xlsx" then build_xlsx(export)
@@ -35,10 +35,10 @@ class ExportGenerationJob < ApplicationJob
       url = upload_or_persist(export, path)
 
       export.update!(
-        status:     "ready",
-        file_url:   url,
-        file_size:  File.size(path),
-        expires_at: EXPIRY.from_now,
+        status:      "succeeded",
+        file_url:    url,
+        file_size:   File.size(path),
+        expires_at:  EXPIRY.from_now,
         finished_at: Time.current
       )
 

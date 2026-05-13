@@ -11,8 +11,19 @@ class ContactSerializer < ApplicationSerializer
 
   attributes :kind, :first_name, :last_name, :email, :phone_e164,
              :company, :position, :city, :country,
-             :source_kind, :source_label, :notes, :custom_fields,
-             :last_contacted_at, :discarded_at
+             :notes, :custom_fields, :discarded_at
+
+  attribute :source_kind do |c|
+    c.has_attribute?(:source_kind) ? c[:source_kind] : nil
+  end
+
+  attribute :source_label do |c|
+    c.has_attribute?(:source_label) ? c[:source_label] : nil
+  end
+
+  attribute :last_contacted_at do |c|
+    c.respond_to?(:last_contacted_at) ? c.last_contacted_at : nil
+  end
 
   attribute :full_name do |c|
     [c.first_name, c.last_name].compact.join(" ").strip.presence || c.company.presence || "—"

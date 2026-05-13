@@ -13,11 +13,36 @@
 class UserSerializer < ApplicationSerializer
   set_type :user
 
-  attributes :email, :first_name, :last_name, :phone, :role, :active,
-             :preferences, :last_sign_in_at
+  attributes :email, :role, :active, :last_sign_in_at
+
+  attribute :name do |u|
+    u.respond_to?(:name) ? u.name : nil
+  end
+
+  attribute :first_name do |u|
+    next nil unless u.respond_to?(:first_name)
+    u.first_name
+  end
+
+  attribute :last_name do |u|
+    next nil unless u.respond_to?(:last_name)
+    u.last_name
+  end
+
+  attribute :phone do |u|
+    u.respond_to?(:phone) ? u.phone : nil
+  end
+
+  attribute :preferences do |u|
+    u.respond_to?(:preferences) ? u.preferences : {}
+  end
 
   attribute :full_name do |u|
-    [u.first_name, u.last_name].compact.join(" ").presence || u.email
+    if u.respond_to?(:first_name) || u.respond_to?(:last_name)
+      [u.try(:first_name), u.try(:last_name)].compact.join(" ").presence || u.try(:name) || u.email
+    else
+      u.try(:name).presence || u.email
+    end
   end
 
   attribute :avatar_url do |u|

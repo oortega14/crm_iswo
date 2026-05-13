@@ -99,9 +99,6 @@ GEM
     brakeman (8.0.4)
       racc
     builder (3.3.0)
-    bullet (7.2.0)
-      activesupport (>= 3.0.0)
-      uniform_notifier (~> 1.11)
     caxlsx (4.4.2)
       htmlentities (~> 4.3, >= 4.3.4)
       marcel (~> 1.0)
@@ -365,6 +362,12 @@ GEM
       actionpack (>= 7.0)
       railties (>= 7.0)
     rexml (3.4.4)
+    roo (3.0.0)
+      base64 (~> 0.2)
+      csv (~> 3)
+      logger (~> 1)
+      nokogiri (~> 1)
+      rubyzip (>= 3.0.0, < 4.0.0)
     rspec-core (3.13.6)
       rspec-support (~> 3.13.0)
     rspec-expectations (3.13.5)
@@ -447,7 +450,6 @@ GEM
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)
     unicode-emoji (4.2.0)
-    uniform_notifier (1.18.0)
     uri (1.1.1)
     useragent (0.16.11)
     vcr (6.4.0)
@@ -486,7 +488,6 @@ DEPENDENCIES
   blind_index (~> 2.5)
   bootsnap
   brakeman
-  bullet (~> 7.2)
   caxlsx_rails (~> 0.6)
   csv
   database_cleaner-active_record (~> 2.2)
@@ -516,6 +517,7 @@ DEPENDENCIES
   rails (~> 8.1.3)
   ransack (~> 4.2)
   redis (~> 5.3)
+  roo (~> 3.0)
   rspec-rails (~> 7.0)
   rubocop-rails-omakase
   shoulda-matchers (~> 6.4)
@@ -553,7 +555,6 @@ CHECKSUMS
   bootsnap (1.23.0) sha256=c1254f458d58558b58be0f8eb8f6eec2821456785b7cdd1e16248e2020d3f214
   brakeman (8.0.4) sha256=7bf921fa9638544835df9aa7b3e720a9a72c0267f34f92135955edd80d4dcf6f
   builder (3.3.0) sha256=497918d2f9dca528fdca4b88d84e4ef4387256d984b8154e9d5d3fe5a9c8835f
-  bullet (7.2.0) sha256=3502c8a1b4f5db77fc8f6d3dd89a6a8c1a968219a45e12ae6cbaa9c09967ea89
   caxlsx (4.4.2) sha256=41bb1141eb083f2f72e0a34db85684a2ec48d38fed4c1ff20c1525c47cdc93eb
   caxlsx_rails (0.7.1) sha256=3151aeb43ff71cbcd64598f85f80d1c182063a96824f6ce9ab3f6f071676c6f4
   childprocess (5.1.0) sha256=9a8d484be2fd4096a0e90a0cd3e449a05bc3aa33f8ac9e4d6dcef6ac1455b6ec
@@ -674,6 +675,7 @@ CHECKSUMS
   reline (0.6.3) sha256=1198b04973565b36ec0f11542ab3f5cfeeec34823f4e54cebde90968092b1835
   responders (3.2.0) sha256=89c2d6ac0ae16f6458a11524cae4a8efdceba1a3baea164d28ee9046bd3df55a
   rexml (3.4.4) sha256=19e0a2c3425dfbf2d4fc1189747bdb2f849b6c5e74180401b15734bc97b5d142
+  roo (3.0.0) sha256=6fdd7a9158d657c69768b4168754ff2110cc21fdc01a1bec1010820cb05c91b1
   rspec-core (3.13.6) sha256=a8823c6411667b60a8bca135364351dda34cd55e44ff94c4be4633b37d828b2d
   rspec-expectations (3.13.5) sha256=33a4d3a1d95060aea4c94e9f237030a8f9eae5615e9bd85718fe3a09e4b58836
   rspec-mocks (3.13.8) sha256=086ad3d3d17533f4237643de0b5c42f04b66348c28bf6b9c2d3f4a3b01af1d47
@@ -703,7 +705,6 @@ CHECKSUMS
   tzinfo (2.0.6) sha256=8daf828cc77bcf7d63b0e3bdb6caa47e2272dcfaf4fbfe46f8c3a9df087a829b
   unicode-display_width (3.2.0) sha256=0cdd96b5681a5949cdbc2c55e7b420facae74c4aaf9a9815eee1087cb1853c42
   unicode-emoji (4.2.0) sha256=519e69150f75652e40bf736106cfbc8f0f73aa3fb6a65afe62fefa7f80b0f80f
-  uniform_notifier (1.18.0) sha256=4787785556f66f6418486da0f1d78b3239aaff98e2e7938fb05e2062b0ffce9d
   uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
   useragent (0.16.11) sha256=700e6413ad4bb954bb63547fa098dddf7b0ebe75b40cc6f93b8d54255b173844
   vcr (6.4.0) sha256=077ac92cc16efc5904eb90492a18153b5e6ca5398046d8a249a7c96a9ea24ae6

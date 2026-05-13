@@ -7,6 +7,8 @@
 # El servicio Opportunities::BantScorer aplica estos pesos al score crudo.
 # ============================================================================
 class BantCriterion < ApplicationRecord
+  self.table_name = "bant_criteria"
+
   include TenantScoped
 
   belongs_to :tenant

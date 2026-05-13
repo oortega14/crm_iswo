@@ -36,14 +36,24 @@ module Ads
     def call
       integration = resolve_integration!
       tenant      = integration.tenant
+      attrs       = extract_columns(@payload["user_column_data"])
 
-      ActsAsTenant.with_tenant(tenant) do
-        attrs   = extract_columns(@payload["user_column_data"])
-        contact = upsert_contact(tenant, attrs)
-        opp     = create_opportunity(tenant, contact, attrs, integration)
+      result = Opportunities::LeadImporter.new(
+        tenant:        tenant,
+        attrs:         attrs,
+        source_kind:   "google",
+        source_label:  "google_ads",
+        title:         "Lead Google Ads ##{@payload['lead_id']}",
+        custom_fields: {
+          "google_lead_id"     => @payload["lead_id"],
+          "google_form_id"     => @payload["form_id"],
+          "google_campaign_id" => @payload["campaign_id"],
+          "gcl_id"             => @payload["gcl_id"],
+          "integration_id"     => integration.id
+        }
+      ).call
 
-        Result.new(tenant: tenant, contact: contact, opportunity: opp)
-      end
+      Result.new(tenant: tenant, contact: result.contact, opportunity: result.opportunity)
     end
 
     # =========================================================================
@@ -54,12 +64,12 @@ module Ads
       # Google no manda page_id/customer_id en el webhook directamente; en
       # producción se resuelve por form_id o campaign_id mapeado en metadata.
       form_id = @payload["form_id"].to_s
-      scope   = AdIntegration.where(provider: "google_ads", status: "active")
+      scope   = AdIntegration.where(provider: "google", status: "active")
 
       integration = scope.find_by("metadata->>'form_id' = ?", form_id) if form_id.present?
       integration ||= scope.first
 
-      raise ArgumentError, "AdIntegration google_ads no configurada" unless integration
+      raise ArgumentError, "AdIntegration google no configurada" unless integration
 
       integration
     end
@@ -70,58 +80,6 @@ module Ads
         val = col["string_value"].presence
         h[key] = val if val.present?
       end
-    end
-
-    def upsert_contact(tenant, attrs)
-      matches = Opportunities::DuplicateDetector.new(
-        phone:     attrs["phone"],
-        email:     attrs["email"],
-        full_name: attrs["full_name"]
-      ).call
-
-      return matches.first.contact if matches.any?
-
-      tenant.contacts.create!(
-        first_name:       attrs["first_name"] || attrs["full_name"].to_s.split.first,
-        last_name:        attrs["last_name"]  || attrs["full_name"].to_s.split[1..]&.join(" "),
-        email:            attrs["email"]&.downcase,
-        phone_e164:       attrs["phone"],
-        phone_normalized: Phonelib.parse(attrs["phone"]).sanitized,
-        source_kind:      "google",
-        source_label:     "google_ads"
-      )
-    end
-
-    def create_opportunity(tenant, contact, _attrs, integration)
-      pipeline = tenant.pipelines.find_by(is_default: true) || tenant.pipelines.first
-      stage    = pipeline&.pipeline_stages&.order(:position)&.first
-      source   = tenant.lead_sources.find_by(kind: "google") || tenant.lead_sources.first
-
-      opp = tenant.opportunities.create!(
-        contact:          contact,
-        pipeline:         pipeline,
-        pipeline_stage:   stage,
-        owner_user:       nil,
-        lead_source:      source,
-        status:           "open",
-        title:            "Lead Google Ads ##{@payload['lead_id']}",
-        custom_fields:    {
-          "google_lead_id"    => @payload["lead_id"],
-          "google_form_id"    => @payload["form_id"],
-          "google_campaign_id" => @payload["campaign_id"],
-          "gcl_id"            => @payload["gcl_id"]
-        },
-        last_activity_at: Time.current
-      )
-
-      opp.opportunity_logs.create!(
-        tenant: tenant,
-        user:   nil,
-        action: "created_from_google",
-        changes_data: { lead_id: @payload["lead_id"], integration_id: integration.id }
-      )
-
-      opp
     end
   end
 end

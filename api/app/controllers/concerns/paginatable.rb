@@ -23,14 +23,16 @@ module Paginatable
   private
 
   def paginate(scope, items: nil)
-    items ||= params[:per_page].presence&.to_i || DEFAULT_PER_PAGE
+    items ||= params[:items].presence&.to_i || params[:per_page].presence&.to_i || DEFAULT_PER_PAGE
     items = [items, MAX_PER_PAGE].min
+    items = DEFAULT_PER_PAGE if items < 1
     pagy(scope, items: items)
   end
 
   def pagy_headers(pagy)
+    per_page = pagy.respond_to?(:items) ? pagy.items : pagy.limit
     response.set_header("Current-Page", pagy.page.to_s)
-    response.set_header("Page-Items",   pagy.items.to_s)
+    response.set_header("Page-Items",   per_page.to_s)
     response.set_header("Total-Pages",  pagy.pages.to_s)
     response.set_header("Total-Count",  pagy.count.to_s)
   end

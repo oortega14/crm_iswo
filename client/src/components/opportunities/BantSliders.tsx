@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
 interface BantSlidersProps {
@@ -11,10 +11,10 @@ interface BantSlidersProps {
 }
 
 const sliders = [
-  { key: 'bant_budget', label: 'Budget', color: 'bg-blue-500' },
-  { key: 'bant_authority', label: 'Authority', color: 'bg-purple-500' },
-  { key: 'bant_need', label: 'Need', color: 'bg-green-500' },
-  { key: 'bant_timeline', label: 'Timeline', color: 'bg-orange-500' },
+  { key: 'bant_budget', label: 'Budget', color: 'bg-chart-1' },
+  { key: 'bant_authority', label: 'Authority', color: 'bg-chart-3' },
+  { key: 'bant_need', label: 'Need', color: 'bg-chart-2' },
+  { key: 'bant_timeline', label: 'Timeline', color: 'bg-chart-5' },
 ]
 
 export function BantSliders({
@@ -33,6 +33,15 @@ export function BantSliders({
   }
 
   const [localValues, setLocalValues] = useState(values)
+
+  useEffect(() => {
+    setLocalValues({
+      bant_budget: budget,
+      bant_authority: authority,
+      bant_need: need,
+      bant_timeline: timeline,
+    })
+  }, [budget, authority, need, timeline])
 
   const handleChange = (key: string, value: number) => {
     setLocalValues((prev) => ({ ...prev, [key]: value }))

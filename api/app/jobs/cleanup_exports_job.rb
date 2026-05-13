@@ -14,7 +14,7 @@ class CleanupExportsJob < ApplicationJob
 
   def perform
     ActsAsTenant.without_tenant do
-      Export.where(status: "ready")
+      Export.where(status: "succeeded")
             .where("expires_at < ?", Time.current)
             .find_each do |export|
         ActsAsTenant.with_tenant(export.tenant) { expire!(export) }

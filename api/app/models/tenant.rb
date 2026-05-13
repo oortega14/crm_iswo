@@ -28,6 +28,9 @@ class Tenant < ApplicationRecord
   has_many :audit_events,           dependent: :nullify
   has_one  :bant_criterion,         dependent: :destroy
 
+  # Nombre de API/SPA; en base de datos la columna es `primary_color`.
+  alias_attribute :brand_color, :primary_color
+
   # ---- Validaciones ---------------------------------------------------------
   validates :name,     presence: true
   validates :slug,     presence: true,
@@ -44,7 +47,75 @@ class Tenant < ApplicationRecord
   # ---- Scopes ---------------------------------------------------------------
   scope :active, -> { kept.where(active: true) }
 
+  # Integración Twilio: preferimos `active`; si la cuenta quedó en `error` (p. ej. tras «Probar conexión»
+  # fallida), seguimos usando la misma fila para remitente y credenciales hasta que el usuario corrija.
+  # Usamos `AdIntegration.unscoped` + `tenant_id` para no depender de ActsAsTenant.current (jobs, consola, specs).
+  def preferred_twilio_integration
+    base = AdIntegration.unscoped.where(tenant_id: id, provider: :twilio)
+    base.where(status: "active").order(updated_at: :desc).first ||
+      base.order(updated_at: :desc).first
+  end
+
+  def preferred_whatsapp_cloud_integration
+    base = AdIntegration.unscoped.where(tenant_id: id, provider: :whatsapp_cloud)
+    base.where(status: "active").order(updated_at: :desc).first ||
+      base.order(updated_at: :desc).first
+  end
+
+  # Número/línea usado como remitente en mensajes WhatsApp salientes (Twilio API).
+  # Orden: settings del tenant → ENV → integración Twilio (`account_identifier`).
+  def whatsapp_outbound_from_number
+    settings.dig("whatsapp", "number").presence ||
+      ENV["TWILIO_WHATSAPP_NUMBER"].presence ||
+      preferred_twilio_integration&.account_identifier.presence
+  end
+
+  # Etiqueta para `from_number` cuando el proveedor es Cloud API (Meta no usa el campo en el POST).
+  def whatsapp_cloud_sender_label
+    settings.dig("whatsapp", "number").presence ||
+      preferred_whatsapp_cloud_integration&.account_identifier.presence
+  end
+
+  # Twilio vs WhatsApp Cloud API para mensajes salientes.
+  # Prioridad: ENV["WHATSAPP_PROVIDER"] → settings["whatsapp"]["provider"] →
+  # si Cloud y Twilio tienen credenciales, preferimos Cloud; si solo uno, ese.
+  def whatsapp_outbound_provider
+    exp = ENV["WHATSAPP_PROVIDER"].to_s.strip
+    return exp if %w[twilio whatsapp_cloud].include?(exp)
+
+    override = settings.dig("whatsapp", "provider").to_s.strip
+    return override if %w[twilio whatsapp_cloud].include?(override)
+
+    cloud_i  = preferred_whatsapp_cloud_integration
+    twilio_i = preferred_twilio_integration
+    cloud_ok = ad_integration_has_credentials?(cloud_i)
+    twilio_ok = ad_integration_has_credentials?(twilio_i)
+
+    return "whatsapp_cloud" if cloud_ok && twilio_ok
+    return "whatsapp_cloud" if cloud_ok
+    return "twilio" if twilio_ok
+
+    "twilio"
+  end
+
+  def whatsapp_outbound_from_number_for(provider)
+    case provider.to_s
+    when "whatsapp_cloud"
+      whatsapp_cloud_sender_label.presence ||
+        whatsapp_outbound_from_number.presence ||
+        "whatsapp-cloud"
+    else
+      whatsapp_outbound_from_number
+    end
+  end
+
   private
+
+  def ad_integration_has_credentials?(integ)
+    integ.present? &&
+      integ.respond_to?(:credentials_ciphertext) &&
+      integ.credentials_ciphertext.present?
+  end
 
   def normalize_slug
     self.slug = slug&.downcase&.strip

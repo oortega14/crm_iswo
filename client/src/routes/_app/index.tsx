@@ -1,9 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
-import { useState } from 'react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useQueries } from '@tanstack/react-query'
+import {
+  ArrowRight,
+  CalendarDays,
+  LayoutGrid,
+  Plus,
+  TrendingUp,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { queryKeys } from '@/lib/queryClient'
-import api from '@/lib/api'
+import {
+  fetchDashboardActivity,
+  fetchDashboardBantDistribution,
+  fetchDashboardPipeline,
+  fetchDashboardTopConsultants,
+} from '@/lib/dashboardApi'
 import { Button } from '@/components/ui/button'
 import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
@@ -11,6 +22,10 @@ import { BantDistribution } from '@/components/dashboard/BantDistribution'
 import { TopConsultants } from '@/components/dashboard/TopConsultants'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
+import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
+import { DashboardSection } from '@/components/dashboard/DashboardSection'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 export const Route = createFileRoute('/_app/')({
   component: DashboardPage,
@@ -19,80 +34,132 @@ export const Route = createFileRoute('/_app/')({
 function DashboardPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
 
-  // Fetch pipeline stats
-  const { data: pipelineData, isLoading: pipelineLoading } = useQuery({
-    queryKey: queryKeys.dashboard.pipeline,
-    queryFn: async () => {
-      const response = await api.get('/dashboard/pipeline')
-      return response.data.data
-    },
+  const [pipelineQ, activityQ, bantQ, consultantsQ] = useQueries({
+    queries: [
+      {
+        queryKey: queryKeys.dashboard.pipeline,
+        queryFn: fetchDashboardPipeline,
+      },
+      {
+        queryKey: queryKeys.dashboard.activity,
+        queryFn: fetchDashboardActivity,
+        refetchInterval: 30_000,
+      },
+      {
+        queryKey: queryKeys.dashboard.bantDistribution,
+        queryFn: fetchDashboardBantDistribution,
+      },
+      {
+        queryKey: queryKeys.dashboard.topConsultants,
+        queryFn: fetchDashboardTopConsultants,
+      },
+    ],
   })
 
-  // Fetch activity feed (polling every 30s)
-  const { data: activityData, isLoading: activityLoading } = useQuery({
-    queryKey: queryKeys.dashboard.activity,
-    queryFn: async () => {
-      const response = await api.get('/dashboard/activity')
-      return response.data.data
-    },
-    refetchInterval: 30000,
-  })
+  const allPending = [pipelineQ, activityQ, bantQ, consultantsQ].every((q) => q.isPending)
 
-  // Fetch BANT distribution
-  const { data: bantData, isLoading: bantLoading } = useQuery({
-    queryKey: queryKeys.dashboard.bantDistribution,
-    queryFn: async () => {
-      const response = await api.get('/dashboard/bant_distribution')
-      return response.data.data
-    },
-  })
+  const pipelineRows = pipelineQ.data ?? []
+  const kpis = useMemo(() => {
+    const totalInPipeline = pipelineRows.reduce((sum, s) => sum + (s.count ?? 0), 0)
+    const pipelineValue = pipelineRows.reduce((sum, s) => sum + (Number(s.value) || 0), 0)
+    return { totalInPipeline, pipelineValue }
+  }, [pipelineRows])
 
-  // Fetch top consultants
-  const { data: consultantsData, isLoading: consultantsLoading } = useQuery({
-    queryKey: queryKeys.dashboard.topConsultants,
-    queryFn: async () => {
-      const response = await api.get('/dashboard/top_consultants')
-      return response.data.data
-    },
-  })
+  const monthClosedValue = useMemo(() => {
+    const rows = consultantsQ.data ?? []
+    return rows.reduce((sum, c) => sum + (Number(c.total_value) || 0), 0)
+  }, [consultantsQ.data])
 
-  const isLoading = pipelineLoading || activityLoading || bantLoading || consultantsLoading
+  const bantAverage = bantQ.isSuccess && bantQ.data ? bantQ.data.average : null
 
-  if (isLoading) {
+  if (allPending) {
     return <DashboardSkeleton />
   }
 
   return (
-    <div className="p-4 lg:p-6 pb-20 lg:pb-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Resumen de tu actividad y oportunidades
-          </p>
-        </div>
-        <Button onClick={() => setQuickAddOpen(true)} className="gap-2">
-          <Plus className="size-4" />
-          <span className="hidden sm:inline">Nueva Oportunidad</span>
+    <AppPageShell contentClassName="space-y-10">
+      <PageHeader
+        title="Panel principal"
+        belowTitle={<DashboardDateLine />}
+        description="Dos vistas claras: cuánto estás moviendo en ventas y qué tienes agendado para hoy."
+      >
+        <Button variant="outline" size="sm" className="gap-2" asChild>
+          <Link to="/opportunities" search={{ view: 'kanban' }}>
+            <LayoutGrid className="size-4" />
+            Ver oportunidades
+            <ArrowRight className="size-3.5 opacity-70" />
+          </Link>
         </Button>
-      </div>
+        <Button size="sm" className="gap-2 shadow-sm" onClick={() => setQuickAddOpen(true)}>
+          <Plus className="size-4" />
+          <span className="hidden sm:inline">Nueva oportunidad</span>
+          <span className="sm:hidden">Nueva</span>
+        </Button>
+      </PageHeader>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left column - 60% */}
-        <div className="lg:col-span-3 flex flex-col gap-6">
-          <PipelineFunnel data={pipelineData} />
-          <ActivityFeed data={activityData} />
+        <DashboardSection
+          title="Pipeline y cierres"
+          subtitle="Valor en pipeline, cierres del mes, embudo y ranking — todo lo que cuenta para ingresos."
+          icon={TrendingUp}
+          accent="brand"
+        >
+        <DashboardKpiStrip
+          totalInPipeline={kpis.totalInPipeline}
+          pipelineValue={kpis.pipelineValue}
+          bantAverage={bantAverage}
+          monthClosedValue={monthClosedValue}
+          loadingPipeline={pipelineQ.isPending}
+          loadingBant={bantQ.isPending}
+          loadingConsultants={consultantsQ.isPending}
+        />
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:gap-8 xl:items-start">
+          <div className="flex flex-col gap-6 xl:col-span-7 2xl:col-span-8">
+            <PipelineFunnel
+              data={pipelineQ.data}
+              isLoading={pipelineQ.isPending}
+              isError={pipelineQ.isError}
+            />
+          </div>
+
+          <div className="flex flex-col gap-6 xl:col-span-5 2xl:col-span-4">
+            <BantDistribution
+              data={bantQ.data}
+              isLoading={bantQ.isPending}
+              isError={bantQ.isError}
+            />
+            <TopConsultants
+              data={consultantsQ.data}
+              isLoading={consultantsQ.isPending}
+              isError={consultantsQ.isError}
+            />
+          </div>
         </div>
+      </DashboardSection>
 
-        {/* Right column - 40% */}
-        <div className="lg:col-span-2 flex flex-col gap-6">
-          <BantDistribution data={bantData} />
-          <TopConsultants data={consultantsData} />
-        </div>
-      </div>
+      <DashboardSection
+        title="Seguimiento comercial"
+        subtitle="Recordatorios para hoy y movimiento en oportunidades. Prioriza el seguimiento."
+        icon={CalendarDays}
+        accent="sky"
+        action={
+          <Button variant="outline" size="sm" className="gap-2 shadow-sm" asChild>
+            <Link to="/reminders">
+              <CalendarDays className="size-4" />
+              Recordatorios
+            </Link>
+          </Button>
+        }
+      >
+        <ActivityFeed
+          data={activityQ.data}
+          isLoading={activityQ.isPending}
+          isError={activityQ.isError}
+          variant="split"
+        />
+      </DashboardSection>
 
-      {/* Quick add slide-over */}
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
-    </div>
+    </AppPageShell>
   )
 }

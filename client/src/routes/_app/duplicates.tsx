@@ -1,22 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Search,
+import {
   Merge,
   Trash2,
   CheckCircle2,
   AlertTriangle,
   User,
-  Building2,
-  RefreshCw
+  Briefcase,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -29,191 +26,315 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList } from '@/lib/opportunityApi'
+import type { JsonApiResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
+import { useAuthStore } from '@/stores/auth'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 export const Route = createFileRoute('/_app/duplicates')({
   component: DuplicatesPage,
 })
 
-interface DuplicateGroup {
+type ContactLite = {
+  id: number
+  full_name: string
+  email?: string | null
+  phone?: string | null
+}
+
+/** Colisión entre dos oportunidades (origen API `duplicate_flags`). */
+interface DuplicateFlagRow {
   id: string
-  type: 'contact' | 'company'
-  matchScore: number
-  reason: string
-  items: {
-    id: string
-    name: string
-    email?: string
-    phone?: string
-    company?: string
-    createdAt: string
-    opportunitiesCount: number
-  }[]
+  matchedOn: string
+  matchPercent: number
+  resolution: string
+  pending: boolean
+  contactNew: ContactLite | null
+  contactExisting: ContactLite | null
+  opportunityNewId: string
+  opportunityExistingId: string
+}
+
+function parseContact(raw: unknown): ContactLite | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const id = typeof o.id === 'number' ? o.id : Number(o.id)
+  if (!Number.isFinite(id)) return null
+  const full_name =
+    typeof o.full_name === 'string' ? o.full_name : [o.first_name, o.last_name].filter(Boolean).join(' ')
+  return {
+    id,
+    full_name: String(full_name || '').trim(),
+    email: o.email != null ? String(o.email) : undefined,
+    phone: o.phone != null ? String(o.phone) : undefined,
+  }
+}
+
+function matchedOnLabel(m: string): string {
+  switch (m) {
+    case 'phone':
+      return 'Coincidencia por teléfono'
+    case 'email':
+      return 'Coincidencia por email'
+    case 'both':
+      return 'Coincidencia por email y teléfono'
+    default:
+      return m || 'Coincidencia detectada'
+  }
+}
+
+function mapDuplicateFlagResource(r: JsonApiResource): DuplicateFlagRow | null {
+  if (!r.id) return null
+  const a = r.attributes ?? {}
+  const rawScore = a.match_score
+  const score =
+    typeof rawScore === 'number'
+      ? rawScore
+      : typeof rawScore === 'string'
+        ? parseFloat(rawScore)
+        : NaN
+  const matchPercent = Number.isFinite(score) ? Math.min(100, Math.round(score * 100)) : 0
+
+  const oppNew = a.opportunity_a_id ?? a.opportunity_a
+  const oppEx = a.opportunity_b_id ?? a.opportunity_b
+  const opportunityNewId =
+    oppNew !== undefined && oppNew !== null ? String(oppNew) : ''
+  const opportunityExistingId = oppEx !== undefined && oppEx !== null ? String(oppEx) : ''
+
+  return {
+    id: String(r.id),
+    matchedOn: typeof a.matched_on === 'string' ? a.matched_on : '',
+    matchPercent,
+    resolution: typeof a.resolution === 'string' ? a.resolution : 'pending',
+    pending: Boolean(a.pending),
+    contactNew: parseContact(a.contact_a),
+    contactExisting: parseContact(a.contact_b),
+    opportunityNewId,
+    opportunityExistingId,
+  }
+}
+
+function initials(text: string): string {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?'
+}
+
+function ContactBlock({
+  title,
+  contact,
+  opportunityId,
+}: {
+  title: string
+  contact: ContactLite | null
+  opportunityId: string
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="flex gap-3">
+        <Avatar className="h-10 w-10 shrink-0">
+          <AvatarFallback>{initials(contact?.full_name ?? opportunityId ?? '?')}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">
+            {contact?.full_name?.trim()
+              ? contact.full_name
+              : opportunityId
+                ? `Sin contacto (oportunidad #${opportunityId})`
+                : 'Sin datos de contacto'}
+          </p>
+          {contact?.email ? (
+            <p className="truncate text-sm text-muted-foreground">{contact.email}</p>
+          ) : null}
+          {contact?.phone ? (
+            <p className="text-sm text-muted-foreground">{contact.phone}</p>
+          ) : null}
+          {opportunityId ? (
+            <Badge variant="secondary" className="mt-2 text-xs">
+              <Briefcase className="mr-1 inline h-3 w-3" />
+              Oportunidad #{opportunityId}
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function DuplicatesPage() {
   const queryClient = useQueryClient()
-  const [selectedGroup, setSelectedGroup] = useState<DuplicateGroup | null>(null)
-  const [selectedItems, setSelectedItems] = useState<string[]>([])
-  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false)
+  const userRole = useAuthStore((s) => s.user?.role)
+  const canResolve = userRole === 'admin' || userRole === 'manager'
 
-  const { data: duplicates, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ['duplicates'],
+  const [resolutionFilter, setResolutionFilter] = useState<'pending' | 'all'>('pending')
+  const [mergeConfirmFlag, setMergeConfirmFlag] = useState<DuplicateFlagRow | null>(null)
+  const [ignoreConfirmFlag, setIgnoreConfirmFlag] = useState<DuplicateFlagRow | null>(null)
+
+  const {
+    data: flags = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: queryKeys.duplicateFlags.list({ resolution: resolutionFilter }),
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 800))
-      
-      const mockDuplicates: DuplicateGroup[] = [
-        {
-          id: 'dup-1',
-          type: 'contact',
-          matchScore: 95,
-          reason: 'Email similar',
-          items: [
-            { id: 'c1', name: 'Juan Garcia', email: 'juan.garcia@techcorp.com', phone: '+34 600 123 456', company: 'TechCorp', createdAt: new Date(Date.now() - 30 * 86400000).toISOString(), opportunitiesCount: 2 },
-            { id: 'c2', name: 'Juan Garcia Lopez', email: 'jgarcia@techcorp.com', phone: '+34 600 123 456', company: 'TechCorp', createdAt: new Date(Date.now() - 15 * 86400000).toISOString(), opportunitiesCount: 0 },
-          ]
-        },
-        {
-          id: 'dup-2',
-          type: 'contact',
-          matchScore: 88,
-          reason: 'Telefono identico',
-          items: [
-            { id: 'c3', name: 'Maria Lopez', email: 'maria@innosoft.com', phone: '+34 611 222 333', company: 'InnoSoft', createdAt: new Date(Date.now() - 60 * 86400000).toISOString(), opportunitiesCount: 1 },
-            { id: 'c4', name: 'Maria L.', email: 'mlopez@empresa.com', phone: '+34 611 222 333', company: 'InnoSoft', createdAt: new Date(Date.now() - 10 * 86400000).toISOString(), opportunitiesCount: 0 },
-          ]
-        },
-        {
-          id: 'dup-3',
-          type: 'company',
-          matchScore: 92,
-          reason: 'Nombre similar',
-          items: [
-            { id: 'co1', name: 'TechCorp Solutions', email: 'info@techcorp.com', createdAt: new Date(Date.now() - 90 * 86400000).toISOString(), opportunitiesCount: 5 },
-            { id: 'co2', name: 'Tech Corp', email: 'contact@techcorp.es', createdAt: new Date(Date.now() - 20 * 86400000).toISOString(), opportunitiesCount: 1 },
-          ]
-        },
-        {
-          id: 'dup-4',
-          type: 'contact',
-          matchScore: 78,
-          reason: 'Nombre y empresa coinciden',
-          items: [
-            { id: 'c5', name: 'Pedro Martinez', email: 'pedro@cloudnet.com', phone: '+34 622 333 444', company: 'CloudNet', createdAt: new Date(Date.now() - 45 * 86400000).toISOString(), opportunitiesCount: 3 },
-            { id: 'c6', name: 'Pedro Martinez R.', email: 'pmartinez@cloudnet.es', phone: '+34 622 444 555', company: 'CloudNet', createdAt: new Date(Date.now() - 5 * 86400000).toISOString(), opportunitiesCount: 0 },
-          ]
-        },
-      ]
-      
-      return mockDuplicates
-    }
+      const params: Record<string, string | number> = {
+        items: 50,
+        page: 1,
+      }
+      if (resolutionFilter === 'pending') params.resolution = 'pending'
+      const response = await api.get('/duplicate_flags', { params })
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapDuplicateFlagResource)
+        .filter((row): row is DuplicateFlagRow => row !== null)
+    },
   })
 
-  const mergeMutation = useMutation({
-    mutationFn: async ({ groupId, keepId, deleteIds }: { groupId: string; keepId: string; deleteIds: string[] }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { groupId, keepId, deleteIds }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['duplicates'] })
-      toast.success('Registros fusionados exitosamente')
-      setIsMergeDialogOpen(false)
-      setSelectedGroup(null)
-      setSelectedItems([])
-    },
-    onError: () => {
-      toast.error('Error al fusionar los registros')
-    }
-  })
-
-  const dismissMutation = useMutation({
-    mutationFn: async (groupId: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      return groupId
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['duplicates'] })
-      toast.success('Duplicado descartado')
-    }
-  })
-
-  const getMatchScoreColor = (score: number) => {
-    if (score >= 90) return 'text-red-500'
-    if (score >= 80) return 'text-amber-500'
-    return 'text-green-500'
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.duplicateFlags.all })
   }
 
-  const contactDuplicates = duplicates?.filter(d => d.type === 'contact') ?? []
-  const companyDuplicates = duplicates?.filter(d => d.type === 'company') ?? []
+  const mergeMutation = useMutation({
+    mutationFn: async (flagId: string) => {
+      await api.post(`/duplicate_flags/${flagId}/merge`, {})
+    },
+    onSuccess: () => {
+      invalidate()
+      toast.success('Duplicados fusionados en la oportunidad existente')
+      setMergeConfirmFlag(null)
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo fusionar'))
+    },
+  })
+
+  const ignoreMutation = useMutation({
+    mutationFn: async (flagId: string) => {
+      await api.post(`/duplicate_flags/${flagId}/ignore`, {})
+    },
+    onSuccess: () => {
+      invalidate()
+      toast.success('Marcado como no duplicado')
+      setIgnoreConfirmFlag(null)
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo descartar'))
+    },
+  })
+
+  const pendingCount = resolutionFilter === 'pending' ? flags.length : flags.filter((f) => f.pending).length
+  const resolvedInView =
+    resolutionFilter === 'all' ? flags.filter((f) => !f.pending).length : 0
+
+  const getMatchScoreColor = (score: number) => {
+    if (score >= 90) return 'text-red-600'
+    if (score >= 80) return 'text-amber-600'
+    return 'text-primary'
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Duplicados</h1>
-          <p className="text-sm text-muted-foreground">
-            Detecta y fusiona registros duplicados
-          </p>
-        </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={() => refetch()}
-          disabled={isRefetching}
+    <AppPageShell contentClassName="gap-8">
+      <PageHeader
+        title="Duplicados"
+        description="Colisiones entre oportunidades detectadas en el sistema (teléfono / email)."
+      >
+        <Select
+          value={resolutionFilter}
+          onValueChange={(v) => setResolutionFilter(v as 'pending' | 'all')}
         >
-          {isRefetching ? (
-            <Spinner className="mr-2" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
-          )}
-          Analizar Duplicados
+          <SelectTrigger className="w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Solo pendientes</SelectItem>
+            <SelectItem value="all">Todos los estados</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
+          {isRefetching ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+          Actualizar
         </Button>
+      </PageHeader>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-950">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{resolutionFilter === 'pending' ? flags.length : pendingCount}</p>
+                <p className="text-xs text-muted-foreground">
+                  {resolutionFilter === 'pending' ? 'Pendientes (vista actual)' : 'Pendientes en esta página'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
+                <User className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{flags.length}</p>
+                <p className="text-xs text-muted-foreground">Registros en esta página</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold">{resolvedInView}</p>
+                <p className="text-xs text-muted-foreground">
+                  {resolutionFilter === 'all' ? 'Ya resueltos (en esta página)' : '—'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{duplicates?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Grupos duplicados</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                <User className="h-5 w-5 text-blue-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{contactDuplicates.length}</p>
-                <p className="text-xs text-muted-foreground">Contactos duplicados</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <Building2 className="h-5 w-5 text-green-500" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{companyDuplicates.length}</p>
-                <p className="text-xs text-muted-foreground">Empresas duplicadas</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {!canResolve && (
+        <p className="text-sm text-muted-foreground">
+          Solo administradores y managers pueden fusionar o descartar duplicados. Puedes revisar el listado.
+        </p>
+      )}
 
-      {/* Duplicates List */}
+      {isError && (
+        <Card className="border-destructive/50">
+          <CardContent className="py-6 text-sm text-destructive">
+            {formatRailsError(error, 'No se pudieron cargar los duplicados')}
+          </CardContent>
+        </Card>
+      )}
+
       {isLoading ? (
         <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -222,107 +343,82 @@ function DuplicatesPage() {
                 <Skeleton className="h-6 w-48" />
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <Skeleton className="h-16 w-full" />
-                  <Skeleton className="h-16 w-full" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Skeleton className="h-28 w-full" />
+                  <Skeleton className="h-28 w-full" />
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
-      ) : duplicates?.length === 0 ? (
+      ) : flags.length === 0 ? (
         <Card>
           <CardContent className="py-12">
             <div className="text-center">
-              <CheckCircle2 className="h-12 w-12 mx-auto text-green-500" />
-              <h3 className="mt-4 text-lg font-medium">Sin duplicados</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                No se encontraron registros duplicados en tu base de datos
+              <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
+              <h3 className="mt-4 text-lg font-medium">Sin resultados</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {resolutionFilter === 'pending'
+                  ? 'No hay colisiones pendientes en el tenant.'
+                  : 'No hay registros de duplicados que mostrar con el filtro actual.'}
               </p>
             </div>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          {duplicates?.map((group) => (
-            <Card key={group.id}>
+          {flags.map((flag) => (
+            <Card key={flag.id}>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-lg",
-                      group.type === 'contact' ? 'bg-blue-100' : 'bg-green-100'
-                    )}>
-                      {group.type === 'contact' ? (
-                        <User className="h-4 w-4 text-blue-500" />
-                      ) : (
-                        <Building2 className="h-4 w-4 text-green-500" />
-                      )}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-950">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
                     </div>
                     <div>
-                      <CardTitle className="text-base">
-                        {group.items.length} {group.type === 'contact' ? 'contactos' : 'empresas'} similares
-                      </CardTitle>
-                      <CardDescription>{group.reason}</CardDescription>
+                      <CardTitle className="text-base">Posible duplicado de oportunidad</CardTitle>
+                      <CardDescription>{matchedOnLabel(flag.matchedOn)}</CardDescription>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Badge variant={flag.pending ? 'destructive' : 'secondary'}>
+                          {flag.pending ? 'Pendiente' : flag.resolution}
+                        </Badge>
+                        <Badge variant="outline" className={getMatchScoreColor(flag.matchPercent)}>
+                          ~{flag.matchPercent}% similitud
+                        </Badge>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className={getMatchScoreColor(group.matchScore)}>
-                      {group.matchScore}% coincidencia
-                    </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => dismissMutation.mutate(group.id)}
-                    >
-                      Descartar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setSelectedGroup(group)
-                        setSelectedItems([group.items[0].id])
-                        setIsMergeDialogOpen(true)
-                      }}
-                    >
-                      <Merge className="mr-2 h-4 w-4" />
-                      Fusionar
-                    </Button>
-                  </div>
+                  {flag.pending && canResolve ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIgnoreConfirmFlag(flag)}
+                        disabled={ignoreMutation.isPending}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Ignorar
+                      </Button>
+                      <Button size="sm" onClick={() => setMergeConfirmFlag(flag)} disabled={mergeMutation.isPending}>
+                        <Merge className="mr-2 h-4 w-4" />
+                        Fusionar
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {group.items.map((item) => (
-                    <div 
-                      key={item.id}
-                      className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30"
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={`https://avatar.vercel.sh/${item.email}`} />
-                        <AvatarFallback>
-                          {item.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{item.name}</p>
-                        {item.email && (
-                          <p className="text-sm text-muted-foreground truncate">{item.email}</p>
-                        )}
-                        {item.phone && (
-                          <p className="text-sm text-muted-foreground">{item.phone}</p>
-                        )}
-                        {item.company && (
-                          <p className="text-sm text-muted-foreground">{item.company}</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <Badge variant="secondary" className="text-xs">
-                            {item.opportunitiesCount} oportunidades
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <ContactBlock
+                    title="Oportunidad detectada (se unifica en la otra al fusionar)"
+                    contact={flag.contactNew}
+                    opportunityId={flag.opportunityNewId}
+                  />
+                  <ContactBlock
+                    title="Oportunidad existente (se mantiene al fusionar)"
+                    contact={flag.contactExisting}
+                    opportunityId={flag.opportunityExistingId}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -330,79 +426,54 @@ function DuplicatesPage() {
         </div>
       )}
 
-      {/* Merge Dialog */}
-      <Dialog open={isMergeDialogOpen} onOpenChange={setIsMergeDialogOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={!!mergeConfirmFlag} onOpenChange={(o) => !o && setMergeConfirmFlag(null)}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Fusionar Registros</DialogTitle>
+            <DialogTitle>Fusionar en oportunidad existente</DialogTitle>
             <DialogDescription>
-              Selecciona el registro principal que quieres mantener. Los demas seran eliminados y sus datos se fusionaran.
+              El backend consolidará la oportunidad nueva (#{mergeConfirmFlag?.opportunityNewId}) en la existente
+              (#{mergeConfirmFlag?.opportunityExistingId}) y marcará este aviso como resuelto. Esta acción no se puede
+              deshacer desde aquí.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-3 py-4">
-            {selectedGroup?.items.map((item) => (
-              <div 
-                key={item.id}
-                className={cn(
-                  "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
-                  selectedItems.includes(item.id) 
-                    ? "border-primary bg-primary/5" 
-                    : "hover:bg-muted/50"
-                )}
-                onClick={() => setSelectedItems([item.id])}
-              >
-                <Checkbox 
-                  checked={selectedItems.includes(item.id)}
-                  onCheckedChange={() => setSelectedItems([item.id])}
-                />
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={`https://avatar.vercel.sh/${item.email}`} />
-                  <AvatarFallback>
-                    {item.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1">
-                  <p className="font-medium">{item.name}</p>
-                  {item.email && <p className="text-sm text-muted-foreground">{item.email}</p>}
-                  <Badge variant="secondary" className="mt-1 text-xs">
-                    {item.opportunitiesCount} oportunidades vinculadas
-                  </Badge>
-                </div>
-                {selectedItems.includes(item.id) && (
-                  <Badge className="bg-primary">Principal</Badge>
-                )}
-              </div>
-            ))}
-          </div>
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsMergeDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setMergeConfirmFlag(null)}>
               Cancelar
             </Button>
-            <Button 
-              onClick={() => {
-                if (selectedGroup && selectedItems.length > 0) {
-                  const keepId = selectedItems[0]
-                  const deleteIds = selectedGroup.items
-                    .filter(i => i.id !== keepId)
-                    .map(i => i.id)
-                  
-                  mergeMutation.mutate({
-                    groupId: selectedGroup.id,
-                    keepId,
-                    deleteIds
-                  })
-                }
-              }}
-              disabled={selectedItems.length === 0 || mergeMutation.isPending}
+            <Button
+              onClick={() => mergeConfirmFlag && mergeMutation.mutate(mergeConfirmFlag.id)}
+              disabled={mergeMutation.isPending}
             >
               {mergeMutation.isPending && <Spinner className="mr-2" />}
-              Fusionar Registros
+              Confirmar fusión
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      <Dialog open={!!ignoreConfirmFlag} onOpenChange={(o) => !o && setIgnoreConfirmFlag(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ignorar duplicado</DialogTitle>
+            <DialogDescription>
+              Se marcará esta colisión como ignorada. Las dos oportunidades seguirán existiendo por separado.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIgnoreConfirmFlag(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => ignoreConfirmFlag && ignoreMutation.mutate(ignoreConfirmFlag.id)}
+              disabled={ignoreMutation.isPending}
+            >
+              {ignoreMutation.isPending && <Spinner className="mr-2" />}
+              Ignorar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AppPageShell>
   )
 }

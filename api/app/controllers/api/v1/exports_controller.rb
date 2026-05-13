@@ -18,18 +18,18 @@ module Api
         render_resource(@export, with: ExportSerializer)
       end
 
-      # POST /api/v1/exports  { resource: "contacts"|"opportunities", format, filters }
+      # POST /api/v1/exports  { resource: "contacts"|"opportunities", export_format, filters }
       def create
         authorize Export, :create?
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: params.require(:resource),
-          format:   params.fetch(:format, "xlsx"),
-          filters:  params.fetch(:filters, {}).permit!.to_h
+          format:   resolve_export_file_format,
+          filters:  normalize_export_filters_param
         )
-        ExportGenerationJob.perform_later(export.id) if defined?(ExportGenerationJob)
+        safe_enqueue_export_generation_job(export.id)
 
-        render json: ExportSerializer.new(export).serializable_hash, status: :accepted
+        render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
       private

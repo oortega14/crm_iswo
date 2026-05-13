@@ -3,8 +3,7 @@ import {
   Phone, 
   Building2, 
   Briefcase, 
-  Calendar,
-  ExternalLink,
+  MapPin,
   Edit,
   Trash2,
   Link as LinkIcon
@@ -12,7 +11,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -21,29 +19,61 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import type { Contact } from '@/types'
-import { formatDate } from '@/lib/utils'
 
-interface ContactSlideOverProps {
-  contact: Contact | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
+interface ContactDetails {
+  id: string
+  fullName: string
+  email: string
+  phone: string
+  company: unknown
+  position: string
+  opportunitiesCount: number
+  kind: 'person' | 'company'
+  city?: string
+  country?: string
+  notes?: string
 }
 
-export function ContactSlideOver({ contact, open, onOpenChange }: ContactSlideOverProps) {
+const getInitialsSafe = (value: string | undefined): string => {
+  if (!value) return '--'
+  return value
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+}
+
+const getCompanyLabel = (company: unknown): string => {
+  if (!company) return '-'
+  if (typeof company === 'string') return company
+  if (typeof company === 'object' && company !== null && 'name' in company) {
+    const name = (company as { name?: unknown }).name
+    return typeof name === 'string' && name.trim() ? name : '-'
+  }
+  return '-'
+}
+
+interface ContactSlideOverProps {
+  contact: ContactDetails | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onEdit?: (contact: ContactDetails) => void
+  onDelete?: (contact: ContactDetails) => void
+  canDelete?: boolean
+}
+
+export function ContactSlideOver({
+  contact,
+  open,
+  onOpenChange,
+  onEdit,
+  onDelete,
+  canDelete = false,
+}: ContactSlideOverProps) {
   if (!contact) return null
-
-  const mockActivities = [
-    { id: 1, type: 'email', description: 'Email enviado', date: new Date(Date.now() - 86400000).toISOString() },
-    { id: 2, type: 'call', description: 'Llamada realizada', date: new Date(Date.now() - 86400000 * 2).toISOString() },
-    { id: 3, type: 'meeting', description: 'Reunion programada', date: new Date(Date.now() - 86400000 * 3).toISOString() },
-    { id: 4, type: 'note', description: 'Nota agregada', date: new Date(Date.now() - 86400000 * 5).toISOString() },
-  ]
-
-  const mockOpportunities = [
-    { id: 1, name: 'Proyecto CRM', stage: 'Propuesta', value: 25000 },
-    { id: 2, name: 'Consultoria IT', stage: 'Negociacion', value: 15000 },
-  ]
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -54,31 +84,40 @@ export function ContactSlideOver({ contact, open, onOpenChange }: ContactSlideOv
               <Avatar className="h-16 w-16">
                 <AvatarImage src={`https://avatar.vercel.sh/${contact.email}`} />
                 <AvatarFallback className="text-lg">
-                  {contact.firstName[0]}{contact.lastName[0]}
+                  {getInitialsSafe(contact.fullName)}
                 </AvatarFallback>
               </Avatar>
               <div>
                 <SheetTitle className="text-xl">
-                  {contact.firstName} {contact.lastName}
+                  {contact.fullName}
                 </SheetTitle>
                 <p className="text-sm text-muted-foreground">{contact.position}</p>
                 <div className="flex gap-1 mt-2">
-                  {contact.tags?.map(tag => (
-                    <Badge key={tag} variant="secondary" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
+                  <Badge variant="secondary" className="text-xs">
+                    {contact.kind}
+                  </Badge>
                 </div>
               </div>
             </div>
           </div>
           
           <div className="flex gap-2 mt-4">
-            <Button variant="outline" size="sm" className="flex-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onEdit?.(contact)}
+            >
               <Edit className="mr-2 h-4 w-4" />
               Editar
             </Button>
-            <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              disabled={!canDelete}
+              onClick={() => onDelete?.(contact)}
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
@@ -124,7 +163,7 @@ export function ContactSlideOver({ contact, open, onOpenChange }: ContactSlideOv
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Empresa</p>
-                      <p className="text-sm">{contact.company.name}</p>
+                      <p className="text-sm">{getCompanyLabel(contact.company)}</p>
                     </div>
                   </div>
                 )}
@@ -141,80 +180,28 @@ export function ContactSlideOver({ contact, open, onOpenChange }: ContactSlideOv
 
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Ultima Interaccion</p>
-                    <p className="text-sm">{formatDate(contact.lastInteraction)}</p>
+                    <p className="text-xs text-muted-foreground">Ubicacion</p>
+                    <p className="text-sm">{[contact.city, contact.country].filter(Boolean).join(', ') || 'Sin datos'}</p>
                   </div>
                 </div>
               </div>
             </div>
 
             <Separator className="my-6" />
-
-            {/* Tabs for Activities and Opportunities */}
-            <Tabs defaultValue="activities" className="w-full">
-              <TabsList className="w-full">
-                <TabsTrigger value="activities" className="flex-1">Actividad</TabsTrigger>
-                <TabsTrigger value="opportunities" className="flex-1">Oportunidades</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="activities" className="mt-4">
-                <div className="space-y-4">
-                  {mockActivities.map((activity) => (
-                    <div key={activity.id} className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                        <div className="h-2 w-2 rounded-full bg-primary" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm">{activity.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(activity.date)}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="opportunities" className="mt-4">
-                <div className="space-y-3">
-                  {mockOpportunities.map((opp) => (
-                    <div 
-                      key={opp.id} 
-                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10">
-                          <LinkIcon className="h-4 w-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{opp.name}</p>
-                          <Badge variant="secondary" className="text-xs">
-                            {opp.stage}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">
-                          {new Intl.NumberFormat('es-ES', { 
-                            style: 'currency', 
-                            currency: 'EUR' 
-                          }).format(opp.value)}
-                        </p>
-                        <ExternalLink className="h-3 w-3 text-muted-foreground" />
-                      </div>
-                    </div>
-                  ))}
-
-                  <Button variant="outline" className="w-full mt-2">
-                    <LinkIcon className="mr-2 h-4 w-4" />
-                    Vincular Oportunidad
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
+            <div className="space-y-3 pb-6">
+              <h3 className="text-sm font-medium text-foreground">Resumen</h3>
+              <div className="rounded-lg border p-3">
+                <p className="text-sm text-muted-foreground">Oportunidades vinculadas</p>
+                <p className="text-lg font-semibold">{contact.opportunitiesCount}</p>
+              </div>
+              <Button variant="outline" className="w-full mt-2">
+                <LinkIcon className="mr-2 h-4 w-4" />
+                Ver oportunidades
+              </Button>
+            </div>
           </div>
         </ScrollArea>
       </SheetContent>

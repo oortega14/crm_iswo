@@ -6,21 +6,32 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { X, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import api from '@/lib/api'
+import { Link } from '@tanstack/react-router'
+import api, { formatRailsError } from '@/lib/api'
+import {
+  jsonApiIncluded,
+  jsonApiPrimaryList,
+  jsonApiPrimaryOne,
+  mapOpportunityResource,
+  mapPipelineResource,
+} from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import type { Opportunity, Pipeline } from '@/types'
+import type { Pipeline } from '@/types'
 
 const opportunitySchema = z.object({
   contact_name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
   contact_email: z.string().email('Correo inválido').optional().or(z.literal('')),
   contact_phone: z.string().min(7, 'Teléfono inválido').optional().or(z.literal('')),
   company_name: z.string().optional(),
-  estimated_value: z.number().min(0, 'El valor debe ser positivo'),
+  estimated_value: z.preprocess(
+    (v) => (typeof v === 'number' && Number.isNaN(v) ? 0 : v),
+    z.number().min(0, 'El valor debe ser positivo')
+  ),
   pipeline_id: z.string().min(1, 'Selecciona un pipeline'),
   stage_id: z.string().min(1, 'Selecciona una etapa'),
   notes: z.string().optional(),
@@ -48,13 +59,20 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
   const [duplicatePhone, setDuplicatePhone] = useState<DuplicateInfo | null>(null)
   const [duplicateEmail, setDuplicateEmail] = useState<DuplicateInfo | null>(null)
 
-  // Fetch pipelines
-  const { data: pipelines } = useQuery({
+  // Fetch pipelines when the panel is open (tras bootstrap del tenant deben existir embudos/etapas)
+  const {
+    data: pipelines = [],
+    isLoading: pipelinesLoading,
+    isFetching: pipelinesFetching,
+  } = useQuery({
     queryKey: queryKeys.pipelines.all,
     queryFn: async () => {
-      const response = await api.get<{ data: Pipeline[] }>('/pipelines')
-      return response.data.data
+      const response = await api.get('/pipelines')
+      const rows = jsonApiPrimaryList(response.data)
+      return rows.filter((r) => r.id).map(mapPipelineResource)
     },
+    enabled: open,
+    staleTime: 60 * 1000,
   })
 
   const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
@@ -64,6 +82,7 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
     handleSubmit,
     watch,
     setValue,
+    getValues,
     reset,
     formState: { errors },
   } = useForm<OpportunityForm>({
@@ -92,6 +111,16 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
 
   const selectedPipelineId = watch('pipeline_id')
   const selectedPipeline = pipelines?.find((p) => p.id === selectedPipelineId)
+
+  // Si cambia el embudo, la etapa debe seguir perteneciendo a ese embudo (evita 422 en el servidor).
+  useEffect(() => {
+    if (!selectedPipelineId || !pipelines?.length) return
+    const p = pipelines.find((x) => x.id === selectedPipelineId)
+    if (!p?.stages?.length) return
+    const currentStageId = getValues('stage_id')
+    const stillValid = p.stages.some((s) => s.id === currentStageId)
+    if (!stillValid) setValue('stage_id', p.stages[0].id)
+  }, [selectedPipelineId, pipelines, setValue, getValues])
 
   // Check for duplicates
   const checkDuplicate = useCallback(
@@ -138,8 +167,23 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: OpportunityForm) => {
-      const response = await api.post<{ data: Opportunity }>('/opportunities', { data })
-      return response.data.data
+      const response = await api.post('/opportunities', {
+        opportunity: {
+          contact_name: data.contact_name,
+          contact_email: data.contact_email || undefined,
+          contact_phone: data.contact_phone || undefined,
+          company_name: data.company_name || undefined,
+          estimated_value: data.estimated_value,
+          pipeline_id: data.pipeline_id,
+          pipeline_stage_id: data.stage_id,
+          notes: data.notes || undefined,
+        },
+      })
+      const raw = jsonApiPrimaryOne(response.data)
+      if (!raw?.id) {
+        throw new Error('Respuesta inválida del servidor al crear la oportunidad')
+      }
+      return mapOpportunityResource(raw, jsonApiIncluded(response.data))
     },
     onSuccess: () => {
       toast.success('Oportunidad creada exitosamente')
@@ -149,8 +193,8 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
       reset()
       onOpenChange(false)
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Error al crear la oportunidad')
+    onError: (error: unknown) => {
+      toast.error(formatRailsError(error, 'Error al crear la oportunidad'))
     },
   })
 
@@ -160,6 +204,13 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
 
   const duplicateWarning = duplicatePhone?.exists || duplicateEmail?.exists
   const duplicateInfo = duplicatePhone?.exists ? duplicatePhone : duplicateEmail
+
+  const pipelinesReady = !pipelinesLoading && !pipelinesFetching
+  const noPipelines = pipelinesReady && pipelines.length === 0
+  const noStages =
+    pipelinesReady &&
+    pipelines.length > 0 &&
+    !(selectedPipeline?.stages && selectedPipeline.stages.length > 0)
 
   return (
     <AnimatePresence>
@@ -197,7 +248,10 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
 
               {/* Form */}
               <form
-                onSubmit={handleSubmit(onSubmit)}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleSubmit(onSubmit)(e)
+                }}
                 className="flex-1 overflow-y-auto p-4"
               >
                 <div className="flex flex-col gap-4">
@@ -295,36 +349,82 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
                     )}
                   </div>
 
-                  {/* Pipeline */}
+                  {/* Pipeline / etapa */}
+                  {(pipelinesLoading || pipelinesFetching) && (
+                    <p className="text-sm text-muted-foreground">Cargando pipelines y etapas…</p>
+                  )}
+
+                  {noPipelines && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                      <p className="font-medium">No hay ningún pipeline configurado para este tenant.</p>
+                      <p className="mt-1 text-amber-800 dark:text-amber-200">
+                        Crea uno en{' '}
+                        <Link
+                          to="/settings/pipelines"
+                          className="font-medium underline underline-offset-2"
+                          onClick={() => onOpenChange(false)}
+                        >
+                          Ajustes → Pipelines
+                        </Link>
+                        , o reinicia el servidor Rails si acabas de actualizar el proyecto (se crean datos de
+                        desarrollo al arrancar).
+                      </p>
+                    </div>
+                  )}
+
+                  {noStages && !noPipelines && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                      <p className="font-medium">Este pipeline no tiene etapas.</p>
+                      <p className="mt-1">
+                        <Link
+                          to="/settings/pipelines"
+                          className="font-medium underline underline-offset-2"
+                          onClick={() => onOpenChange(false)}
+                        >
+                          Configura etapas
+                        </Link>
+                      </p>
+                    </div>
+                  )}
+
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="pipeline_id">Pipeline</Label>
                     <select
                       id="pipeline_id"
+                      disabled={pipelinesLoading || noPipelines}
                       {...register('pipeline_id')}
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                     >
-                      {pipelines?.map((pipeline) => (
-                        <option key={pipeline.id} value={pipeline.id}>
-                          {pipeline.name}
-                          {pipeline.is_default && ' (Por defecto)'}
-                        </option>
-                      ))}
+                      {pipelines.length === 0 ? (
+                        <option value="">—</option>
+                      ) : (
+                        pipelines.map((pipeline) => (
+                          <option key={pipeline.id} value={pipeline.id}>
+                            {pipeline.name}
+                            {pipeline.is_default && ' (Por defecto)'}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
 
-                  {/* Stage */}
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="stage_id">Etapa</Label>
                     <select
                       id="stage_id"
+                      disabled={pipelinesLoading || noPipelines || noStages}
                       {...register('stage_id')}
-                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                     >
-                      {selectedPipeline?.stages?.map((stage) => (
-                        <option key={stage.id} value={stage.id}>
-                          {stage.name}
-                        </option>
-                      ))}
+                      {!selectedPipeline?.stages?.length ? (
+                        <option value="">—</option>
+                      ) : (
+                        selectedPipeline.stages.map((stage) => (
+                          <option key={stage.id} value={stage.id}>
+                            {stage.name}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
 
@@ -352,8 +452,15 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
                   Cancelar
                 </Button>
                 <Button
-                  type="submit"
-                  disabled={createMutation.isPending || duplicateWarning}
+                  type="button"
+                  disabled={
+                    createMutation.isPending ||
+                    duplicateWarning ||
+                    noPipelines ||
+                    noStages ||
+                    pipelinesLoading ||
+                    pipelinesFetching
+                  }
                   onClick={handleSubmit(onSubmit)}
                 >
                   {createMutation.isPending ? (

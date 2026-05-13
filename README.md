@@ -62,10 +62,10 @@ redis-server
 bundle exec sidekiq -C config/sidekiq.yml
 
 # 6. Levantar Rails
-bin/rails s -p 3000
+bin/rails s -p 3001
 ```
 
-El API queda escuchando en `http://localhost:3000/api/v1`. El dashboard de Sidekiq (montado en desarrollo) en `http://localhost:3000/sidekiq`.
+El API queda escuchando en `http://localhost:3001/api/v1`. El dashboard de Sidekiq (montado en desarrollo) en `http://localhost:3001/sidekiq`.
 
 ### Variables de entorno clave (`.env.example`)
 
@@ -76,7 +76,7 @@ REDIS_URL=redis://localhost:6379/0
 DEVISE_JWT_SECRET_KEY=<generar con `bin/rails secret`>
 LOCKBOX_MASTER_KEY=<generar con `Lockbox.generate_key`>
 
-CORS_ALLOWED_ORIGINS=http://localhost:5173
+CORS_ALLOWED_ORIGINS=http://localhost:3000
 
 # Integraciones (por tenant normalmente, pero defaults aquí)
 META_APP_SECRET=

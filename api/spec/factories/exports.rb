@@ -6,11 +6,11 @@ FactoryBot.define do
     user     { association :user, tenant: tenant }
     resource { "contacts" }
     format   { "xlsx" }
-    status   { "pending" }
+    status   { "queued" }
     filters  { {} }
 
     trait :ready do
-      status     { "ready" }
+      status     { "succeeded" }
       file_url   { "https://cdn.example.com/exports/file.xlsx" }
       file_size  { 1024 }
       finished_at { Time.current }

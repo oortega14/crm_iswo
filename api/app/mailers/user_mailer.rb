@@ -45,13 +45,18 @@ class UserMailer < ApplicationMailer
 
   private
 
+  def spa_base_url
+    ENV.fetch("SPA_HOST", "http://localhost:3001").to_s.strip.chomp("/")
+  end
+
+  # Enlace al SPA (sin subdominio wildcard): ?tenant=slug para X-Tenant-Slug en el cliente.
   def build_login_url(tenant)
-    host = ENV.fetch("SPA_HOST", "https://crm.iswo.com.co")
-    "#{host.sub('https://', "https://#{tenant.slug}.")}/login"
+    q = URI.encode_www_form("tenant" => tenant.slug)
+    "#{spa_base_url}/login?#{q}"
   end
 
   def build_reset_url(tenant, token)
-    host = ENV.fetch("SPA_HOST", "https://crm.iswo.com.co")
-    "#{host.sub('https://', "https://#{tenant.slug}.")}/reset-password?token=#{token}"
+    q = URI.encode_www_form("token" => token, "tenant" => tenant.slug)
+    "#{spa_base_url}/reset-password?#{q}"
   end
 end

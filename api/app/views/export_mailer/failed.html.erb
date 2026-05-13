@@ -1,6 +1,6 @@
 <h2 style="margin-top:0;">Tu export falló</h2>
 
-<p>Hola <%= @user.first_name.presence || @user.email %>,</p>
+<p>Hola <%= @user.name.presence || @user.email %>,</p>
 
 <p>
   El export de <strong><%= @export.resource.titleize %></strong> (ID

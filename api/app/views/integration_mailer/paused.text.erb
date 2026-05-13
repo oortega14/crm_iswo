@@ -1,4 +1,4 @@
-Atención <%= @user.first_name.presence || @user.email %>,
+Atención <%= @user.name.presence || @user.email %>,
 
 Pausamos automáticamente la integración <%= @integration.provider.titleize %>
 (cuenta <%= @integration.account_identifier %>) tras varios intentos fallidos

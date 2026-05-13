@@ -18,7 +18,7 @@ class ReminderMailer < ApplicationMailer
     tenant_email_headers
     mail(
       to:      @user.email,
-      subject: "🔔 Recordatorio: #{@reminder.title}"
+      subject: "🔔 Recordatorio: #{@reminder.subject}"
     )
   end
 end

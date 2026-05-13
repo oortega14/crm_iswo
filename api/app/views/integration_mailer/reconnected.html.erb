@@ -1,4 +1,4 @@
-<h2 style="margin-top:0;">Buenas noticias, <%= @user.first_name.presence || @user.email %></h2>
+<h2 style="margin-top:0;">Buenas noticias, <%= @user.name.presence || @user.email %></h2>
 
 <p>
   La integración <strong><%= @integration.provider.titleize %></strong>

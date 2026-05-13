@@ -1,12 +1,12 @@
-Hola <%= @user.first_name.presence || @user.email %>,
+Hola <%= @user.name.presence || @user.email %>,
 
 Tienes un recordatorio que vence ahora:
 
-  <%= @reminder.title %>
+  <%= @reminder.subject %>
   Programado: <%= @reminder.remind_at %>
 
-<% if @reminder.body.present? -%>
-<%= @reminder.body %>
+<% if @reminder.message.present? -%>
+<%= @reminder.message %>
 
 <% end -%>
 <% if @opportunity -%>

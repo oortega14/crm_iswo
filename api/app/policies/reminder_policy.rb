@@ -24,8 +24,9 @@ class ReminderPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
+        opp_ids = Opportunity.where(owner_user_id: user.id).select(:id)
         scope.where(user_id: user.id)
-             .or(scope.joins(:opportunity).where(opportunities: { owner_user_id: user.id }))
+             .or(scope.where(opportunity_id: opp_ids))
       else
         scope.none
       end

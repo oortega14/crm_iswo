@@ -12,14 +12,29 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 interface ThemeProviderProps {
   children: React.ReactNode
+  /** ISWO: tema oscuro por defecto (RFC · #0F172A) */
   defaultTheme?: Theme
   storageKey?: string
 }
 
+function resolveTheme(theme: Theme): 'dark' | 'light' {
+  if (theme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  }
+  return theme
+}
+
+/** `dark` → variables ISWO; `light` → modo claro (sin .dark) */
+function applyThemeClass(resolved: 'dark' | 'light') {
+  const root = window.document.documentElement
+  root.classList.remove('light', 'dark')
+  root.classList.add(resolved === 'light' ? 'light' : 'dark')
+}
+
 export function ThemeProvider({
   children,
-  defaultTheme = 'system',
-  storageKey = 'theme',
+  defaultTheme = 'dark',
+  storageKey = 'crm-iswo-theme',
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== 'undefined') {
@@ -28,34 +43,21 @@ export function ThemeProvider({
     return defaultTheme
   })
 
-  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('light')
+  const [resolvedTheme, setResolvedTheme] = useState<'dark' | 'light'>('dark')
 
   useEffect(() => {
-    const root = window.document.documentElement
-    root.classList.remove('light', 'dark')
-
-    let resolved: 'dark' | 'light'
-    if (theme === 'system') {
-      resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-    } else {
-      resolved = theme
-    }
-
-    root.classList.add(resolved)
+    const resolved = resolveTheme(theme)
+    applyThemeClass(resolved)
     setResolvedTheme(resolved)
   }, [theme])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    
+
     const handleChange = () => {
       if (theme === 'system') {
-        const root = window.document.documentElement
         const resolved = mediaQuery.matches ? 'dark' : 'light'
-        root.classList.remove('light', 'dark')
-        root.classList.add(resolved)
+        applyThemeClass(resolved)
         setResolvedTheme(resolved)
       }
     }
@@ -73,11 +75,7 @@ export function ThemeProvider({
     resolvedTheme,
   }
 
-  return (
-    <ThemeContext.Provider value={value}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
 export function useTheme() {

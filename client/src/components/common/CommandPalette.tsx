@@ -100,10 +100,33 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <CommandGroup heading="Resultados">
             {searchResults.map((result) => {
               const Icon = getIcon(result.type)
+              const go = (): void => {
+                onOpenChange(false)
+                setSearch('')
+                setDebouncedSearch('')
+                if (result.type === 'opportunity') {
+                  navigate({
+                    to: '/opportunities',
+                    search: (prev) => ({
+                      ...prev,
+                      selected: result.id,
+                    }),
+                  })
+                  return
+                }
+                if (result.type === 'contact') {
+                  navigate({
+                    to: '/contacts',
+                    search: { selected: result.id },
+                  })
+                  return
+                }
+                navigate({ to: result.url })
+              }
               return (
                 <CommandItem
                   key={`${result.type}-${result.id}`}
-                  onSelect={() => handleSelect(result.url)}
+                  onSelect={go}
                   className="flex items-center gap-3"
                 >
                   <Icon className="size-4 text-muted-foreground" />

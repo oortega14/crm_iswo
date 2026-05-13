@@ -34,5 +34,8 @@ Sidekiq.configure_client do |config|
   end
 end
 
-# Usar Sidekiq como ActiveJob backend
-Rails.application.config.active_job.queue_adapter = :sidekiq
+# Sidekiq solo fuera de desarrollo. En development `config/environments/development.rb`
+# fija :async para no depender de Redis al crear exportaciones u otros jobs.
+unless Rails.env.development?
+  Rails.application.config.active_job.queue_adapter = :sidekiq
+end

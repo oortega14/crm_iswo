@@ -11,6 +11,10 @@ class Contact < ApplicationRecord
   include TenantScoped
   include Discard::Model
 
+  # Compatibilidad con serializers/frontend que usan company/position.
+  alias_attribute :company, :company_name
+  alias_attribute :position, :job_title
+
   KINDS = %w[person company].freeze
   enum :kind, KINDS.zip(KINDS).to_h, prefix: true
 

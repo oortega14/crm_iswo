@@ -15,6 +15,9 @@ module Api
       # Sí se valida la firma X-Hub-Signature-256 (HMAC SHA256 con app secret).
       # ========================================================================
       class MetaAdsController < BaseController
+        include WebhookEnqueue
+        include WebhookJsonPayload
+
         skip_before_action :authenticate_user!,            raise: false
         skip_before_action :verify_user_belongs_to_tenant, raise: false
         skip_before_action :resolve_tenant!,               raise: false
@@ -33,25 +36,22 @@ module Api
 
         # POST /api/v1/webhooks/meta
         def create
-          payload = request.request_parameters.presence || JSON.parse(request.raw_post)
+          payload = parsed_webhook_payload
+          return head :bad_request if payload == WebhookJsonPayload::INVALID_JSON_BODY
 
           Array(payload["entry"]).each do |entry|
             Array(entry["changes"]).each do |change|
               value = change["value"] || {}
               next unless value["leadgen_id"].present?
 
-              if defined?(WebhookProcessorJob)
-                WebhookProcessorJob.perform_later(
-                  "meta_ads",
-                  value.merge("page_id" => entry["id"], "received_at" => Time.current.iso8601)
-                )
-              end
+              enqueue_webhook_processor(
+                "meta",
+                value.merge("page_id" => entry["id"], "received_at" => Time.current.iso8601)
+              )
             end
           end
 
           head :ok
-        rescue JSON::ParserError
-          head :bad_request
         end
 
         private

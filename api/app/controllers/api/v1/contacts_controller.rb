@@ -19,7 +19,7 @@ module Api
         if (q = params[:q]).present?
           like = "%#{q}%"
           scope = scope.where(
-            "first_name ILIKE :q OR last_name ILIKE :q OR company ILIKE :q OR email ILIKE :q OR phone_normalized ILIKE :q",
+            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR email ILIKE :q OR phone_normalized ILIKE :q",
             q: like
           )
         end
@@ -60,6 +60,8 @@ module Api
       # GET /api/v1/contacts/check_duplicates?phone=...&email=...&full_name=...
       # Llamado desde el form del SPA mientras el consultor escribe.
       def check_duplicates
+        authorize Contact, :check_duplicates?
+
         matches = Opportunities::DuplicateDetector.new(
           phone:     params[:phone],
           email:     params[:email],
@@ -69,20 +71,69 @@ module Api
         render json: { data: matches.map(&:as_json) }, status: :ok
       rescue ArgumentError => e
         render json: { error: "bad_request", message: e.message }, status: :bad_request
-      rescue NameError
-        render json: { data: [], note: "DuplicateDetector pendiente de implementar" }
       end
 
-      # POST /api/v1/contacts/export  body: { format: "xlsx", filters: {...} }
+      # GET /api/v1/contacts/import_template — plantilla Excel (.xlsx)
+      def import_template
+        authorize Contact, :create?
+
+        require "caxlsx"
+
+        package = Axlsx::Package.new
+        package.workbook.add_worksheet(name: "Contactos") do |sheet|
+          sheet.add_row %w[first_name last_name email phone company position city country kind notes]
+        end
+
+        tmp = Tempfile.new(["plantilla_contactos", ".xlsx"], binmode: true)
+        begin
+          package.serialize(tmp.path)
+          send_data File.binread(tmp.path),
+                    filename: "plantilla_contactos.xlsx",
+                    type:     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    disposition: "attachment"
+        ensure
+          tmp.close!
+        end
+      end
+
+      # POST /api/v1/contacts/import — multipart (Excel .xlsx/.xls o CSV)
+      def import
+        authorize Contact, :create?
+
+        file = params[:file]
+        unless file.respond_to?(:tempfile)
+          return render json: {
+            error: "no_file", message: "Adjunta un archivo Excel (.xlsx)"
+          }, status: :bad_request
+        end
+
+        result = Contacts::SpreadsheetImporter.new(
+          tenant:   current_tenant,
+          user:     current_user,
+          io:       file.tempfile,
+          filename: file.original_filename
+        ).call
+
+        render json: {
+          data: {
+            created_count: result.created_count,
+            skipped_count: result.skipped_count,
+            errors:        result.errors
+          }
+        }, status: :ok
+      end
+
+      # POST /api/v1/contacts/export
+      # body: { export_format|file_format|"format" si csv/xlsx, filters }
       def export
         authorize Contact, :export?
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: "contacts",
-          format:   params.fetch(:format, "xlsx"),
-          filters:  params.fetch(:filters, {}).permit!.to_h
+          format:   resolve_export_file_format,
+          filters:  normalize_export_filters_param
         )
-        ExportGenerationJob.perform_later(export.id) if defined?(ExportGenerationJob)
+        safe_enqueue_export_generation_job(export.id)
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
@@ -93,12 +144,15 @@ module Api
       end
 
       def contact_params
-        params.require(:contact).permit(
+        permitted = params.require(:contact).permit(
           :kind, :first_name, :last_name, :company, :position,
           :email, :phone_e164, :city, :country, :notes,
           :owner_user_id, :source_kind, :source_label,
           custom_fields: {}
         )
+        permitted[:company_name] = permitted.delete(:company) if permitted.key?(:company)
+        permitted[:job_title] = permitted.delete(:position) if permitted.key?(:position)
+        permitted
       end
     end
   end

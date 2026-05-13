@@ -22,15 +22,25 @@ module Ads
       integration = resolve_integration!
       tenant      = integration.tenant
 
-      ActsAsTenant.with_tenant(tenant) do
-        lead_data = fetch_leadgen(integration, @payload["leadgen_id"])
-        attrs     = flatten_field_data(lead_data["field_data"])
+      lead_data = fetch_leadgen(integration, @payload["leadgen_id"])
+      attrs     = flatten_field_data(lead_data["field_data"])
 
-        contact = upsert_contact(tenant, attrs)
-        opp     = create_opportunity(tenant, contact, attrs, integration)
+      result = Opportunities::LeadImporter.new(
+        tenant:        tenant,
+        attrs:         attrs,
+        source_kind:   "meta",
+        source_label:  "meta_ads",
+        title:         "Lead Meta Ads ##{@payload['leadgen_id']}",
+        custom_fields: attrs.except("email", "phone", "full_name", "first_name", "last_name").merge(
+          "meta_leadgen_id"  => @payload["leadgen_id"],
+          "meta_ad_id"       => @payload["ad_id"],
+          "meta_form_id"     => @payload["form_id"],
+          "meta_campaign_id" => @payload["campaign_id"],
+          "integration_id"   => integration.id
+        )
+      ).call
 
-        Result.new(tenant: tenant, contact: contact, opportunity: opp)
-      end
+      Result.new(tenant: tenant, contact: result.contact, opportunity: result.opportunity)
     end
 
     # =========================================================================
@@ -42,7 +52,7 @@ module Ads
       raise ArgumentError, "page_id ausente en payload Meta" if page_id.blank?
 
       AdIntegration
-        .where(provider: "meta_ads", status: "active")
+        .where(provider: "meta", status: "active")
         .find_by!(account_identifier: page_id.to_s)
     end
 
@@ -74,64 +84,13 @@ module Ads
 
     def normalize_key(k)
       case k.downcase
-      when "email"                       then "email"
-      when "phone_number", "phone"       then "phone"
+      when "email"                        then "email"
+      when "phone_number", "phone"        then "phone"
       when "full_name", "nombre completo" then "full_name"
-      when "first_name"                  then "first_name"
-      when "last_name"                   then "last_name"
+      when "first_name"                   then "first_name"
+      when "last_name"                    then "last_name"
       else k.downcase
       end
-    end
-
-    def upsert_contact(tenant, attrs)
-      matches = Opportunities::DuplicateDetector.new(
-        phone:     attrs["phone"],
-        email:     attrs["email"],
-        full_name: attrs["full_name"]
-      ).call
-
-      return matches.first.contact if matches.any?
-
-      tenant.contacts.create!(
-        first_name:       attrs["first_name"] || attrs["full_name"].to_s.split.first,
-        last_name:        attrs["last_name"]  || attrs["full_name"].to_s.split[1..]&.join(" "),
-        email:            attrs["email"]&.downcase,
-        phone_e164:       attrs["phone"],
-        phone_normalized: Phonelib.parse(attrs["phone"]).sanitized,
-        source_kind:      "meta",
-        source_label:     "meta_ads"
-      )
-    end
-
-    def create_opportunity(tenant, contact, attrs, integration)
-      pipeline = tenant.pipelines.find_by(is_default: true) || tenant.pipelines.first
-      stage    = pipeline&.pipeline_stages&.order(:position)&.first
-      source   = tenant.lead_sources.find_by(kind: "meta") || tenant.lead_sources.first
-
-      opp = tenant.opportunities.create!(
-        contact:          contact,
-        pipeline:         pipeline,
-        pipeline_stage:   stage,
-        owner_user:       nil, # queda pendiente de asignación
-        lead_source:      source,
-        status:           "open",
-        title:            "Lead Meta Ads ##{@payload['leadgen_id']}",
-        custom_fields:    attrs.except("email", "phone", "full_name", "first_name", "last_name").merge(
-          "meta_ad_id"       => @payload["ad_id"],
-          "meta_form_id"     => @payload["form_id"],
-          "meta_campaign_id" => @payload["campaign_id"]
-        ),
-        last_activity_at: Time.current
-      )
-
-      opp.opportunity_logs.create!(
-        tenant: tenant,
-        user:   nil,
-        action: "created_from_meta",
-        changes_data: { leadgen_id: @payload["leadgen_id"], integration_id: integration.id }
-      )
-
-      opp
     end
   end
 end

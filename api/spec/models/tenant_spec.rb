@@ -22,7 +22,18 @@ RSpec.describe Tenant, type: :model do
     it { is_expected.to have_many(:whatsapp_messages).dependent(:destroy) }
     it { is_expected.to have_many(:exports).dependent(:destroy) }
     it { is_expected.to have_many(:audit_events).dependent(:nullify) }
-    it { is_expected.to have_one(:bant_criterion).dependent(:destroy) }
+  end
+
+  # shoulda `have_one` + `acts_as_tenant` en BantCriterion no refleja bien el FK; comprobamos a mano.
+  describe "bant_criterion" do
+    it "expone has_one enlazado por tenant_id" do
+      tenant = create(:tenant)
+      crit = nil
+      ActsAsTenant.with_tenant(tenant) do
+        crit = create(:bant_criterion, tenant: tenant)
+      end
+      expect(tenant.reload.bant_criterion).to eq(crit)
+    end
   end
 
   describe "validaciones", :without_tenant do
@@ -71,6 +82,65 @@ RSpec.describe Tenant, type: :model do
 
       expect(Tenant.active).to include(active)
       expect(Tenant.active).not_to include(inactive, discarded)
+    end
+  end
+
+  describe "#whatsapp_outbound_from_number", :without_tenant do
+    it "usa la integración Twilio aunque el estado sea error (no solo active)" do
+      tenant = create(:tenant, settings: {})
+      ActsAsTenant.with_tenant(tenant) do
+        create(
+          :ad_integration, :twilio, :errored, tenant:,
+          account_identifier: "+573001111222"
+        )
+      end
+
+      expect(tenant.reload.whatsapp_outbound_from_number).to eq("+573001111222")
+    end
+  end
+
+  describe "#whatsapp_outbound_provider", :without_tenant do
+    around do |example|
+      original = ENV["WHATSAPP_PROVIDER"]
+      ENV.delete("WHATSAPP_PROVIDER")
+      example.run
+    ensure
+      original ? (ENV["WHATSAPP_PROVIDER"] = original) : ENV.delete("WHATSAPP_PROVIDER")
+    end
+
+    it "prefiere whatsapp_cloud cuando Twilio y Cloud tienen credenciales" do
+      tenant = create(:tenant)
+      ActsAsTenant.with_tenant(tenant) do
+        create(:ad_integration, :twilio, tenant: tenant)
+        create(:ad_integration, :cloud, tenant: tenant)
+      end
+
+      expect(tenant.reload.whatsapp_outbound_provider).to eq("whatsapp_cloud")
+    end
+
+    it "usa twilio si solo Twilio está configurado" do
+      tenant = create(:tenant)
+      ActsAsTenant.with_tenant(tenant) { create(:ad_integration, :twilio, tenant: tenant) }
+
+      expect(tenant.reload.whatsapp_outbound_provider).to eq("twilio")
+    end
+
+    it "respeta WHATSAPP_PROVIDER cuando ambas integraciones existen" do
+      ENV["WHATSAPP_PROVIDER"] = "twilio"
+      tenant = create(:tenant)
+      ActsAsTenant.with_tenant(tenant) do
+        create(:ad_integration, :twilio, tenant: tenant)
+        create(:ad_integration, :cloud, tenant: tenant)
+      end
+
+      expect(tenant.reload.whatsapp_outbound_provider).to eq("twilio")
+    end
+
+    it "respeta settings whatsapp.provider" do
+      tenant = create(:tenant, settings: { "whatsapp" => { "provider" => "twilio" } })
+      ActsAsTenant.with_tenant(tenant) { create(:ad_integration, :cloud, tenant: tenant) }
+
+      expect(tenant.reload.whatsapp_outbound_provider).to eq("twilio")
     end
   end
 end

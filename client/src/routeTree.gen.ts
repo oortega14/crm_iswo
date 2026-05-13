@@ -9,9 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppRemindersRouteImport } from './routes/_app/reminders'
 import { Route as AppOpportunitiesRouteImport } from './routes/_app/opportunities'
@@ -25,9 +28,19 @@ import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
 import { Route as AppSettingsAuditRouteImport } from './routes/_app/settings/audit'
 
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -38,6 +51,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const LSlugRoute = LSlugRouteImport.update({
+  id: '/l/$slug',
+  path: '/l/$slug',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
@@ -102,7 +120,9 @@ const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/contacts': typeof AppContactsRoute
   '/duplicates': typeof AppDuplicatesRoute
   '/exports': typeof AppExportsRoute
@@ -111,13 +131,16 @@ export interface FileRoutesByFullPath {
   '/opportunities': typeof AppOpportunitiesRoute
   '/reminders': typeof AppRemindersRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/users': typeof AppSettingsUsersRoute
 }
 export interface FileRoutesByTo {
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/contacts': typeof AppContactsRoute
   '/duplicates': typeof AppDuplicatesRoute
   '/exports': typeof AppExportsRoute
@@ -126,6 +149,7 @@ export interface FileRoutesByTo {
   '/opportunities': typeof AppOpportunitiesRoute
   '/reminders': typeof AppRemindersRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/': typeof AppIndexRoute
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
@@ -135,7 +159,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/_app/contacts': typeof AppContactsRoute
   '/_app/duplicates': typeof AppDuplicatesRoute
   '/_app/exports': typeof AppExportsRoute
@@ -144,6 +170,7 @@ export interface FileRoutesById {
   '/_app/opportunities': typeof AppOpportunitiesRoute
   '/_app/reminders': typeof AppRemindersRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
+  '/l/$slug': typeof LSlugRoute
   '/_app/': typeof AppIndexRoute
   '/_app/settings/audit': typeof AppSettingsAuditRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
@@ -154,7 +181,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/contacts'
     | '/duplicates'
     | '/exports'
@@ -163,13 +192,16 @@ export interface FileRouteTypes {
     | '/opportunities'
     | '/reminders'
     | '/settings'
+    | '/l/$slug'
     | '/settings/audit'
     | '/settings/integrations'
     | '/settings/pipelines'
     | '/settings/users'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/contacts'
     | '/duplicates'
     | '/exports'
@@ -178,6 +210,7 @@ export interface FileRouteTypes {
     | '/opportunities'
     | '/reminders'
     | '/settings'
+    | '/l/$slug'
     | '/'
     | '/settings/audit'
     | '/settings/integrations'
@@ -186,7 +219,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
+    | '/forgot-password'
     | '/login'
+    | '/reset-password'
     | '/_app/contacts'
     | '/_app/duplicates'
     | '/_app/exports'
@@ -195,6 +230,7 @@ export interface FileRouteTypes {
     | '/_app/opportunities'
     | '/_app/reminders'
     | '/_app/settings'
+    | '/l/$slug'
     | '/_app/'
     | '/_app/settings/audit'
     | '/_app/settings/integrations'
@@ -204,16 +240,33 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
+  LSlugRoute: typeof LSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -229,6 +282,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/l/$slug': {
+      id: '/l/$slug'
+      path: '/l/$slug'
+      fullPath: '/l/$slug'
+      preLoaderRoute: typeof LSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/settings': {
       id: '/_app/settings'
@@ -363,7 +423,10 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
+  LSlugRoute: LSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

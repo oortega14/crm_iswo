@@ -10,9 +10,49 @@
 class OpportunitySerializer < ApplicationSerializer
   set_type :opportunity
 
-  attributes :title, :status, :estimated_value, :bant_score, :bant_data,
+  attributes :title, :status, :estimated_value, :bant_score,
              :expected_close_date, :closed_at, :lost_reason, :notes,
-             :last_activity_at, :custom_fields, :discarded_at
+             :last_activity_at, :custom_fields, :discarded_at, :currency
+
+  attribute :bant_data do |o|
+    (o.custom_fields || {})["bant_data"] || {}
+  end
+
+  attribute :contact_name do |o|
+    o.contact&.display_name
+  end
+
+  attribute :company_name do |o|
+    o.contact&.company_name
+  end
+
+  attribute :contact_email do |o|
+    o.contact&.email
+  end
+
+  attribute :contact_phone do |o|
+    o.contact&.phone_e164
+  end
+
+  attribute :pipeline_stage_id do |o|
+    o.pipeline_stage_id&.to_s
+  end
+
+  attribute :pipeline_id do |o|
+    o.pipeline_id&.to_s
+  end
+
+  attribute :owner do |o|
+    u = o.owner_user
+    next nil unless u
+
+    {
+      id:         u.id.to_s,
+      email:      u.email,
+      name:       u.try(:name).presence || u.email,
+      avatar_url: u.try(:avatar_url)
+    }
+  end
 
   attribute :stage_name do |o|
     o.pipeline_stage&.name

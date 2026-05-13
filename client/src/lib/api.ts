@@ -1,11 +1,13 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiError } from '@/types'
 import { getSubdomain } from './utils'
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+
 // Create axios instance
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: apiBaseUrl,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -21,8 +23,8 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // Add tenant subdomain header
-    config.headers['X-Tenant-Subdomain'] = getSubdomain()
+    // Backend tenant resolver expects X-Tenant-Slug
+    config.headers['X-Tenant-Slug'] = getSubdomain()
     
     return config
   },
@@ -53,9 +55,12 @@ api.interceptors.response.use(
     const originalRequest = error.config as InternalAxiosRequestConfig & {
       _retry?: boolean
     }
+    const requestUrl = originalRequest?.url || ''
+    const isAuthEndpoint =
+      requestUrl.includes('/sessions') || requestUrl.includes('/password/')
 
     // Handle 401 - try to refresh token
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -72,9 +77,14 @@ api.interceptors.response.use(
 
       try {
         const response = await axios.post(
-          '/api/v1/sessions/refresh',
+          `${apiBaseUrl}/sessions/refresh`,
           {},
-          { withCredentials: true }
+          {
+            withCredentials: true,
+            headers: {
+              'X-Tenant-Slug': getSubdomain(),
+            },
+          }
         )
         
         const { access_token } = response.data
@@ -113,6 +123,35 @@ api.interceptors.response.use(
 )
 
 export default api
+
+/** Mensaje legible para errores 422 de Rails (`error` + `details` de validación). */
+export function formatRailsError(err: unknown, fallback = 'Error en la petición'): string {
+  if (isAxiosError(err)) {
+    const d = err.response?.data
+    if (d && typeof d === 'object') {
+      const details = (d as { details?: Record<string, string[] | string> }).details
+      if (details && typeof details === 'object') {
+        const parts: string[] = []
+        for (const v of Object.values(details)) {
+          if (Array.isArray(v)) parts.push(...v.filter((x) => typeof x === 'string'))
+          else if (typeof v === 'string') parts.push(v)
+        }
+        if (parts.length) return parts.join('. ')
+      }
+      const slug = (d as { error?: string }).error
+      const msg = (d as { message?: string }).message
+      if (typeof msg === 'string' && msg.trim()) return msg
+      if (slug === 'connection_failed') {
+        return 'La prueba de conexión falló. Revisa las credenciales o variables del servidor (p. ej. Google OAuth).'
+      }
+      if (slug === 'whatsapp_not_configured') {
+        return 'Configura el número de WhatsApp de salida en Ajustes → Integraciones o en el servidor.'
+      }
+    }
+    return err.message || fallback
+  }
+  return err instanceof Error ? err.message : fallback
+}
 
 // Helper functions for common API patterns
 export const apiHelpers = {

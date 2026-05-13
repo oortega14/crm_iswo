@@ -18,7 +18,10 @@ module Api
                   policy_scope(Reminder).where(user: current_user)
                 end
         scope = scope.where(status: params[:status]) if params[:status].present?
-        scope = scope.upcoming                       if params[:upcoming] == "true"
+        if params[:overdue] == "true"
+          scope = scope.merge(Reminder.status_pending.where(remind_at: ..Time.current))
+        end
+        scope = scope.upcoming if params[:upcoming] == "true"
 
         render_collection(scope.order(:remind_at), with: ReminderSerializer)
       end
@@ -82,7 +85,7 @@ module Api
       end
 
       def reminder_params
-        params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id)
+        params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id, :status)
       end
     end
   end

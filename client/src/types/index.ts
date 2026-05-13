@@ -122,9 +122,12 @@ export interface Reminder {
   user?: User
   channel: ReminderChannel
   status: ReminderStatus
+  subject?: string
   message: string
-  scheduled_at: string
+  remind_at: string
   sent_at?: string
+  overdue?: boolean
+  seconds_until?: number
   created_at: string
 }
 

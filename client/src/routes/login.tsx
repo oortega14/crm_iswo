@@ -1,9 +1,10 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,65 +13,87 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Spinner } from '@/components/ui/spinner'
 import type { Tenant, User } from '@/types'
 
-// Demo users for testing
-const DEMO_USERS: Record<string, { user: User; password: string }> = {
-  'admin@iswo.com': {
-    password: 'admin123',
-    user: {
-      id: '1',
-      name: 'Admin Demo',
-      email: 'admin@iswo.com',
-      role: 'admin',
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-  'manager@iswo.com': {
-    password: 'manager123',
-    user: {
-      id: '2',
-      name: 'Manager Demo',
-      email: 'manager@iswo.com',
-      role: 'manager',
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-  'consultant@iswo.com': {
-    password: 'consultant123',
-    user: {
-      id: '3',
-      name: 'Consultant Demo',
-      email: 'consultant@iswo.com',
-      role: 'consultant',
-      avatar_url: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  },
-}
-
-const DEMO_TENANT: Tenant = {
-  id: '1',
-  name: 'ISWO Demo',
-  subdomain: 'demo',
-  logo_url: null,
-  primary_color: '#2563eb',
-  plan: 'professional',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-}
-
 const loginSchema = z.object({
-  email: z.string().email('Correo electrónico inválido'),
-  password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  tenantSlug: z.string().min(1, 'El identificador de empresa es obligatorio'),
+  email:      z.string().email('Correo electrónico inválido'),
+  password:   z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+})
+
+const loginSearchSchema = z.object({
+  tenant: z.string().optional(),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
 
+type JsonApiResource<TAttributes> = {
+  id: string
+  attributes: TAttributes
+}
+
+type SessionAttributes = {
+  email: string
+  full_name?: string
+  first_name?: string
+  last_name?: string
+  role: User['role']
+  avatar_url?: string | null
+  active?: boolean
+  last_sign_in_at?: string
+  created_at?: string
+  updated_at?: string
+}
+
+type TenantAttributes = {
+  name: string
+  slug: string
+  logo_url?: string | null
+  brand_color?: string
+  currency?: string
+  timezone?: string
+  created_at?: string
+}
+
+type SessionMeta = {
+  tenant?: {
+    id?: string | number
+    slug?: string
+  }
+}
+
+const buildUserFromSession = (resource: JsonApiResource<SessionAttributes>): User => {
+  const attrs = resource.attributes
+  const fullName = attrs.full_name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')
+  const timestamp = new Date().toISOString()
+
+  return {
+    id: resource.id,
+    email: attrs.email,
+    name: fullName || attrs.email,
+    role: attrs.role,
+    avatar_url: attrs.avatar_url || undefined,
+    active: attrs.active ?? true,
+    last_sign_in_at: attrs.last_sign_in_at,
+    created_at: attrs.created_at || timestamp,
+    updated_at: attrs.updated_at || timestamp,
+  }
+}
+
+const buildTenant = (resource: JsonApiResource<TenantAttributes>): Tenant => {
+  const attrs = resource.attributes
+  return {
+    id: resource.id,
+    name: attrs.name,
+    subdomain: attrs.slug,
+    logo_url: attrs.logo_url || undefined,
+    primary_color: attrs.brand_color || '#2563eb',
+    currency: attrs.currency || 'COP',
+    timezone: attrs.timezone || 'America/Bogota',
+    created_at: attrs.created_at || new Date().toISOString(),
+  }
+}
+
 export const Route = createFileRoute('/login')({
+  validateSearch: loginSearchSchema,
   beforeLoad: ({ context }) => {
     if (context.auth.isAuthenticated) {
       throw redirect({ to: '/' })
@@ -79,29 +102,76 @@ export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
+const ENV_TENANT = import.meta.env.VITE_TENANT_SLUG as string | undefined
+
+function resolveInitialTenant(fromUrl?: string): string {
+  if (ENV_TENANT?.trim()) return ENV_TENANT.trim().toLowerCase()
+  if (fromUrl?.trim()) return fromUrl.trim().toLowerCase()
+  return window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() ?? ''
+}
+
 function LoginPage() {
   const navigate = useNavigate()
+  const { tenant: tenantFromUrl } = Route.useSearch()
   const login = useAuthStore((s) => s.login)
   const setTenant = useAuthStore((s) => s.setTenant)
+  const setAccessToken = useAuthStore((s) => s.setAccessToken)
 
-  // Demo login mutation
   const loginMutation = useMutation({
     mutationFn: async (data: LoginForm): Promise<{ user: User; token: string }> => {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 800))
-      
-      const demoUser = DEMO_USERS[data.email.toLowerCase()]
-      if (!demoUser || demoUser.password !== data.password) {
-        throw new Error('Credenciales inválidas. Usa admin@iswo.com / admin123')
+      const tenantSlug = data.tenantSlug.trim().toLowerCase()
+      window.localStorage.setItem('crm-tenant-slug', tenantSlug)
+      const response = await api.post('/sessions', {
+        user: {
+          email: data.email,
+          password: data.password,
+        },
+      })
+
+      const authHeader = response.headers.authorization as string | undefined
+      const accessToken = authHeader?.replace(/^Bearer\s+/i, '').trim()
+      const sessionData = response.data?.data as JsonApiResource<SessionAttributes> | undefined
+      const sessionMeta = (response.data?.meta || {}) as SessionMeta
+
+      if (!accessToken || !sessionData) {
+        throw new Error('Respuesta inválida del servidor al iniciar sesión')
       }
-      
-      return {
-        user: demoUser.user,
-        token: 'demo-token-' + Date.now(),
+
+      const user = buildUserFromSession(sessionData)
+      setAccessToken(accessToken)
+      try {
+        const tenantResponse = await api.get('/tenant')
+        const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
+        if (tenantData) {
+          setTenant(buildTenant(tenantData))
+        } else if (sessionMeta.tenant?.slug) {
+          setTenant({
+            id: String(sessionMeta.tenant.id || '0'),
+            name: sessionMeta.tenant.slug,
+            subdomain: sessionMeta.tenant.slug,
+            primary_color: '#2563eb',
+            currency: 'COP',
+            timezone: 'America/Bogota',
+            created_at: new Date().toISOString(),
+          })
+        }
+      } catch {
+        if (sessionMeta.tenant?.slug) {
+          setTenant({
+            id: String(sessionMeta.tenant.id || '0'),
+            name: sessionMeta.tenant.slug,
+            subdomain: sessionMeta.tenant.slug,
+            primary_color: '#2563eb',
+            currency: 'COP',
+            timezone: 'America/Bogota',
+            created_at: new Date().toISOString(),
+          })
+        }
       }
+
+      return { user, token: accessToken }
     },
     onSuccess: (data) => {
-      setTenant(DEMO_TENANT)
       login(data.user, data.token)
       toast.success(`Bienvenido, ${data.user.name}`)
       navigate({ to: '/' })
@@ -117,6 +187,7 @@ function LoginPage() {
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
+    defaultValues: { tenantSlug: resolveInitialTenant(tenantFromUrl) },
   })
 
   const onSubmit = (data: LoginForm) => {
@@ -135,12 +206,30 @@ function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            {/* Campo de tenant: visible solo cuando no está fijado por variable de entorno */}
+            {!ENV_TENANT && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="tenantSlug">Empresa (identificador)</Label>
+                <Input
+                  id="tenantSlug"
+                  type="text"
+                  placeholder="iswo"
+                  autoComplete="organization"
+                  {...register('tenantSlug')}
+                  aria-invalid={!!errors.tenantSlug}
+                />
+                {errors.tenantSlug && (
+                  <p className="text-sm text-destructive">{errors.tenantSlug.message}</p>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">Correo electrónico</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@iswo.com"
+                placeholder="tu@empresa.com"
                 autoComplete="email"
                 {...register('email')}
                 aria-invalid={!!errors.email}
@@ -155,7 +244,7 @@ function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder="admin123"
+                placeholder="Tu contraseña"
                 autoComplete="current-password"
                 {...register('password')}
                 aria-invalid={!!errors.password}
@@ -179,16 +268,16 @@ function LoginPage() {
                 'Iniciar sesión'
               )}
             </Button>
-          </form>
 
-          <div className="mt-6 rounded-lg bg-muted p-4">
-            <p className="text-sm font-medium text-muted-foreground mb-2">Usuarios de prueba:</p>
-            <ul className="text-xs text-muted-foreground space-y-1">
-              <li><strong>Admin:</strong> admin@iswo.com / admin123</li>
-              <li><strong>Manager:</strong> manager@iswo.com / manager123</li>
-              <li><strong>Consultant:</strong> consultant@iswo.com / consultant123</li>
-            </ul>
-          </div>
+            <p className="text-center text-sm">
+              <Link
+                to="/forgot-password"
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </p>
+          </form>
         </CardContent>
       </Card>
     </div>

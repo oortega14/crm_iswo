@@ -18,6 +18,7 @@ module Api
       include ErrorHandler
 
       skip_before_action :verify_signed_out_user, only: :destroy
+      skip_before_action :assert_is_devise_resource!, only: :refresh
       respond_to :json
 
       # POST /api/v1/sessions

@@ -1,19 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
+import {
   Plus,
   ExternalLink,
   Copy,
   MoreHorizontal,
   Eye,
-  Edit,
   Trash2,
   BarChart3,
   Users,
-  MousePointerClick,
   TrendingUp,
-  Globe
+  Globe,
+  CopyPlus,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,9 +38,15 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
-import { formatDate, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList, type JsonApiResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { LandingEditorSheet } from '@/components/landings/LandingEditorSheet'
+import { LandingMetricsSheet } from '@/components/landings/LandingMetricsSheet'
 
 export const Route = createFileRoute('/_app/landings')({
   component: LandingsPage,
@@ -48,158 +54,171 @@ export const Route = createFileRoute('/_app/landings')({
 
 interface LandingPage {
   id: string
-  name: string
+  title: string
   slug: string
   description: string
+  publicUrl: string
   status: 'draft' | 'published'
   views: number
-  submissions: number
+  leads: number
   conversionRate: number
-  assignedPipeline?: string
   createdAt: string
   updatedAt: string
+}
+
+function mapLanding(resource: JsonApiResource): LandingPage | null {
+  if (!resource.id) return null
+  const a = resource.attributes ?? {}
+
+  const title = String(a.title ?? '').trim()
+  const slug = String(a.slug ?? '').trim()
+  if (!title || !slug) return null
+
+  const views = Number(a.view_count ?? 0)
+  const leads = Number(a.lead_count ?? 0)
+  const conversionRate = views > 0 ? Number(((leads / views) * 100).toFixed(1)) : 0
+
+  return {
+    id: String(resource.id),
+    title,
+    slug,
+    description: String(a.seo_description ?? ''),
+    publicUrl: String(a.public_url ?? ''),
+    status: a.published ? 'published' : 'draft',
+    views: Number.isFinite(views) ? views : 0,
+    leads: Number.isFinite(leads) ? leads : 0,
+    conversionRate,
+    createdAt: String(a.created_at ?? new Date().toISOString()),
+    updatedAt: String(a.updated_at ?? new Date().toISOString()),
+  }
 }
 
 function LandingsPage() {
   const queryClient = useQueryClient()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newLanding, setNewLanding] = useState({
-    name: '',
+    title: '',
     slug: '',
     description: '',
   })
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [editorLanding, setEditorLanding] = useState<{ id: string; title: string } | null>(null)
+  const [metricsLanding, setMetricsLanding] = useState<{ id: string; title: string } | null>(null)
 
-  const { data: landings, isLoading } = useQuery({
-    queryKey: ['landings'],
+  const {
+    data: landings = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: queryKeys.landingPages.all,
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const mockLandings: LandingPage[] = [
-        {
-          id: 'lp-1',
-          name: 'Demo Producto Principal',
-          slug: 'demo-producto',
-          description: 'Landing page para solicitar demo del producto principal',
-          status: 'published',
-          views: 1523,
-          submissions: 87,
-          conversionRate: 5.7,
-          assignedPipeline: 'Ventas Principal',
-          createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
-          updatedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
-        },
-        {
-          id: 'lp-2',
-          name: 'Webinar Marzo 2024',
-          slug: 'webinar-marzo',
-          description: 'Registro para el webinar de introduccion',
-          status: 'published',
-          views: 856,
-          submissions: 124,
-          conversionRate: 14.5,
-          assignedPipeline: 'Consultoria',
-          createdAt: new Date(Date.now() - 15 * 86400000).toISOString(),
-          updatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-        },
-        {
-          id: 'lp-3',
-          name: 'Ebook Guia CRM',
-          slug: 'ebook-crm',
-          description: 'Descarga gratuita del ebook sobre CRM',
-          status: 'published',
-          views: 2341,
-          submissions: 312,
-          conversionRate: 13.3,
-          createdAt: new Date(Date.now() - 45 * 86400000).toISOString(),
-          updatedAt: new Date(Date.now() - 10 * 86400000).toISOString(),
-        },
-        {
-          id: 'lp-4',
-          name: 'Promo Black Friday',
-          slug: 'black-friday',
-          description: 'Promocion especial Black Friday',
-          status: 'draft',
-          views: 0,
-          submissions: 0,
-          conversionRate: 0,
-          createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
-          updatedAt: new Date(Date.now() - 86400000).toISOString(),
-        },
-      ]
-      
-      return mockLandings
-    }
+      const response = await api.get('/landing_pages', { params: { page: 1, items: 100 } })
+      return jsonApiPrimaryList(response.data)
+        .map(mapLanding)
+        .filter((x): x is LandingPage => x !== null)
+    },
   })
 
   const createLandingMutation = useMutation({
     mutationFn: async (data: typeof newLanding) => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { id: `lp-${Date.now()}`, ...data }
+      return api.post('/landing_pages', {
+        landing_page: {
+          title: data.title.trim(),
+          slug: data.slug.trim(),
+          seo_description: data.description.trim() || undefined,
+          published: false,
+          content: {},
+          styles: {},
+        },
+      })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['landings'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
       toast.success('Landing page creada exitosamente')
       setIsCreateDialogOpen(false)
-      setNewLanding({ name: '', slug: '', description: '' })
+      setNewLanding({ title: '', slug: '', description: '' })
     },
-    onError: () => {
-      toast.error('Error al crear la landing page')
-    }
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'Error al crear la landing page'))
+    },
   })
 
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'draft' | 'published' }) => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      return { id, status }
+      if (status === 'published') return api.post(`/landing_pages/${id}/publish`)
+      return api.post(`/landing_pages/${id}/unpublish`)
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['landings'] })
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
       toast.success(
-        data.status === 'published' 
+        vars.status === 'published'
           ? 'Landing page publicada' 
           : 'Landing page despublicada'
       )
-    }
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo cambiar el estado de la landing'))
+    },
+  })
+
+  const duplicateLandingMutation = useMutation({
+    mutationFn: async (id: string) => api.post(`/landing_pages/${id}/duplicate`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+      toast.success('Landing duplicada')
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo duplicar la landing'))
+    },
   })
 
   const deleteLandingMutation = useMutation({
     mutationFn: async (id: string) => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      return id
+      setIsDeleting(id)
+      await api.delete(`/landing_pages/${id}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['landings'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
       toast.success('Landing page eliminada')
-    }
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo eliminar la landing'))
+    },
+    onSettled: () => setIsDeleting(null),
   })
 
-  const copyUrl = (slug: string) => {
-    const url = `https://crm.iswo.com/l/${slug}`
-    navigator.clipboard.writeText(url)
+  const getPublicUrl = (landing: LandingPage) =>
+    `${window.location.origin}/l/${landing.slug}`
+
+  const copyUrl = (landing: LandingPage) => {
+    navigator.clipboard.writeText(getPublicUrl(landing))
     toast.success('URL copiada al portapapeles')
   }
 
   const totalViews = landings?.reduce((acc, l) => acc + l.views, 0) ?? 0
-  const totalSubmissions = landings?.reduce((acc, l) => acc + l.submissions, 0) ?? 0
-  const avgConversion = landings?.length 
+  const totalLeads = landings?.reduce((acc, l) => acc + l.leads, 0) ?? 0
+  const avgConversion = landings?.length
     ? (landings.reduce((acc, l) => acc + l.conversionRate, 0) / landings.length).toFixed(1)
     : 0
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Landing Pages</h1>
-          <p className="text-sm text-muted-foreground">
-            Crea y gestiona landing pages para capturar leads
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva Landing
+    <AppPageShell contentClassName="gap-8">
+      <PageHeader
+        title="Landing pages"
+        description="Crea y gestiona landing pages para capturar leads"
+      >
+        <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
+          {isRefetching ? <Spinner className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+          Actualizar
         </Button>
-      </div>
+        <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Nueva landing
+        </Button>
+      </PageHeader>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -219,8 +238,8 @@ function LandingsPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-                <Eye className="h-5 w-5 text-blue-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
+                <Eye className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <p className="text-2xl font-semibold">{totalViews.toLocaleString()}</p>
@@ -232,11 +251,11 @@ function LandingsPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <Users className="h-5 w-5 text-green-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
+                <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">{totalSubmissions}</p>
+                <p className="text-2xl font-semibold">{totalLeads}</p>
                 <p className="text-xs text-muted-foreground">Leads capturados</p>
               </div>
             </div>
@@ -257,8 +276,13 @@ function LandingsPage() {
         </Card>
       </div>
 
-      {/* Landings Grid */}
-      {isLoading ? (
+      {isError ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-destructive">
+            {formatRailsError(error, 'No se pudieron cargar las landings')}
+          </CardContent>
+        </Card>
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
@@ -279,19 +303,11 @@ function LandingsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
-                    <CardTitle className="text-base">{landing.name}</CardTitle>
+                    <CardTitle className="text-base">{landing.title}</CardTitle>
                     <div className="flex items-center gap-2">
-                      <Badge 
-                        variant={landing.status === 'published' ? 'default' : 'secondary'}
-                        className={landing.status === 'published' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
-                      >
+                      <Badge variant={landing.status === 'published' ? 'default' : 'secondary'}>
                         {landing.status === 'published' ? 'Publicada' : 'Borrador'}
                       </Badge>
-                      {landing.assignedPipeline && (
-                        <Badge variant="outline" className="text-xs">
-                          {landing.assignedPipeline}
-                        </Badge>
-                      )}
                     </div>
                   </div>
                   <DropdownMenu>
@@ -301,21 +317,21 @@ function LandingsPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Vista previa
+                      <DropdownMenuItem onClick={() => setEditorLanding({ id: landing.id, title: landing.title })}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar contenido
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
-                        <Edit className="mr-2 h-4 w-4" />
-                        Editar
+                      <DropdownMenuItem onClick={() => duplicateLandingMutation.mutate(landing.id)}>
+                        <CopyPlus className="mr-2 h-4 w-4" />
+                        Duplicar
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => copyUrl(landing.slug)}>
+                      <DropdownMenuItem onClick={() => copyUrl(landing)}>
                         <Copy className="mr-2 h-4 w-4" />
                         Copiar URL
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setMetricsLanding({ id: landing.id, title: landing.title })}>
                         <BarChart3 className="mr-2 h-4 w-4" />
-                        Ver estadisticas
+                        Ver estadísticas
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
@@ -330,6 +346,7 @@ function LandingsPage() {
                       <DropdownMenuItem 
                         className="text-destructive"
                         onClick={() => deleteLandingMutation.mutate(landing.id)}
+                        disabled={isDeleting === landing.id}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Eliminar
@@ -350,16 +367,32 @@ function LandingsPage() {
                     variant="ghost" 
                     size="icon" 
                     className="h-5 w-5"
-                    onClick={() => copyUrl(landing.slug)}
+                    onClick={() => copyUrl(landing)}
                   >
                     <Copy className="h-3 w-3" />
                   </Button>
                   {landing.status === 'published' && (
-                    <Button variant="ghost" size="icon" className="h-5 w-5">
-                      <ExternalLink className="h-3 w-3" />
+                    <Button variant="ghost" size="icon" className="h-5 w-5" asChild>
+                      <a
+                        href={getPublicUrl(landing)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
                     </Button>
                   )}
                 </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full mb-3 h-8 text-xs"
+                  onClick={() => setEditorLanding({ id: landing.id, title: landing.title })}
+                >
+                  <Pencil className="mr-1.5 h-3 w-3" />
+                  Editar contenido
+                </Button>
 
                 <div className="grid grid-cols-3 gap-2 pt-3 border-t">
                   <div className="text-center">
@@ -367,13 +400,13 @@ function LandingsPage() {
                     <p className="text-xs text-muted-foreground">Visitas</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-semibold">{landing.submissions}</p>
+                    <p className="text-lg font-semibold">{landing.leads}</p>
                     <p className="text-xs text-muted-foreground">Leads</p>
                   </div>
                   <div className="text-center">
                     <p className={cn(
                       "text-lg font-semibold",
-                      landing.conversionRate > 10 ? 'text-green-600' : 
+                      landing.conversionRate > 10 ? 'text-primary' :
                       landing.conversionRate > 5 ? 'text-amber-600' : ''
                     )}>
                       {landing.conversionRate}%
@@ -401,6 +434,22 @@ function LandingsPage() {
         </div>
       )}
 
+      {/* Métricas */}
+      <LandingMetricsSheet
+        open={!!metricsLanding}
+        onOpenChange={(open) => { if (!open) setMetricsLanding(null) }}
+        landingId={metricsLanding?.id ?? null}
+        landingTitle={metricsLanding?.title}
+      />
+
+      {/* Editor de contenido */}
+      <LandingEditorSheet
+        open={!!editorLanding}
+        onOpenChange={(open) => { if (!open) setEditorLanding(null) }}
+        landingId={editorLanding?.id ?? null}
+        landingTitle={editorLanding?.title}
+      />
+
       {/* Create Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
@@ -416,8 +465,8 @@ function LandingsPage() {
               <Label htmlFor="name">Nombre</Label>
               <Input
                 id="name"
-                value={newLanding.name}
-                onChange={(e) => setNewLanding(l => ({ ...l, name: e.target.value }))}
+                value={newLanding.title}
+                onChange={(e) => setNewLanding(l => ({ ...l, title: e.target.value }))}
                 placeholder="Ej: Demo Producto Q2"
               />
             </div>
@@ -456,7 +505,7 @@ function LandingsPage() {
             </Button>
             <Button 
               onClick={() => createLandingMutation.mutate(newLanding)}
-              disabled={!newLanding.name || !newLanding.slug || createLandingMutation.isPending}
+              disabled={!newLanding.title || !newLanding.slug || createLandingMutation.isPending}
             >
               {createLandingMutation.isPending && <Spinner className="mr-2" />}
               Crear Landing
@@ -464,6 +513,6 @@ function LandingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppPageShell>
   )
 }

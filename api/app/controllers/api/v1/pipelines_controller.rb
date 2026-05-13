@@ -20,6 +20,7 @@ module Api
       # POST /api/v1/pipelines
       def create
         authorize Pipeline
+        assign_pipeline_defaults!
         @pipeline = current_tenant.pipelines.new(pipeline_params)
         if @pipeline.save
           render_created(@pipeline, with: PipelineSerializer)
@@ -30,6 +31,7 @@ module Api
 
       def update
         authorize @pipeline
+        assign_pipeline_defaults!
         if @pipeline.update(pipeline_params)
           render_resource(@pipeline, with: PipelineSerializer)
         else
@@ -51,6 +53,16 @@ module Api
 
       def pipeline_params
         params.require(:pipeline).permit(:name, :description, :is_default, :position)
+      end
+
+      # Índice único parcial: solo un is_default=true por tenant.
+      def assign_pipeline_defaults!
+        want_default = ActiveModel::Type::Boolean.new.cast(pipeline_params[:is_default])
+        return unless want_default
+
+        q = current_tenant.pipelines
+        q = q.where.not(id: @pipeline.id) if @pipeline&.persisted?
+        q.update_all(is_default: false)
       end
     end
   end

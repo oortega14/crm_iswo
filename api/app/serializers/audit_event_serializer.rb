@@ -8,14 +8,13 @@
 class AuditEventSerializer < ApplicationSerializer
   set_type :audit_event
 
-  attributes :action, :auditable_type, :auditable_id,
-             :changes_data, :ip_address, :user_agent
+  attributes :action, :entity_type, :entity_id, :metadata, :ip_address, :user_agent, :tenant_id
 
   attribute :actor do |e|
     if e.user
       {
         id:    e.user.id,
-        name:  [e.user.first_name, e.user.last_name].compact.join(" "),
+        name:  e.user.name.to_s,
         email: e.user.email,
         role:  e.user.role
       }
@@ -23,6 +22,4 @@ class AuditEventSerializer < ApplicationSerializer
       { id: nil, name: "sistema", email: nil, role: nil }
     end
   end
-
-  belongs_to :tenant, serializer: :tenant
 end

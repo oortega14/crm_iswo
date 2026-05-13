@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Bell, GripVertical } from 'lucide-react'
+import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { cn, formatCurrency, formatRelativeTime, getBantScoreColor, getInitials } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -75,17 +76,40 @@ export function OpportunityCard({
           {/* Value and BANT */}
           <div className="flex items-center justify-between gap-2 mb-2">
             <span className="text-sm font-mono font-medium">
-              {formatCurrency(opportunity.estimated_value, opportunity.currency)}
+              {formatCurrency(
+                Number.isFinite(Number(opportunity.estimated_value))
+                  ? Number(opportunity.estimated_value)
+                  : 0,
+                opportunity.currency
+              )}
             </span>
             <Badge
               className={cn(
                 'text-xs font-mono px-1.5 py-0',
-                getBantScoreColor(opportunity.bant_score)
+                getBantScoreColor(
+                  Number.isFinite(Number(opportunity.bant_score))
+                    ? Number(opportunity.bant_score)
+                    : 0
+                )
               )}
             >
-              {opportunity.bant_score}
+              {Number.isFinite(Number(opportunity.bant_score))
+                ? Number(opportunity.bant_score)
+                : 0}
             </Badge>
           </div>
+
+          {(opportunity.contact_phone || opportunity.contact_email) && (
+            <div className="mb-2 pt-1 border-t border-border/60">
+              <ContactActionButtons
+                compact
+                phone={opportunity.contact_phone}
+                email={opportunity.contact_email}
+                stopClickPropagation
+                className="justify-start"
+              />
+            </div>
+          )}
 
           {/* Footer */}
           <div className="flex items-center justify-between gap-2">

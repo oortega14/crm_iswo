@@ -141,7 +141,8 @@ class LandingSubmissionProcessor
     raw = extract(PHONE_KEYS)
     return nil if raw.blank?
 
-    parsed = Phonelib.parse(raw, @tenant.country_code || "CO")
+    country = @tenant.locale.to_s.split("-").last.presence || "CO"
+    parsed = Phonelib.parse(raw, country)
     parsed.valid? ? parsed.e164 : raw
   end
 

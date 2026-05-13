@@ -1,4 +1,4 @@
-<h2 style="margin-top:0;">¡Bienvenido/a, <%= @user.first_name.presence || @user.email %>!</h2>
+<h2 style="margin-top:0;">¡Bienvenido/a, <%= @user.name.presence || @user.email %>!</h2>
 
 <p>
   Tu cuenta en el CRM de <strong><%= @user.tenant.name %></strong> ya está lista.

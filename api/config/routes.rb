@@ -79,6 +79,8 @@ Rails.application.routes.draw do
       resources :contacts do
         collection do
           get  :check_duplicates      # ?phone=...&email=...
+          get  :import_template       # plantilla CSV
+          post :import                # multipart CSV
           post :export                # encola ExportGenerationJob
         end
       end
@@ -109,10 +111,28 @@ Rails.application.routes.draw do
                   as: :opportunity_whatsapp_messages
       end
 
+      # ---- Auditoría global (ISO / seguridad) --------------------------------
+      resources :audit_events, only: %i[index]
+
       # ---- Recordatorios standalone ------------------------------------------
       resources :reminders, only: %i[index show update destroy] do
         member { post :complete; post :snooze }
       end
+
+      # ---- Notificaciones in-app ---------------------------------------------
+      resources :notifications, only: [:index] do
+        member     { patch :read }
+        collection { post  :read_all }
+      end
+
+      # ---- Búsqueda global (⌘K / barra Buscar) --------------------------------
+      get "/search", to: "searches#index"
+
+      # ---- Dashboard home (SPA) ----------------------------------------------
+      get "/dashboard/pipeline", to: "dashboard#pipeline"
+      get "/dashboard/activity", to: "dashboard#activity"
+      get "/dashboard/bant_distribution", to: "dashboard#bant_distribution"
+      get "/dashboard/top_consultants", to: "dashboard#top_consultants"
 
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
@@ -137,6 +157,7 @@ Rails.application.routes.draw do
           post :publish
           post :unpublish
           post :duplicate
+          get  :metrics
         end
         resources :submissions,
                   controller: :landing_form_submissions,

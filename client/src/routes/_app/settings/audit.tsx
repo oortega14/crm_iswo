@@ -1,17 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { 
+import {
   Search,
-  Filter,
-  Download,
   User,
   Settings,
   FileText,
   Users,
   Calendar,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,27 +24,73 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { formatDate, cn } from '@/lib/utils'
+import { formatDate } from '@/lib/utils'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList, type JsonApiResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
 
 export const Route = createFileRoute('/_app/settings/audit')({
   component: AuditSettingsPage,
 })
 
-interface AuditLog {
+type AuditLogRow = {
   id: string
   action: string
-  entity: string
+  entityType: string
   entityId: string
   entityName: string
-  user: {
-    id: string
-    name: string
-    email: string
-    avatar: string
-  }
+  userName: string
+  userEmail?: string
+  avatarSeed: string
   details?: string
   ip?: string
   createdAt: string
+}
+
+function entitySlugToApiType(slug: string): string {
+  const map: Record<string, string> = {
+    opportunity: 'Opportunity',
+    contact: 'Contact',
+    company: 'Company',
+    user: 'User',
+    pipeline: 'Pipeline',
+    reminder: 'Reminder',
+  }
+  return map[slug] || slug
+}
+
+function mapAuditEvent(r: JsonApiResource): AuditLogRow {
+  const a = r.attributes ?? {}
+  const actor = (a.actor as { name?: string; email?: string } | undefined) ?? {}
+  const entityType = typeof a.entity_type === 'string' ? a.entity_type : ''
+  const entityId = a.entity_id != null ? String(a.entity_id) : ''
+  const metadata = a.metadata
+  let details: string | undefined
+  if (metadata != null && typeof metadata === 'object') {
+    try {
+      const s = JSON.stringify(metadata)
+      if (s !== '{}') details = s
+    } catch {
+      /* ignore */
+    }
+  }
+  const userName = typeof actor.name === 'string' && actor.name ? actor.name : 'Sistema'
+  const userEmail = typeof actor.email === 'string' ? actor.email : undefined
+  const avatarSeed = userEmail || userName
+  return {
+    id: String(r.id),
+    action: String(a.action ?? ''),
+    entityType,
+    entityId,
+    entityName:
+      entityType && entityId ? `${entityType.replace(/^.*::/, '')} #${entityId}` : entityType || '—',
+    userName,
+    userEmail,
+    avatarSeed,
+    details,
+    ip: typeof a.ip_address === 'string' ? a.ip_address : undefined,
+    createdAt: String(a.created_at ?? ''),
+  }
 }
 
 function AuditSettingsPage() {
@@ -56,83 +100,56 @@ function AuditSettingsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 15
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['audit-logs', searchTerm, actionFilter, entityFilter, currentPage],
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, actionFilter, entityFilter])
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: queryKeys.auditLogs.list({
+      page: currentPage,
+      items: pageSize,
+      q: searchTerm,
+      action: actionFilter,
+      entity: entityFilter,
+    }),
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const actions = ['create', 'update', 'delete', 'login', 'export', 'import', 'settings']
-      const entities = ['opportunity', 'contact', 'company', 'user', 'pipeline', 'reminder']
-      
-      const mockLogs: AuditLog[] = Array.from({ length: 100 }, (_, i) => {
-        const action = actions[i % actions.length]
-        const entity = entities[i % entities.length]
-        const users = [
-          { id: 'user-1', name: 'Carlos Admin', email: 'admin@iswo.com' },
-          { id: 'user-2', name: 'Maria Ventas', email: 'maria@iswo.com' },
-          { id: 'user-3', name: 'Juan Consultor', email: 'juan@iswo.com' },
-        ]
-        const user = users[i % users.length]
-        
-        return {
-          id: `log-${i + 1}`,
-          action,
-          entity,
-          entityId: `${entity}-${(i % 10) + 1}`,
-          entityName: `${entity.charAt(0).toUpperCase() + entity.slice(1)} ${(i % 10) + 1}`,
-          user: {
-            ...user,
-            avatar: `https://avatar.vercel.sh/${user.email}`
-          },
-          details: action === 'update' 
-            ? 'Campo "estado" cambiado de "Propuesta" a "Negociacion"'
-            : action === 'login'
-            ? 'Inicio de sesion exitoso'
-            : action === 'export'
-            ? 'Exportacion de 150 registros'
-            : undefined,
-          ip: `192.168.1.${(i % 255) + 1}`,
-          createdAt: new Date(Date.now() - i * 3600000).toISOString(),
+      const params: Record<string, string | number> = {
+        page: currentPage,
+        items: pageSize,
+      }
+      const q = searchTerm.trim()
+      if (q) params.q = q
+      if (actionFilter !== 'all') params.event_action = actionFilter
+      if (entityFilter !== 'all') params.entity_type = entitySlugToApiType(entityFilter)
+
+      const response = await api.get('/audit_events', { params })
+      const logs = jsonApiPrimaryList(response.data).map(mapAuditEvent)
+      const pagination = (
+        response.data as {
+          meta?: { pagination?: { count?: number; pages?: number; page?: number } }
         }
-      })
-
-      let filtered = mockLogs
-
-      if (searchTerm) {
-        filtered = filtered.filter(
-          log => 
-            log.entityName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            log.user.name.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      }
-
-      if (actionFilter !== 'all') {
-        filtered = filtered.filter(log => log.action === actionFilter)
-      }
-
-      if (entityFilter !== 'all') {
-        filtered = filtered.filter(log => log.entity === entityFilter)
-      }
-
-      const start = (currentPage - 1) * pageSize
-      const end = start + pageSize
+      ).meta?.pagination
 
       return {
-        logs: filtered.slice(start, end),
-        total: filtered.length,
-        page: currentPage,
-        pageSize,
-        totalPages: Math.ceil(filtered.length / pageSize)
+        logs,
+        total: pagination?.count ?? logs.length,
+        totalPages: Math.max(1, pagination?.pages ?? 1),
+        page: pagination?.page ?? currentPage,
       }
-    }
+    },
+    retry: false,
   })
 
   const getActionBadge = (action: string) => {
     switch (action) {
       case 'create':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Crear</Badge>
+        return <Badge variant="success">Crear</Badge>
       case 'update':
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Actualizar</Badge>
+        return (
+          <Badge className="border border-primary/25 bg-primary/12 text-primary hover:bg-primary/15 dark:border-primary/35 dark:bg-primary/18">
+            Actualizar
+          </Badge>
+        )
       case 'delete':
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Eliminar</Badge>
       case 'login':
@@ -141,22 +158,30 @@ function AuditSettingsPage() {
         return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Exportar</Badge>
       case 'import':
         return <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">Importar</Badge>
-      case 'settings':
-        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Config</Badge>
+      case 'webhook_received':
+        return <Badge className="bg-slate-200 text-slate-900">Webhook</Badge>
       default:
-        return <Badge variant="secondary">{action}</Badge>
+        return <Badge variant="secondary">{action || 'evento'}</Badge>
     }
   }
 
-  const getEntityIcon = (entity: string) => {
-    switch (entity) {
-      case 'opportunity': return FileText
-      case 'contact': return User
-      case 'company': return Users
-      case 'user': return User
-      case 'pipeline': return Settings
-      case 'reminder': return Calendar
-      default: return FileText
+  const getEntityIcon = (entityType: string) => {
+    const key = entityType.split('::').pop()?.toLowerCase() || ''
+    switch (key) {
+      case 'opportunity':
+        return FileText
+      case 'contact':
+        return User
+      case 'company':
+        return Users
+      case 'user':
+        return User
+      case 'pipeline':
+        return Settings
+      case 'reminder':
+        return Calendar
+      default:
+        return FileText
     }
   }
 
@@ -166,18 +191,13 @@ function AuditSettingsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-medium">Auditoria</h2>
+          <h2 className="text-lg font-medium">Auditoría</h2>
           <p className="text-sm text-muted-foreground">
-            Historial de todas las acciones realizadas en el sistema
+            Historial de eventos de seguridad y cambios relevantes del tenant
           </p>
         </div>
-        <Button variant="outline" size="sm">
-          <Download className="mr-2 h-4 w-4" />
-          Exportar Logs
-        </Button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -190,7 +210,7 @@ function AuditSettingsPage() {
         </div>
         <Select value={actionFilter} onValueChange={setActionFilter}>
           <SelectTrigger className="w-36">
-            <SelectValue placeholder="Accion" />
+            <SelectValue placeholder="Acción" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las acciones</SelectItem>
@@ -200,11 +220,11 @@ function AuditSettingsPage() {
             <SelectItem value="login">Login</SelectItem>
             <SelectItem value="export">Exportar</SelectItem>
             <SelectItem value="import">Importar</SelectItem>
-            <SelectItem value="settings">Configuracion</SelectItem>
+            <SelectItem value="webhook_received">Webhook</SelectItem>
           </SelectContent>
         </Select>
         <Select value={entityFilter} onValueChange={setEntityFilter}>
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-40">
             <SelectValue placeholder="Entidad" />
           </SelectTrigger>
           <SelectContent>
@@ -219,10 +239,14 @@ function AuditSettingsPage() {
         </Select>
       </div>
 
-      {/* Logs List */}
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
+          {isError && (
+            <div className="p-6 text-sm text-destructive">
+              {formatRailsError(error, 'No se pudo cargar la auditoría')}
+            </div>
+          )}
+          {!isError && isLoading ? (
             <div className="p-4 space-y-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="flex items-center gap-4">
@@ -234,22 +258,26 @@ function AuditSettingsPage() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !isError ? (
             <>
               <div className="divide-y">
-                {data?.logs.map((log) => {
-                  const Icon = getEntityIcon(log.entity)
+                {(data?.logs ?? []).map((log) => {
+                  const Icon = getEntityIcon(log.entityType)
                   return (
                     <div key={log.id} className="flex items-start gap-4 p-4 hover:bg-muted/50">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={log.user.avatar} />
+                        <AvatarImage src={`https://avatar.vercel.sh/${encodeURIComponent(log.avatarSeed)}`} />
                         <AvatarFallback>
-                          {log.user.name.split(' ').map(n => n[0]).join('')}
+                          {log.userName
+                            .split(' ')
+                            .map((n) => n[0])
+                            .join('')
+                            .slice(0, 2)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{log.user.name}</span>
+                          <span className="font-medium">{log.userName}</span>
                           {getActionBadge(log.action)}
                           <div className="flex items-center gap-1 text-muted-foreground">
                             <Icon className="h-3 w-3" />
@@ -257,12 +285,12 @@ function AuditSettingsPage() {
                           </div>
                         </div>
                         {log.details && (
-                          <p className="text-sm text-muted-foreground mt-1">
+                          <p className="text-sm text-muted-foreground mt-1 break-all line-clamp-2">
                             {log.details}
                           </p>
                         )}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>{formatDate(log.createdAt)}</span>
+                          <span>{log.createdAt ? formatDate(log.createdAt) : '—'}</span>
                           {log.ip && <span>IP: {log.ip}</span>}
                         </div>
                       </div>
@@ -271,35 +299,34 @@ function AuditSettingsPage() {
                 })}
               </div>
 
-              {/* Pagination */}
               <div className="flex items-center justify-between border-t px-4 py-3">
                 <p className="text-sm text-muted-foreground">
-                  Mostrando {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, data?.total ?? 0)} de {data?.total ?? 0} registros
+                  Página {data?.page ?? currentPage} de {totalPages}
+                  {data?.total != null ? (
+                    <span className="ml-2">({data.total} eventos)</span>
+                  ) : null}
                 </p>
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(p => p - 1)}
+                    onClick={() => setCurrentPage((p) => p - 1)}
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <span className="text-sm">
-                    Pagina {currentPage} de {totalPages}
-                  </span>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
-                    disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(p => p + 1)}
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => p + 1)}
                   >
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
             </>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

@@ -44,6 +44,7 @@ export const queryKeys = {
     list: (filters: Record<string, unknown>) => ['reminders', 'list', filters] as const,
     overdue: ['reminders', 'overdue'] as const,
     pending: ['reminders', 'pending'] as const,
+    byOpportunity: (opportunityId: string) => ['reminders', 'opportunity', opportunityId] as const,
   },
   
   // Pipelines
@@ -94,10 +95,15 @@ export const queryKeys = {
     list: (filters: Record<string, unknown>) => ['auditLogs', 'list', filters] as const,
   },
   
-  // Network
+  // Network (red de referidos entre consultadores — API referral_networks)
   network: {
     graph: (depth: number) => ['network', 'graph', depth] as const,
     consultant: (id: string) => ['network', 'consultant', id] as const,
+  },
+
+  referralNetworks: {
+    tree: (rootUserId: string | null, depth: number) =>
+      ['referralNetworks', 'tree', rootUserId ?? 'me', depth] as const,
   },
   
   // Dashboard

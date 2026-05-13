@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
+import api, { formatRailsError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,21 +14,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
+import { queryKeys } from '@/lib/queryClient'
 
 interface ContactDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Llamado tras crear: p. ej. volver a página 1 y limpiar búsqueda para que el contacto se vea al instante. */
+  onCreated?: () => void
 }
 
-export function ContactDialog({ open, onOpenChange }: ContactDialogProps) {
+export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogProps) {
   const queryClient = useQueryClient()
   const [formData, setFormData] = useState({
     firstName: '',
@@ -39,12 +37,22 @@ export function ContactDialog({ open, onOpenChange }: ContactDialogProps) {
 
   const createContactMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      // Simulated API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { id: `contact-${Date.now()}`, ...data }
+      return api.post('/contacts', {
+        contact: {
+          kind: 'person',
+          first_name: data.firstName || undefined,
+          last_name: data.lastName || undefined,
+          email: data.email || undefined,
+          phone_e164: data.phone || undefined,
+          company: data.company || undefined,
+          position: data.position || undefined,
+        },
+      })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      await queryClient.invalidateQueries({ queryKey: ['companies'] })
+      onCreated?.()
       toast.success('Contacto creado exitosamente')
       onOpenChange(false)
       setFormData({
@@ -56,9 +64,15 @@ export function ContactDialog({ open, onOpenChange }: ContactDialogProps) {
         position: '',
       })
     },
-    onError: () => {
-      toast.error('Error al crear el contacto')
-    }
+    onError: (err: unknown) => {
+      if (isAxiosError(err) && err.response?.status === 403) {
+        toast.error(
+          'No tienes permiso para crear contactos. Solo consultores, managers y administradores pueden hacerlo.'
+        )
+        return
+      }
+      toast.error(formatRailsError(err, 'Error al crear el contacto'))
+    },
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -75,8 +89,11 @@ export function ContactDialog({ open, onOpenChange }: ContactDialogProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Nuevo Contacto</DialogTitle>
-          <DialogDescription>
-            Agrega un nuevo contacto a tu base de datos
+          <DialogDescription className="space-y-1">
+            <span className="block">
+              Completa nombre, apellido y correo. Si añades teléfono, usa formato internacional (por ejemplo{' '}
+              <span className="font-medium text-foreground">+57 300 123 4567</span>) para que el servidor lo valide.
+            </span>
           </DialogDescription>
         </DialogHeader>
 
@@ -117,33 +134,28 @@ export function ContactDialog({ open, onOpenChange }: ContactDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="phone">Telefono</Label>
+            <Label htmlFor="phone">Teléfono (opcional)</Label>
             <Input
               id="phone"
               type="tel"
               value={formData.phone}
               onChange={(e) => handleChange('phone', e.target.value)}
-              placeholder="+34 600 000 000"
+              placeholder="+57 300 123 4567"
             />
+            <p className="text-xs text-muted-foreground">
+              Déjalo vacío si no lo tienes. Si lo rellenas, debe ser un número reconocible (E.164); si no, verás un error
+              de validación.
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="company">Empresa</Label>
-            <Select 
-              value={formData.company} 
-              onValueChange={(value) => handleChange('company', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar empresa" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="techcorp">TechCorp</SelectItem>
-                <SelectItem value="innosoft">InnoSoft</SelectItem>
-                <SelectItem value="datasystems">DataSystems</SelectItem>
-                <SelectItem value="cloudnet">CloudNet</SelectItem>
-                <SelectItem value="devpro">DevPro</SelectItem>
-              </SelectContent>
-            </Select>
+            <Input
+              id="company"
+              value={formData.company}
+              onChange={(e) => handleChange('company', e.target.value)}
+              placeholder="Nombre de la empresa"
+            />
           </div>
 
           <div className="space-y-2">

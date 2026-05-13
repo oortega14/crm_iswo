@@ -11,8 +11,16 @@ import { KanbanBoard } from '@/components/opportunities/KanbanBoard'
 import { OpportunitiesTable } from '@/components/opportunities/OpportunitiesTable'
 import { OpportunitySlideOver } from '@/components/opportunities/OpportunitySlideOver'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Opportunity, Pipeline } from '@/types'
+import {
+  jsonApiIncluded,
+  jsonApiPrimaryList,
+  mapOpportunityResource,
+  mapPipelineResource,
+} from '@/lib/opportunityApi'
 
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
@@ -33,30 +41,38 @@ function OpportunitiesPage() {
   const view = search.view || 'kanban'
   const selectedId = search.selected
 
-  // Fetch pipelines
+  // Fetch pipelines (kanban/tablas usan el pipeline por defecto para columnas coherentes)
   const { data: pipelines, isLoading: pipelinesLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
     queryFn: async () => {
-      const response = await api.get<{ data: Pipeline[] }>('/pipelines')
-      return response.data.data
+      const response = await api.get('/pipelines')
+      const rows = jsonApiPrimaryList(response.data)
+      return rows.filter((r) => r.id).map(mapPipelineResource)
     },
   })
 
-  // Fetch opportunities
+  const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
+
+  // Listado alineado al mismo pipeline que el tablero (evita tarjetas sin columna)
   const { data: opportunities, isLoading: opportunitiesLoading } = useQuery({
-    queryKey: queryKeys.opportunities.list({ stage: search.stage }),
+    queryKey: queryKeys.opportunities.list({
+      stage: search.stage,
+    }),
     queryFn: async () => {
       const params = new URLSearchParams()
       if (search.stage) params.append('stage_id', search.stage)
-      const response = await api.get<{ data: Opportunity[] }>(
-        `/opportunities?${params.toString()}`
-      )
-      return response.data.data
+      const response = await api.get(`/opportunities?${params.toString()}`)
+      const rows = jsonApiPrimaryList(response.data)
+      const included = jsonApiIncluded(response.data)
+      return rows
+        .filter((r) => r.id)
+        .map((r) => mapOpportunityResource(r, included))
+        .filter((o) => o.id.length > 0)
     },
+    enabled: !pipelinesLoading && !!defaultPipeline?.id,
   })
 
   const selectedOpportunity = opportunities?.find((o) => o.id === selectedId)
-  const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
 
   const handleViewChange = (newView: string) => {
     navigate({ search: (prev) => ({ ...prev, view: newView as 'kanban' | 'table' }) })
@@ -66,45 +82,43 @@ function OpportunitiesPage() {
     navigate({ search: (prev) => ({ ...prev, selected: id || undefined }) })
   }
 
-  const isLoading = pipelinesLoading || opportunitiesLoading
+  const isLoading = pipelinesLoading || (!!defaultPipeline?.id && opportunitiesLoading)
+
+  const oppCount = opportunities?.length ?? 0
+  const subtitle =
+    oppCount === 1 ? '1 oportunidad en tu tenant' : `${oppCount} oportunidades en tu tenant`
 
   return (
-    <div className="flex h-full flex-col pb-16 lg:pb-0">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 border-b px-4 py-3 lg:px-6">
-        <div>
-          <h1 className="text-xl font-semibold">Oportunidades</h1>
-          <p className="text-sm text-muted-foreground hidden sm:block">
-            {opportunities?.length || 0} oportunidades en el pipeline
-          </p>
-        </div>
+    <AppPageShell
+      className="h-full min-h-0"
+      contentClassName="flex h-full min-h-0 flex-col gap-6 p-4 lg:p-6"
+    >
+      <PageHeader
+        title="Oportunidades"
+        description={subtitle}
+      >
+        <Tabs value={view} onValueChange={handleViewChange}>
+          <TabsList>
+            <TabsTrigger value="kanban" className="gap-1.5">
+              <LayoutGrid className="size-4" />
+              <span className="hidden sm:inline">Kanban</span>
+            </TabsTrigger>
+            <TabsTrigger value="table" className="gap-1.5">
+              <TableIcon className="size-4" />
+              <span className="hidden sm:inline">Tabla</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-        <div className="flex items-center gap-2">
-          {/* View toggle */}
-          <Tabs value={view} onValueChange={handleViewChange}>
-            <TabsList>
-              <TabsTrigger value="kanban" className="gap-1.5">
-                <LayoutGrid className="size-4" />
-                <span className="hidden sm:inline">Kanban</span>
-              </TabsTrigger>
-              <TabsTrigger value="table" className="gap-1.5">
-                <TableIcon className="size-4" />
-                <span className="hidden sm:inline">Tabla</span>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+        <Button size="sm" className="gap-2 shadow-sm" onClick={() => setQuickAddOpen(true)}>
+          <Plus className="size-4" />
+          <span className="hidden sm:inline">Nueva</span>
+        </Button>
+      </PageHeader>
 
-          <Button onClick={() => setQuickAddOpen(true)} className="gap-2">
-            <Plus className="size-4" />
-            <span className="hidden sm:inline">Nueva</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/50 bg-card/40 shadow-sm dark:bg-card/20">
         {isLoading ? (
-          <div className="p-4 lg:p-6">
+          <div className="p-4">
             <div className="flex gap-4 overflow-x-auto pb-4">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="w-72 shrink-0">
@@ -118,17 +132,27 @@ function OpportunitiesPage() {
               ))}
             </div>
           </div>
+        ) : !defaultPipeline ? (
+          <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
+            {pipelines && pipelines.length === 0
+              ? 'No hay embudos. Crea un pipeline y etapas en Ajustes → Pipelines.'
+              : 'No se pudo determinar el embudo por defecto.'}
+          </div>
         ) : view === 'kanban' ? (
-          <KanbanBoard
-            opportunities={opportunities || []}
-            pipeline={defaultPipeline}
-            onSelectOpportunity={handleSelectOpportunity}
-          />
+          <div className="flex min-h-[280px] flex-1 flex-col">
+            <KanbanBoard
+              opportunities={opportunities || []}
+              pipeline={defaultPipeline}
+              onSelectOpportunity={handleSelectOpportunity}
+            />
+          </div>
         ) : (
-          <OpportunitiesTable
-            opportunities={opportunities || []}
-            onSelectOpportunity={handleSelectOpportunity}
-          />
+          <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
+            <OpportunitiesTable
+              opportunities={opportunities || []}
+              onSelectOpportunity={handleSelectOpportunity}
+            />
+          </div>
         )}
       </div>
 
@@ -143,6 +167,6 @@ function OpportunitiesPage() {
 
       {/* Quick add */}
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
-    </div>
+    </AppPageShell>
   )
 }

@@ -33,20 +33,37 @@ module Api
       def create
         authorize @opportunity, :update?
 
+        to_raw = params.require(:to_number)
+        to_number = WhatsappPhone.normalize_to_e164(to_raw)
+
+        provider    = current_tenant.whatsapp_outbound_provider
+        from_number = current_tenant.whatsapp_outbound_from_number_for(provider)
+        if from_number.blank?
+          return render json: {
+            error:   "whatsapp_not_configured",
+            message: "Configura el envío saliente: Ajustes → Integraciones (WhatsApp Cloud API o Twilio) " \
+                     "con credenciales y Phone number ID / número E.164; o variables " \
+                     "WHATSAPP_CLOUD_* / TWILIO_WHATSAPP_NUMBER y settings whatsapp.number."
+          }, status: :unprocessable_entity
+        end
+
         msg = @opportunity.whatsapp_messages.new(
           tenant:      current_tenant,
           contact:     @opportunity.contact,
           direction:   "out",
-          provider:    ENV.fetch("WHATSAPP_PROVIDER", "twilio"),
-          from_number: tenant_whatsapp_number,
-          to_number:   params.require(:to_number),
+          provider:    provider,
+          from_number: from_number,
+          to_number:   to_number,
           body:        params[:body],
           media_url:   params[:media_url],
           status:      "queued"
         )
 
         if msg.save
-          WhatsappDeliveryJob.perform_later(msg.id) if defined?(WhatsappDeliveryJob)
+          # Envío síncrono: así no dependemos de Solid Queue / Sidekiq levantados para
+          # que el mensaje llegue al proveedor antes de responder al cliente SPA.
+          dispatch_whatsapp_delivery!(msg)
+          msg.reload
           @opportunity.touch_activity!
           render json: WhatsappMessageSerializer.new(msg).serializable_hash, status: :accepted
         else
@@ -56,16 +73,18 @@ module Api
 
       private
 
+      def dispatch_whatsapp_delivery!(msg)
+        return unless defined?(WhatsappDeliveryJob)
+
+        WhatsappDeliveryJob.perform_now(msg.id)
+      end
+
       def set_opportunity
         @opportunity = current_tenant.opportunities.find(params[:opportunity_id])
       end
 
       def set_message
         @message = current_tenant.whatsapp_messages.find(params[:id])
-      end
-
-      def tenant_whatsapp_number
-        current_tenant.settings.dig("whatsapp", "number") || ENV.fetch("TWILIO_WHATSAPP_NUMBER", "")
       end
     end
   end

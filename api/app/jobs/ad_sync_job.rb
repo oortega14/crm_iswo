@@ -28,23 +28,19 @@ class AdSyncJob < ApplicationJob
   private
 
   def check(integration)
-    if Ads::ConnectionTester.new(integration).call
+    result = Ads::ConnectionTester.new(integration).test
+    if result.success?
       integration.record_sync!
     else
-      integration.record_failure!("Test programado de conexión falló")
+      integration.record_failure!(result.message.presence || "Test programado de conexión falló")
       pause_if_repeated_failures(integration)
     end
   end
 
   def pause_if_repeated_failures(integration)
-    return unless integration.respond_to?(:consecutive_failures)
     return if integration.consecutive_failures.to_i < MAX_CONSECUTIVE_FAILURES
 
     integration.update!(status: "paused")
-
-    if defined?(IntegrationMailer)
-      admin = integration.tenant.users.find_by(role: "admin")
-      IntegrationMailer.with(integration: integration, user: admin).paused.deliver_later if admin
-    end
+    Rails.logger.warn("[AdSyncJob] integration=#{integration.id} provider=#{integration.provider} pausada tras #{MAX_CONSECUTIVE_FAILURES} fallos consecutivos")
   end
 end

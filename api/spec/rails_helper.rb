@@ -4,7 +4,10 @@
 # rails_helper.rb — carga el entorno Rails + dependencias de test.
 # ============================================================================
 require "spec_helper"
+require "securerandom"
 ENV["RAILS_ENV"] ||= "test"
+# Lockbox cifra credenciales de AdIntegration; sin esto los factories fallan en CI/local.
+ENV["LOCKBOX_MASTER_KEY"] ||= SecureRandom.hex(32)
 require_relative "../config/environment"
 abort("Rails corriendo en modo producción!") if Rails.env.production?
 

@@ -17,9 +17,9 @@ class AuditEventPolicy < ApplicationPolicy
   class Scope < ApplicationPolicy::Scope
     def resolve
       return scope.none unless user
-      return scope.all  if admin? || manager?
+      return scope.none unless admin? || manager?
 
-      scope.none
+      scope.where(tenant_id: user.tenant_id)
     end
   end
 end

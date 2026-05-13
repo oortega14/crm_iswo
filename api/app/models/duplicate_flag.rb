@@ -25,6 +25,13 @@ class DuplicateFlag < ApplicationRecord
   scope :pending,  -> { resolution_pending }
   scope :resolved, -> { where.not(resolution: "pending") }
 
+  # Aliases usados por DuplicateFlagSerializer (oportunidad nueva vs existente).
+  def opportunity_a_id = opportunity_id
+  def opportunity_b_id = duplicate_of_opportunity_id
+
+  def contact_a = opportunity&.contact
+  def contact_b = duplicate_of_opportunity&.contact
+
   def resolve!(as:, by:, note: nil)
     update!(
       resolution:       as,

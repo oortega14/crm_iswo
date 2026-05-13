@@ -20,6 +20,11 @@ module ErrorHandler
     rescue_from ActionController::ParameterMissing,  with: :render_bad_request
     rescue_from Pundit::NotAuthorizedError,          with: :render_forbidden
     rescue_from ActsAsTenant::Errors::NoTenantSet,   with: :render_tenant_missing
+
+    # Lockbox (credenciales AdIntegration): clave ausente al cifrar.
+    rescue_from ArgumentError, with: :render_argument_error_maybe_lockbox
+
+    rescue_from Lockbox::Error, with: :render_lockbox_error
   end
 
   private
@@ -51,10 +56,38 @@ module ErrorHandler
     }, status: :forbidden
   end
 
-  def render_tenant_missing(_exception)
+  # Sin argumento: TenantResolver no pudo resolver slug/header.
+  # Con excepción: rescue_from ActsAsTenant::Errors::NoTenantSet.
+  def render_tenant_missing(exception = nil)
+    message =
+      if exception
+        "Operación intentada fuera del contexto de un tenant"
+      else
+        "No se pudo resolver el tenant (usar subdominio o header X-Tenant-Slug)"
+      end
     render json: {
       error:   "tenant_missing",
-      message: "Operación intentada fuera del contexto de un tenant"
+      message: message
     }, status: :bad_request
+  end
+
+  # Lockbox.attribute_key → "Missing master key" si LOCKBOX_MASTER_KEY no está definida.
+  def render_argument_error_maybe_lockbox(exception)
+    raise exception unless exception.message.to_s.include?("Missing master key")
+
+    render json: {
+      error:   "configuration_error",
+      message:
+        "Falta LOCKBOX_MASTER_KEY. Añádela al entorno (p. ej. .env) o en credentials como lockbox.master_key."
+    }, status: :service_unavailable
+  end
+
+  def render_lockbox_error(exception)
+    Rails.logger.error("[Lockbox] #{exception.class}: #{exception.message}")
+    render json: {
+      error:   "decryption_error",
+      message:
+        "No se pudieron leer credenciales cifradas (clave distinta o datos corruptos). Revisa LOCKBOX_MASTER_KEY o vuelve a guardar la integración."
+    }, status: :unprocessable_entity
   end
 end

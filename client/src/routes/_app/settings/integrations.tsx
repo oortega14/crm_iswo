@@ -1,21 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
+import {
+  BarChart3,
   Check,
-  ExternalLink,
+  Megaphone,
+  MessageCircle,
+  Phone,
   Settings,
-  Zap,
-  Mail,
-  Calendar,
-  MessageSquare,
-  Database,
-  FileText
+  Loader2,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -27,270 +25,531 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { formatRailsError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryClient'
+import { useAuthStore } from '@/stores/auth'
+import type { AdIntegration, AdIntegrationProvider } from '@/lib/adIntegrationsApi'
+import {
+  fetchAdIntegrations,
+  createAdIntegration,
+  updateAdIntegration,
+  destroyAdIntegration,
+  disableAdIntegration,
+  testAdIntegrationConnection,
+} from '@/lib/adIntegrationsApi'
 
 export const Route = createFileRoute('/_app/settings/integrations')({
   component: IntegrationsSettingsPage,
 })
 
-interface Integration {
-  id: string
-  name: string
+type CategoryId = 'ads' | 'messaging'
+
+interface CredentialField {
+  key: string
+  label: string
+  type?: 'password' | 'text'
+  placeholder?: string
+}
+
+interface ProviderCatalogEntry {
+  provider: AdIntegrationProvider
+  category: CategoryId
+  title: string
   description: string
-  icon: typeof Mail
-  category: 'email' | 'calendar' | 'communication' | 'storage' | 'automation'
-  connected: boolean
-  config?: Record<string, string>
+  icon: LucideIcon
+  /** Mapea a `ad_integrations.account_identifier` (p. ej. Page ID, número E.164, phone_number_id) */
+  accountIdentifierLabel: string
+  accountIdentifierPlaceholder?: string
+  accountIdentifierHint?: string
+  credentialFields: CredentialField[]
+  /** Mapea a `metadata` JSON (p. ej. `form_id` de Google Lead Forms) */
+  metadataFields?: CredentialField[]
+}
+
+const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+  {
+    provider: 'meta',
+    category: 'ads',
+    title: 'Meta Ads (Lead Forms)',
+    description:
+      'Las URLs exactas de webhook las muestra el servidor debajo (según el host público del API). El Page ID debe coincidir con entry.id del webhook. Token Graph API para descargar el lead.',
+    icon: Megaphone,
+    accountIdentifierLabel: 'Page ID de Facebook',
+    accountIdentifierPlaceholder: 'ID numérico de la página (Meta Business)',
+    accountIdentifierHint:
+      'Debe coincidir con el Page ID que Meta envía en el webhook; cópialo desde Meta Business Suite.',
+    credentialFields: [
+      {
+        key: 'access_token',
+        label: 'Access token de Graph API',
+        type: 'password',
+        placeholder: 'EAAG…',
+      },
+    ],
+  },
+  {
+    provider: 'google',
+    category: 'ads',
+    title: 'Google Ads (Lead Forms)',
+    description:
+      'URL de callback según el bloque «URLs de webhook» (servidor). Refresh OAuth; GOOGLE_ADS_* en el servidor para «Probar conexión».',
+    icon: BarChart3,
+    accountIdentifierLabel: 'Customer ID de Google Ads (opcional)',
+    accountIdentifierPlaceholder: 'Formato 123-456-7890 si lo usas',
+    accountIdentifierHint:
+      'Referencia interna. El webhook empareja por Form ID en metadata.',
+    credentialFields: [
+      {
+        key: 'refresh_token',
+        label: 'Refresh token OAuth2',
+        type: 'password',
+      },
+    ],
+    metadataFields: [
+      {
+        key: 'form_id',
+        label: 'Form ID (Lead Form Extension)',
+        type: 'text',
+        placeholder: 'ID del formulario en Google Ads',
+      },
+    ],
+  },
+  {
+    provider: 'twilio',
+    category: 'messaging',
+    title: 'Twilio (WhatsApp)',
+    description:
+      'El Account SID debe empezar por «AC» (Twilio Console → Account). No uses el API Key SID (empieza por «SK») en el campo Account SID. Auth Token = «Primary» de esa misma cuenta. Las credenciales guardadas en esta integración son las que usa el CRM (ver mensajes de error para «Origen de credenciales: integración Twilio en CRM (id …)»). Si editas el SID, vuelve a pegar el token. «Probar conexión» valida el par. La URL del webhook debe coincidir con el «To» que Twilio envía.',
+    icon: Phone,
+    accountIdentifierLabel: 'Número WhatsApp destino (E.164)',
+    accountIdentifierPlaceholder: 'E.164 sin prefijo whatsapp:',
+    accountIdentifierHint:
+      'Mismo formato que Twilio envía en To al CRM (sin prefijo whatsapp:).',
+    credentialFields: [
+      {
+        key: 'account_sid',
+        label: 'Account SID (solo AC…, no SK…)',
+        type: 'text',
+        placeholder: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      },
+      {
+        key: 'auth_token',
+        label: 'Auth Token (Primary de la cuenta; no uses Secret del API Key SK…)',
+        type: 'password',
+        placeholder: 'Pega el token de Console → API keys & tokens',
+      },
+    ],
+  },
+  {
+    provider: 'whatsapp_cloud',
+    category: 'messaging',
+    title: 'WhatsApp Cloud API',
+    description:
+      'Usa las URLs Cloud del bloque del servidor. Guarda el Phone number ID aquí; debe coincidir con metadata.phone_number_id del payload.',
+    icon: MessageCircle,
+    accountIdentifierLabel: 'Phone number ID (Meta Cloud API)',
+    accountIdentifierPlaceholder: 'Phone number ID en Meta Developer',
+    accountIdentifierHint:
+      'Visible en Meta Developer → WhatsApp → API Setup. Se usa para enlazar el webhook al tenant.',
+    credentialFields: [
+      {
+        key: 'access_token',
+        label: 'Access token (permanente / sistema)',
+        type: 'password',
+        placeholder:
+          'EAAG… (OAuth User token, no el App Secret; sin escribir «Bearer », sin comillas)',
+      },
+    ],
+  },
+]
+
+const CATEGORIES: { id: CategoryId; name: string; icon: LucideIcon }[] = [
+  { id: 'ads', name: 'Publicidad y leads', icon: Megaphone },
+  { id: 'messaging', name: 'Mensajería', icon: MessageCircle },
+]
+
+function WebhookUrlRow({ label, url }: { label: string; url: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-start sm:gap-2">
+      <dt className="shrink-0 text-muted-foreground sm:w-52">{label}</dt>
+      <dd className="min-w-0 break-all font-mono text-[11px] text-foreground">{url}</dd>
+    </div>
+  )
+}
+
+function statusBadge(integration: AdIntegration | null) {
+  if (!integration) return { label: 'Sin configurar', variant: 'outline' as const }
+  if (!integration.has_credentials) return { label: 'Sin credenciales', variant: 'secondary' as const }
+  switch (integration.status) {
+    case 'active':
+      return integration.last_error_at
+        ? { label: 'Error', variant: 'destructive' as const }
+        : { label: 'Activa', variant: 'default' as const }
+    case 'paused':
+      return { label: 'Pausada', variant: 'secondary' as const }
+    case 'error':
+      return { label: 'Error', variant: 'destructive' as const }
+    case 'revoked':
+      return { label: 'Revocada', variant: 'outline' as const }
+    default:
+      return { label: integration.status, variant: 'outline' as const }
+  }
 }
 
 function IntegrationsSettingsPage() {
   const queryClient = useQueryClient()
-  const [configDialog, setConfigDialog] = useState<Integration | null>(null)
-  const [apiKey, setApiKey] = useState('')
+  const canMutate = useAuthStore((s) => s.isAdmin())
+  const canTest = useAuthStore((s) => s.isAdmin() || s.isManager())
 
-  const { data: integrations, isLoading } = useQuery({
-    queryKey: ['integrations'],
-    queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const mockIntegrations: Integration[] = [
-        {
-          id: 'gmail',
-          name: 'Gmail',
-          description: 'Sincroniza emails y registra comunicaciones automaticamente',
-          icon: Mail,
-          category: 'email',
-          connected: true,
-          config: { email: 'team@company.com' }
-        },
-        {
-          id: 'outlook',
-          name: 'Outlook',
-          description: 'Conecta tu cuenta de Outlook para sincronizar emails',
-          icon: Mail,
-          category: 'email',
-          connected: false
-        },
-        {
-          id: 'google-calendar',
-          name: 'Google Calendar',
-          description: 'Sincroniza reuniones y eventos con tu calendario',
-          icon: Calendar,
-          category: 'calendar',
-          connected: true,
-          config: { calendar: 'primary' }
-        },
-        {
-          id: 'slack',
-          name: 'Slack',
-          description: 'Recibe notificaciones en Slack sobre actividad importante',
-          icon: MessageSquare,
-          category: 'communication',
-          connected: false
-        },
-        {
-          id: 'teams',
-          name: 'Microsoft Teams',
-          description: 'Integracion con Teams para notificaciones y reuniones',
-          icon: MessageSquare,
-          category: 'communication',
-          connected: false
-        },
-        {
-          id: 'hubspot',
-          name: 'HubSpot',
-          description: 'Sincroniza contactos y oportunidades con HubSpot',
-          icon: Database,
-          category: 'automation',
-          connected: false
-        },
-        {
-          id: 'salesforce',
-          name: 'Salesforce',
-          description: 'Importa y exporta datos desde Salesforce',
-          icon: Database,
-          category: 'automation',
-          connected: false
-        },
-        {
-          id: 'zapier',
-          name: 'Zapier',
-          description: 'Conecta con miles de aplicaciones mediante Zapier',
-          icon: Zap,
-          category: 'automation',
-          connected: true,
-          config: { webhooks: '3 activos' }
-        },
-        {
-          id: 'google-drive',
-          name: 'Google Drive',
-          description: 'Almacena y vincula documentos desde Google Drive',
-          icon: FileText,
-          category: 'storage',
-          connected: false
-        },
-        {
-          id: 'dropbox',
-          name: 'Dropbox',
-          description: 'Conecta Dropbox para gestionar archivos',
-          icon: FileText,
-          category: 'storage',
-          connected: false
-        },
-      ]
-      
-      return mockIntegrations
-    }
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [dialogCatalog, setDialogCatalog] = useState<ProviderCatalogEntry | null>(null)
+  const [dialogIntegration, setDialogIntegration] = useState<AdIntegration | null>(null)
+  const [accountIdentifier, setAccountIdentifier] = useState('')
+  const [credentialValues, setCredentialValues] = useState<Record<string, string>>({})
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({})
+
+  const {
+    data: integrationsIndex,
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useQuery({
+    queryKey: queryKeys.integrations.all,
+    queryFn: fetchAdIntegrations,
   })
 
-  const toggleIntegrationMutation = useMutation({
-    mutationFn: async ({ id, connect }: { id: string; connect: boolean }) => {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return { id, connected: connect }
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['integrations'] })
-      toast.success(
-        data.connected 
-          ? 'Integracion conectada exitosamente' 
-          : 'Integracion desconectada'
-      )
-      setConfigDialog(null)
-      setApiKey('')
-    },
-    onError: () => {
-      toast.error('Error al actualizar la integracion')
+  const integrations = integrationsIndex?.integrations ?? []
+  const webhookUrls = integrationsIndex?.webhookUrls ?? null
+
+  const merged = useMemo(() => {
+    return PROVIDER_CATALOG.map((catalog) => ({
+      catalog,
+      integration: integrations.find((i) => i.provider === catalog.provider) ?? null,
+    }))
+  }, [integrations])
+
+  const connectedCount = integrations.filter(
+    (i) => i.has_credentials && i.status === 'active',
+  ).length
+
+  const openDialog = (catalog: ProviderCatalogEntry, integration: AdIntegration | null) => {
+    setDialogCatalog(catalog)
+    setDialogIntegration(integration)
+    setAccountIdentifier(integration?.account_identifier ?? '')
+    const credInitial: Record<string, string> = {}
+    for (const f of catalog.credentialFields) {
+      credInitial[f.key] = ''
     }
+    setCredentialValues(credInitial)
+    const metaInitial: Record<string, string> = {}
+    const md = integration?.metadata && typeof integration.metadata === 'object' ? integration.metadata : {}
+    for (const f of catalog.metadataFields ?? []) {
+      const raw = md[f.key as keyof typeof md]
+      metaInitial[f.key] = raw != null ? String(raw) : ''
+    }
+    setMetadataValues(metaInitial)
+    setDialogOpen(true)
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!dialogCatalog) throw new Error('Sin proveedor')
+      const creds = Object.fromEntries(
+        Object.entries(credentialValues).filter(([, v]) => v.trim().length > 0),
+      ) as Record<string, string>
+      const meta = Object.fromEntries(
+        Object.entries(metadataValues).filter(([, v]) => v.trim().length > 0),
+      ) as Record<string, string>
+      const aid = accountIdentifier.trim()
+
+      if (dialogIntegration) {
+        const hasCreds = Object.keys(creds).length > 0
+        const hasMeta = Object.keys(meta).length > 0
+        if (!hasCreds && !hasMeta) {
+          return updateAdIntegration(dialogIntegration.id, {
+            account_identifier: aid.length ? aid : null,
+          })
+        }
+        const patch: Parameters<typeof updateAdIntegration>[1] = {
+          account_identifier: aid.length ? aid : null,
+        }
+        if (hasCreds) patch.credentials = creds
+        if (hasMeta) patch.metadata = meta
+        return updateAdIntegration(dialogIntegration.id, patch)
+      }
+
+      if (Object.keys(creds).length === 0) {
+        throw new Error('Introduce las credenciales para crear la integración')
+      }
+      return createAdIntegration({
+        provider: dialogCatalog.provider,
+        account_identifier: aid.length ? aid : null,
+        credentials: creds,
+        metadata: Object.keys(meta).length > 0 ? meta : {},
+      })
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.success('Integración guardada')
+      setDialogOpen(false)
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo guardar'))
+    },
   })
 
-  const categories = [
-    { id: 'email', name: 'Email', icon: Mail },
-    { id: 'calendar', name: 'Calendario', icon: Calendar },
-    { id: 'communication', name: 'Comunicacion', icon: MessageSquare },
-    { id: 'storage', name: 'Almacenamiento', icon: FileText },
-    { id: 'automation', name: 'Automatizacion', icon: Zap },
-  ]
+  const disableMutation = useMutation({
+    mutationFn: (id: string) => disableAdIntegration(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.success('Integración pausada')
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo pausar')),
+  })
 
-  const connectedCount = integrations?.filter(i => i.connected).length ?? 0
+  const activateMutation = useMutation({
+    mutationFn: (id: string) =>
+      updateAdIntegration(id, { status: 'active' }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.success('Integración reactivada')
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo reactivar')),
+  })
+
+  const destroyMutation = useMutation({
+    mutationFn: (id: string) => destroyAdIntegration(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.success('Integración eliminada')
+      setDialogOpen(false)
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo eliminar')),
+  })
+
+  const testMutation = useMutation({
+    mutationFn: (id: string) => testAdIntegrationConnection(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.success('Conexión correcta')
+    },
+    onError: (err: unknown) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
+      toast.error(formatRailsError(err, 'La prueba de conexión falló'))
+    },
+  })
+
+  const busy =
+    saveMutation.isPending ||
+    disableMutation.isPending ||
+    activateMutation.isPending ||
+    destroyMutation.isPending ||
+    testMutation.isPending
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-medium">Integraciones</h2>
           <p className="text-sm text-muted-foreground">
-            Conecta servicios externos para mejorar tu flujo de trabajo
+            Canales reales conectados al CRM (Meta, Google Ads, Twilio, WhatsApp Cloud). Las
+            credenciales se almacenan cifradas; no se muestran de nuevo tras guardarlas.
           </p>
         </div>
-        <Badge variant="secondary">
-          {connectedCount} conectadas
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">{connectedCount} activas</Badge>
+          <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isFetching}>
+            {isFetching ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Actualizar
+          </Button>
+        </div>
       </div>
+
+      {isError && (
+        <p className="text-sm text-destructive">
+          No se pudieron cargar las integraciones. ¿Tienes permiso de administrador o manager?
+        </p>
+      )}
+
+      {!isLoading && !isError && webhookUrls ? (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
+          <p className="mb-2 font-medium">URLs de webhook (desde el API — sin datos inventados)</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Configura estas URLs en Meta, Google y Twilio. Si el API está detrás de un dominio público,
+            define <code className="rounded bg-muted px-1">API_PUBLIC_ORIGIN</code> en el servidor para
+            que coincidan con lo que ven los proveedores.
+          </p>
+          <dl className="grid gap-2 text-xs">
+            <WebhookUrlRow label="Meta — verificación (GET)" url={webhookUrls.meta_verify_get} />
+            <WebhookUrlRow label="Meta — leads (POST)" url={webhookUrls.meta_leads_post} />
+            <WebhookUrlRow label="Google — leads (POST)" url={webhookUrls.google_leads_post} />
+            <WebhookUrlRow label="Twilio WhatsApp (POST)" url={webhookUrls.whatsapp_twilio_post} />
+            <WebhookUrlRow label="WhatsApp Cloud — verificación (GET)" url={webhookUrls.whatsapp_cloud_verify_get} />
+            <WebhookUrlRow label="WhatsApp Cloud — mensajes (POST)" url={webhookUrls.whatsapp_cloud_post} />
+          </dl>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className="space-y-6">
-          {Array.from({ length: 3 }).map((_, i) => (
+          {Array.from({ length: 2 }).map((_, i) => (
             <div key={i}>
-              <Skeleton className="h-6 w-32 mb-4" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Skeleton className="h-24" />
-                <Skeleton className="h-24" />
+              <Skeleton className="mb-4 h-6 w-40" />
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Skeleton className="h-36 rounded-xl" />
+                <Skeleton className="h-36 rounded-xl" />
               </div>
             </div>
           ))}
         </div>
       ) : (
         <div className="space-y-8">
-          {categories.map((category) => {
-            const categoryIntegrations = integrations?.filter(
-              i => i.category === category.id
-            )
-            if (!categoryIntegrations?.length) return null
-
+          {CATEGORIES.map((cat) => {
+            const rows = merged.filter((m) => m.catalog.category === cat.id)
+            if (!rows.length) return null
             return (
-              <div key={category.id}>
-                <div className="flex items-center gap-2 mb-4">
-                  <category.icon className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="font-medium">{category.name}</h3>
+              <div key={cat.id}>
+                <div className="mb-4 flex items-center gap-2">
+                  <cat.icon className="size-5 text-muted-foreground" />
+                  <h3 className="font-medium">{cat.name}</h3>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {categoryIntegrations.map((integration) => (
-                    <Card 
-                      key={integration.id}
-                      className={cn(
-                        "transition-colors",
-                        integration.connected && "border-primary/50"
-                      )}
-                    >
-                      <CardContent className="pt-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start gap-3">
-                            <div className={cn(
-                              "flex h-10 w-10 items-center justify-center rounded-lg",
-                              integration.connected 
-                                ? "bg-primary/10" 
-                                : "bg-muted"
-                            )}>
-                              <integration.icon className={cn(
-                                "h-5 w-5",
-                                integration.connected 
-                                  ? "text-primary" 
-                                  : "text-muted-foreground"
-                              )} />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="font-medium">{integration.name}</h4>
-                                {integration.connected && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    <Check className="mr-1 h-3 w-3" />
-                                    Conectado
-                                  </Badge>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {rows.map(({ catalog, integration }) => {
+                    const sb = statusBadge(integration)
+                    const isActive = integration?.status === 'active'
+                    const hasRow = integration != null
+                    const testingThis =
+                      testMutation.isPending && testMutation.variables === integration?.id
+
+                    return (
+                      <Card
+                        key={catalog.provider}
+                        className={cn(
+                          'transition-colors',
+                          hasRow && integration?.status === 'active' && 'border-primary/40',
+                          hasRow && integration?.status === 'error' && 'border-destructive/40',
+                        )}
+                      >
+                        <CardHeader className="pb-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={cn(
+                                  'flex size-10 shrink-0 items-center justify-center rounded-lg',
+                                  hasRow ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
                                 )}
+                              >
+                                <catalog.icon className="size-5" />
                               </div>
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {integration.description}
-                              </p>
-                              {integration.config && (
-                                <p className="text-xs text-muted-foreground mt-2">
-                                  {Object.entries(integration.config).map(([key, value]) => (
-                                    <span key={key}>{value}</span>
-                                  ))}
-                                </p>
-                              )}
+                              <div>
+                                <CardTitle className="text-base">{catalog.title}</CardTitle>
+                                <Badge variant={sb.variant} className="mt-1.5 text-[10px]">
+                                  {sb.label}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {integration.connected && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setConfigDialog(integration)}
+                          <CardDescription className="pt-2 text-xs leading-relaxed">
+                            {catalog.description}
+                          </CardDescription>
+                          {integration?.account_identifier ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Identificador:{' '}
+                              <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+                                {integration.account_identifier}
+                              </code>
+                            </p>
+                          ) : null}
+                          {integration?.provider === 'google' &&
+                          integration.metadata &&
+                          typeof integration.metadata.form_id === 'string' &&
+                          integration.metadata.form_id ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Form ID (metadata):{' '}
+                              <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+                                {integration.metadata.form_id}
+                              </code>
+                            </p>
+                          ) : null}
+                          {integration?.last_sync_at ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Último sync:{' '}
+                              {new Date(integration.last_sync_at).toLocaleString('es-CO', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })}
+                            </p>
+                          ) : null}
+                          {integration?.last_error_message ? (
+                            <p className="text-[11px] text-destructive line-clamp-2">
+                              {integration.last_error_message}
+                            </p>
+                          ) : null}
+                        </CardHeader>
+                        <CardContent className="flex flex-col gap-3 pt-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {canMutate && (
+                              <Button
+                                size="sm"
+                                variant={hasRow ? 'outline' : 'default'}
+                                onClick={() => openDialog(catalog, integration)}
                               >
-                                <Settings className="h-4 w-4" />
+                                <Settings className="mr-2 size-4" />
+                                {hasRow ? 'Editar credenciales' : 'Configurar'}
                               </Button>
                             )}
-                            <Switch
-                              checked={integration.connected}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setConfigDialog(integration)
-                                } else {
-                                  toggleIntegrationMutation.mutate({
-                                    id: integration.id,
-                                    connect: false
-                                  })
-                                }
-                              }}
-                            />
+                            {canTest && hasRow && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled={busy || testMutation.isPending}
+                                onClick={() => testMutation.mutate(integration!.id)}
+                              >
+                                {testingThis ? (
+                                  <Spinner className="mr-2 size-4" />
+                                ) : (
+                                  <Check className="mr-2 size-4" />
+                                )}
+                                Probar conexión
+                              </Button>
+                            )}
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+
+                          {canMutate && hasRow && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                              <span className="text-xs text-muted-foreground">
+                                Pausar sin borrar credenciales
+                              </span>
+                              <Switch
+                                checked={isActive}
+                                disabled={busy}
+                                onCheckedChange={(checked) => {
+                                  if (!integration) return
+                                  if (checked) {
+                                    activateMutation.mutate(integration.id)
+                                  } else {
+                                    disableMutation.mutate(integration.id)
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
+
+                          {!canMutate && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Solo administradores pueden crear o editar credenciales. Como manager
+                              puedes probar la conexión.
+                            </p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               </div>
             )
@@ -298,106 +557,107 @@ function IntegrationsSettingsPage() {
         </div>
       )}
 
-      {/* API Key / Config Dialog */}
-      <Dialog open={!!configDialog} onOpenChange={(open) => !open && setConfigDialog(null)}>
-        <DialogContent>
+      <Dialog open={dialogOpen} onOpenChange={(open) => !open && setDialogOpen(false)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {configDialog?.connected ? 'Configurar' : 'Conectar'} {configDialog?.name}
+              {dialogIntegration ? 'Editar' : 'Configurar'}{' '}
+              {dialogCatalog?.title ?? 'integración'}
             </DialogTitle>
             <DialogDescription>
-              {configDialog?.connected
-                ? 'Actualiza la configuracion de esta integracion'
-                : 'Ingresa las credenciales para conectar esta integracion'
-              }
+              Datos reales hacia <code className="text-xs">/api/v1/ad_integrations</code>: credenciales cifradas,
+              metadata fusionado en actualizaciones (p. ej. Form ID de Google). Sin mocks.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            {configDialog?.id === 'zapier' ? (
+
+          {dialogCatalog && (
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="webhook">Webhook URL</Label>
+                <Label htmlFor="acct">{dialogCatalog.accountIdentifierLabel}</Label>
                 <Input
-                  id="webhook"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="https://hooks.zapier.com/..."
+                  id="acct"
+                  value={accountIdentifier}
+                  onChange={(e) => setAccountIdentifier(e.target.value)}
+                  placeholder={dialogCatalog.accountIdentifierPlaceholder}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Encuentra tu webhook URL en tu Zap de Zapier
-                </p>
+                {dialogCatalog.accountIdentifierHint ? (
+                  <p className="text-xs text-muted-foreground">{dialogCatalog.accountIdentifierHint}</p>
+                ) : null}
               </div>
-            ) : configDialog?.id.includes('google') || configDialog?.id === 'gmail' ? (
-              <div className="text-center py-4">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Seras redirigido a Google para autorizar el acceso
-                </p>
-                <Button variant="outline">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Conectar con Google
+              {(dialogCatalog.metadataFields ?? []).map((field) => (
+                <div key={`meta-${field.key}`} className="space-y-2">
+                  <Label htmlFor={`meta-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`meta-${field.key}`}
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    value={metadataValues[field.key] ?? ''}
+                    onChange={(e) =>
+                      setMetadataValues((prev) => ({
+                        ...prev,
+                        [field.key]: e.target.value,
+                      }))
+                    }
+                    placeholder={field.placeholder}
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
+              {dialogCatalog.credentialFields.map((field) => (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={field.key}>{field.label}</Label>
+                  <Input
+                    id={field.key}
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    value={credentialValues[field.key] ?? ''}
+                    onChange={(e) =>
+                      setCredentialValues((prev) => ({
+                        ...prev,
+                        [field.key]: e.target.value,
+                      }))
+                    }
+                    placeholder={field.placeholder}
+                    autoComplete="off"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <div>
+              {dialogIntegration && canMutate && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={busy || destroyMutation.isPending}
+                  onClick={() => {
+                    if (
+                      dialogIntegration &&
+                      window.confirm('¿Eliminar esta integración del tenant?')
+                    ) {
+                      destroyMutation.mutate(dialogIntegration.id)
+                    }
+                  }}
+                >
+                  Eliminar
                 </Button>
-              </div>
-            ) : configDialog?.id === 'slack' || configDialog?.id === 'teams' ? (
-              <div className="text-center py-4">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Seras redirigido para autorizar el acceso
-                </p>
-                <Button variant="outline">
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Conectar con {configDialog?.name}
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancelar
+              </Button>
+              {canMutate && (
+                <Button
+                  type="button"
+                  disabled={busy || saveMutation.isPending}
+                  onClick={() => saveMutation.mutate()}
+                >
+                  {saveMutation.isPending && <Spinner className="mr-2 size-4" />}
+                  Guardar
                 </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                />
-                <p className="text-xs text-muted-foreground">
-                  Encuentra tu API Key en la configuracion de {configDialog?.name}
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfigDialog(null)}>
-              Cancelar
-            </Button>
-            {configDialog?.connected ? (
-              <Button 
-                variant="destructive"
-                onClick={() => {
-                  if (configDialog) {
-                    toggleIntegrationMutation.mutate({
-                      id: configDialog.id,
-                      connect: false
-                    })
-                  }
-                }}
-                disabled={toggleIntegrationMutation.isPending}
-              >
-                {toggleIntegrationMutation.isPending && <Spinner className="mr-2" />}
-                Desconectar
-              </Button>
-            ) : (
-              <Button 
-                onClick={() => {
-                  if (configDialog) {
-                    toggleIntegrationMutation.mutate({
-                      id: configDialog.id,
-                      connect: true
-                    })
-                  }
-                }}
-                disabled={toggleIntegrationMutation.isPending}
-              >
-                {toggleIntegrationMutation.isPending && <Spinner className="mr-2" />}
-                Conectar
-              </Button>
-            )}
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

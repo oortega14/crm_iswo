@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { Opportunity } from '@/types'
+import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 
 interface OpportunitiesTableProps {
   opportunities: Opportunity[]
@@ -79,6 +80,24 @@ export function OpportunitiesTable({
                 {info.row.original.company_name}
               </span>
             )}
+          </div>
+        ),
+      }),
+      columnHelper.display({
+        id: 'contact_actions',
+        header: 'Acciones',
+        cell: ({ row }) => (
+          <div
+            className="min-w-[9rem]"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <ContactActionButtons
+              compact
+              phone={row.original.contact_phone}
+              email={row.original.contact_email}
+            />
           </div>
         ),
       }),

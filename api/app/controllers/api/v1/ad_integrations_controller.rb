@@ -9,8 +9,9 @@ module Api
       before_action :set_integration, only: %i[show update destroy test_connection disable]
 
       def index
+        authorize AdIntegration
         scope = policy_scope(AdIntegration).order(:provider)
-        render_collection(scope, with: AdIntegrationSerializer)
+        render_collection(scope, with: AdIntegrationSerializer, meta: integration_webhooks_meta)
       end
 
       def show
@@ -30,7 +31,9 @@ module Api
 
       def update
         authorize @integration
-        if @integration.update(permitted)
+        parameters = merge_credentials_into(permitted)
+        parameters = merge_metadata_into(parameters)
+        if @integration.update(parameters)
           render_resource(@integration, with: AdIntegrationSerializer)
         else
           render_unprocessable(@integration)
@@ -45,25 +48,26 @@ module Api
 
       # POST /api/v1/ad_integrations/:id/test_connection
       def test_connection
-        authorize @integration, :update?
-        ok = if defined?(Ads::ConnectionTester)
-               Ads::ConnectionTester.new(@integration).call
-             else
-               true
-             end
+        authorize @integration, :test_connection?
+        result = Ads::ConnectionTester.new(@integration).test
 
-        if ok
+        if result.success?
           @integration.record_sync!
           render_resource(@integration, with: AdIntegrationSerializer)
         else
-          @integration.record_failure!("Test de conexión falló")
-          render json: { error: "connection_failed" }, status: :unprocessable_entity
+          @integration.record_failure!(result.message)
+          payload = AdIntegrationSerializer.new(@integration).serializable_hash
+          render json: payload.merge(
+            error:   "connection_failed",
+            message: result.message
+          ),
+                 status: :unprocessable_entity
         end
       end
 
       # POST /api/v1/ad_integrations/:id/disable
       def disable
-        authorize @integration, :update?
+        authorize @integration, :disable?
         @integration.update!(status: "paused")
         render_no_content
       end
@@ -80,6 +84,85 @@ module Api
         params.require(:ad_integration).permit(
           :provider, :account_identifier, :status, metadata: {}, credentials: {}
         )
+      end
+
+      # Quita `credentials` vacío para no sobrescribir secretos con {} por error.
+      def strip_blank_credentials_param!(parameters)
+        return unless parameters.key?(:credentials)
+
+        parameters.delete(:credentials) if parameters[:credentials].blank?
+      end
+
+      # Combina metadata (p. ej. form_id de Google) sin borrar claves no enviadas.
+      def merge_metadata_into(parameters)
+        strip_blank_metadata_param!(parameters)
+        return parameters unless parameters[:metadata].present?
+
+        existing = (@integration.metadata || {}).stringify_keys
+        incoming = stringify_nested_param(parameters[:metadata])
+        incoming.reject! { |_k, v| v.blank? }
+        merged = existing.merge(incoming)
+        if merged.blank?
+          parameters.delete(:metadata)
+        else
+          parameters[:metadata] = merged
+        end
+        parameters
+      end
+
+      def strip_blank_metadata_param!(parameters)
+        return unless parameters.key?(:metadata)
+
+        parameters.delete(:metadata) if parameters[:metadata].blank?
+      end
+
+      # Combina credenciales nuevas con las ya guardadas (el SPA no puede volver a leer secretos).
+      def merge_credentials_into(parameters)
+        strip_blank_credentials_param!(parameters)
+        return parameters unless parameters[:credentials].present?
+
+        existing = (@integration.credentials || {}).stringify_keys
+        incoming = stringify_nested_param(parameters[:credentials])
+        incoming.reject! { |_k, v| v.blank? }
+        merged = existing.merge(incoming)
+        if merged.blank?
+          parameters.delete(:credentials)
+        else
+          parameters[:credentials] = merged
+        end
+        parameters
+      end
+
+      # ActionController::Parameters → Hash; Hash plano (tests/Axios) → Hash.
+      def stringify_nested_param(raw)
+        h = case raw
+            when ActionController::Parameters then raw.to_unsafe_h
+            when Hash then raw
+            else {}
+            end
+        h.stringify_keys
+      end
+
+      # URLs absolutas para configurar Meta/Google/Twilio en sus consolas (mismo host que recibirá webhooks).
+      # Opcional: ENV API_PUBLIC_ORIGIN si el API está detrás de proxy y request.base_url no es público.
+      def integration_webhooks_meta
+        root = public_api_origin.chomp("/")
+        base = "#{root}/api/v1/webhooks"
+        {
+          integration_webhooks: {
+            base_url:                   base,
+            meta_verify_get:            "#{base}/meta",
+            meta_leads_post:            "#{base}/meta",
+            google_leads_post:          "#{base}/google",
+            whatsapp_twilio_post:       "#{base}/whatsapp/twilio",
+            whatsapp_cloud_verify_get: "#{base}/whatsapp/cloud",
+            whatsapp_cloud_post:        "#{base}/whatsapp/cloud"
+          }
+        }
+      end
+
+      def public_api_origin
+        ENV["API_PUBLIC_ORIGIN"].presence || request.base_url
       end
     end
   end

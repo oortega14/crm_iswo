@@ -9,15 +9,12 @@ import {
   CheckCircle2,
   Circle,
   AlertCircle,
-  User,
-  Building2,
   MoreHorizontal,
-  Filter
+  Filter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -27,13 +24,51 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ReminderDialog } from '@/components/reminders/ReminderDialog'
-import type { Reminder } from '@/types'
+import { AppPageShell } from '@/components/layout/AppPageShell'
+import { PageHeader } from '@/components/layout/PageHeader'
+import api from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_app/reminders')({
   component: RemindersPage,
 })
+
+type ReminderItem = {
+  id: string
+  title: string
+  description: string
+  dueDate: string
+  channel: string
+  status: string
+  completed: boolean
+}
+
+type JsonApiReminder = {
+  id: string
+  attributes: {
+    title?: string
+    body?: string
+    subject?: string
+    message?: string
+    remind_at: string
+    channel: string
+    status: string
+  }
+}
+
+const mapReminder = (resource: JsonApiReminder): ReminderItem => {
+  const attrs = resource.attributes
+  return {
+    id: resource.id,
+    title: attrs.title || attrs.subject || 'Recordatorio',
+    description: attrs.body || attrs.message || '',
+    dueDate: attrs.remind_at,
+    channel: attrs.channel,
+    status: attrs.status,
+    completed: attrs.status === 'done',
+  }
+}
 
 function RemindersPage() {
   const queryClient = useQueryClient()
@@ -43,119 +78,23 @@ function RemindersPage() {
   const { data: reminders, isLoading } = useQuery({
     queryKey: ['reminders', filter],
     queryFn: async () => {
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      const mockReminders: Reminder[] = [
-        {
-          id: 'rem-1',
-          title: 'Llamar a Juan Garcia',
-          description: 'Seguimiento de propuesta enviada',
-          dueDate: new Date(Date.now() + 86400000).toISOString(),
-          priority: 'high',
-          completed: false,
-          linkedOpportunity: {
-            id: 'opp-1',
-            name: 'Proyecto CRM TechCorp',
-            stage: 'Propuesta',
-            value: 50000,
-            company: 'TechCorp',
-            contact: 'Juan Garcia',
-            probability: 60,
-            expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString(),
-            bant: { budget: 80, authority: 70, need: 90, timeline: 60 },
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          linkedContact: {
-            id: 'contact-1',
-            firstName: 'Juan',
-            lastName: 'Garcia',
-            email: 'juan@techcorp.com',
-            phone: '+34 600 123 456',
-            position: 'CEO',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'rem-2',
-          title: 'Enviar propuesta a InnoSoft',
-          description: 'Preparar y enviar propuesta comercial',
-          dueDate: new Date(Date.now() + 2 * 86400000).toISOString(),
-          priority: 'medium',
-          completed: false,
-          linkedOpportunity: {
-            id: 'opp-2',
-            name: 'Consultoria InnoSoft',
-            stage: 'Calificacion',
-            value: 30000,
-            company: 'InnoSoft',
-            contact: 'Maria Lopez',
-            probability: 40,
-            expectedCloseDate: new Date(Date.now() + 45 * 86400000).toISOString(),
-            bant: { budget: 60, authority: 80, need: 70, timeline: 50 },
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'rem-3',
-          title: 'Reunion con equipo de desarrollo',
-          description: 'Revisar avances del proyecto',
-          dueDate: new Date(Date.now() - 86400000).toISOString(),
-          priority: 'low',
-          completed: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'rem-4',
-          title: 'Actualizar pipeline Q2',
-          description: 'Revisar y actualizar forecast',
-          dueDate: new Date(Date.now() - 2 * 86400000).toISOString(),
-          priority: 'high',
-          completed: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: 'rem-5',
-          title: 'Demo producto CloudNet',
-          description: 'Preparar demo personalizada',
-          dueDate: new Date(Date.now() + 3 * 86400000).toISOString(),
-          priority: 'medium',
-          completed: false,
-          linkedContact: {
-            id: 'contact-3',
-            firstName: 'Pedro',
-            lastName: 'Martinez',
-            email: 'pedro@cloudnet.com',
-            phone: '+34 600 789 012',
-            position: 'CTO',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ]
-
-      if (filter === 'pending') {
-        return mockReminders.filter(r => !r.completed)
-      } else if (filter === 'completed') {
-        return mockReminders.filter(r => r.completed)
-      }
-      return mockReminders
+      const params =
+        filter === 'pending' ? { status: 'pending' } :
+        filter === 'completed' ? { status: 'done' } :
+        undefined
+      const response = await api.get('/reminders', { params })
+      const resources = (response.data?.data || []) as JsonApiReminder[]
+      return resources.map(mapReminder)
     }
   })
 
   const toggleCompleteMutation = useMutation({
     mutationFn: async ({ id, completed }: { id: string; completed: boolean }) => {
-      await new Promise(resolve => setTimeout(resolve, 300))
+      if (completed) {
+        await api.post(`/reminders/${id}/complete`)
+      } else {
+        await api.patch(`/reminders/${id}`, { reminder: { status: 'pending' } })
+      }
       return { id, completed }
     },
     onSuccess: (data) => {
@@ -164,21 +103,20 @@ function RemindersPage() {
     }
   })
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'text-red-500'
-      case 'medium': return 'text-amber-500'
-      case 'low': return 'text-green-500'
-      default: return 'text-muted-foreground'
-    }
-  }
-
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'high': return <Badge variant="destructive">Alta</Badge>
-      case 'medium': return <Badge variant="secondary" className="bg-amber-100 text-amber-800">Media</Badge>
-      case 'low': return <Badge variant="secondary" className="bg-green-100 text-green-800">Baja</Badge>
-      default: return null
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'done':
+        return <Badge variant="success">Completado</Badge>
+      case 'failed':
+        return <Badge variant="destructive">Fallido</Badge>
+      case 'sent':
+        return (
+          <Badge className="border border-primary/25 bg-primary/12 text-primary dark:border-primary/35 dark:bg-primary/18">
+            Enviado
+          </Badge>
+        )
+      default:
+        return <Badge variant="secondary">Pendiente</Badge>
     }
   }
 
@@ -206,25 +144,21 @@ function RemindersPage() {
     if (!acc[group]) acc[group] = []
     acc[group].push(reminder)
     return acc
-  }, {} as Record<string, Reminder[]>)
+  }, {} as Record<string, ReminderItem[]>)
 
   const groupOrder = ['Atrasados', 'Hoy', 'Manana', 'Proximos']
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Recordatorios</h1>
-          <p className="text-sm text-muted-foreground">
-            Gestiona tus tareas y recordatorios
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+    <AppPageShell contentClassName="gap-8">
+      <PageHeader
+        title="Recordatorios"
+        description="Gestiona tus tareas y recordatorios"
+      >
+        <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Nuevo Recordatorio
+          Nuevo recordatorio
         </Button>
-      </div>
+      </PageHeader>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -274,8 +208,8 @@ function RemindersPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <CheckCircle2 className="h-5 w-5 text-green-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
+                <CheckCircle2 className="h-5 w-5 text-primary" />
               </div>
               <div>
                 <p className="text-2xl font-semibold">
@@ -366,7 +300,7 @@ function RemindersPage() {
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {getPriorityBadge(reminder.priority)}
+                                {getStatusBadge(reminder.status)}
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -393,26 +327,10 @@ function RemindersPage() {
                                 {formatDate(reminder.dueDate)}
                               </div>
 
-                              {reminder.linkedContact && (
-                                <div className="flex items-center gap-2">
-                                  <Avatar className="h-5 w-5">
-                                    <AvatarImage src={`https://avatar.vercel.sh/${reminder.linkedContact.email}`} />
-                                    <AvatarFallback className="text-xs">
-                                      {reminder.linkedContact.firstName[0]}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <span className="text-muted-foreground">
-                                    {reminder.linkedContact.firstName} {reminder.linkedContact.lastName}
-                                  </span>
-                                </div>
-                              )}
-
-                              {reminder.linkedOpportunity && (
-                                <div className="flex items-center gap-1 text-muted-foreground">
-                                  <Building2 className="h-3 w-3" />
-                                  {reminder.linkedOpportunity.name}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Filter className="h-3 w-3" />
+                                {reminder.channel}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -448,7 +366,7 @@ function RemindersPage() {
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
       />
-    </div>
+    </AppPageShell>
   )
 }
 

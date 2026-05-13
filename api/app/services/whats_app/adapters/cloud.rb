@@ -12,7 +12,9 @@ module WhatsApp
     # Credenciales (ordenadas por prioridad):
     #   1. tenant.settings["whatsapp"]["cloud_access_token"] / ..._phone_number_id /
     #      ..._api_version
-    #   2. ENV: WHATSAPP_CLOUD_ACCESS_TOKEN, WHATSAPP_CLOUD_PHONE_NUMBER_ID,
+    #   2. integración AdIntegration (provider whatsapp_cloud) — access_token,
+    #      account_identifier = phone_number_id
+    #   3. ENV: WHATSAPP_CLOUD_ACCESS_TOKEN, WHATSAPP_CLOUD_PHONE_NUMBER_ID,
     #           WHATSAPP_CLOUD_API_VERSION (default v18.0)
     #
     # Para mensajes con media: Meta requiere subir el media primero (/media)
@@ -30,9 +32,7 @@ module WhatsApp
       BASE_URL            = "https://graph.facebook.com"
 
       def deliver(message)
-        token           = tenant_setting(:cloud_access_token,    "WHATSAPP_CLOUD_ACCESS_TOKEN")
-        phone_number_id = tenant_setting(:cloud_phone_number_id, "WHATSAPP_CLOUD_PHONE_NUMBER_ID")
-        api_version     = tenant_setting(:cloud_api_version,     "WHATSAPP_CLOUD_API_VERSION") || DEFAULT_API_VERSION
+        token, phone_number_id, api_version = cloud_credentials_and_version
 
         raise_delivery!("Credenciales WhatsApp Cloud incompletas para tenant #{@tenant.id}") if
           token.blank? || phone_number_id.blank?
@@ -69,6 +69,48 @@ module WhatsApp
       end
 
       private
+
+      def cloud_credentials_and_version
+        token           = scrub_meta_access_token(tenant_setting(:cloud_access_token, "WHATSAPP_CLOUD_ACCESS_TOKEN"))
+        phone_number_id = scrub_cloud_phone_number_id(tenant_setting(:cloud_phone_number_id,
+                                                                      "WHATSAPP_CLOUD_PHONE_NUMBER_ID"))
+        api_version =
+          scrub_api_version(tenant_setting(:cloud_api_version, "WHATSAPP_CLOUD_API_VERSION")) || DEFAULT_API_VERSION
+
+        if token.blank? || phone_number_id.blank?
+          integ = @tenant.preferred_whatsapp_cloud_integration
+          if integ
+            creds = (integ.credentials || {}).stringify_keys
+            token ||= scrub_meta_access_token(creds["access_token"])
+            phone_number_id ||= scrub_cloud_phone_number_id(integ.account_identifier.presence ||
+                                                               creds["phone_number_id"])
+          end
+        end
+
+        [token, phone_number_id, api_version]
+      end
+
+      # Evita 190 "Cannot parse access token" por espacios, comillas al pegar desde .env
+      # o prefijo "Bearer " duplicado en el header.
+      def scrub_meta_access_token(value)
+        s = value.to_s.gsub(/[\r\n]/, "").strip
+        s = s.delete_prefix('"').delete_suffix('"').delete_prefix("'").delete_suffix("'")
+        s = s.sub(/\Abearer\s+/i, "").strip if s.match?(/\Abearer\s+/i)
+        s.presence
+      end
+
+      def scrub_cloud_phone_number_id(value)
+        s = value.to_s.gsub(/[\r\n]/, "").strip
+        s = s.delete_prefix('"').delete_suffix('"')
+        s.gsub(/\s+/, "").presence
+      end
+
+      def scrub_api_version(value)
+        v = value.to_s.strip
+        return if v.blank?
+
+        v.start_with?("v") ? v : "v#{v.delete_prefix('v')}"
+      end
 
       def build_payload(message)
         to = normalize_e164(message.to_number).sub(/\A\+/, "")
@@ -116,7 +158,12 @@ module WhatsApp
         err = body["error"] || {}
         msg = err["message"] || err["error_user_msg"] || body["message"]
         code = err["code"] || err["error_subcode"]
-        [msg, ("(code #{code})" if code)].compact.join(" ").presence || "respuesta inválida"
+        base = [msg, ("(code #{code})" if code)].compact.join(" ").presence || "respuesta inválida"
+        return base unless code.to_i == 190
+
+        "#{base} — Genera un token de usuario del sistema en Meta Business Suite (permisos " \
+          "whatsapp_business_messaging); no uses App Secret ni pegues «Bearer » en el campo. " \
+          "En Ajustes → Integraciones usa «Probar conexión» para validar el token antes de enviar."
       end
     end
   end

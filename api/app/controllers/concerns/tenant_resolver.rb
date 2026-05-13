@@ -28,8 +28,9 @@ module TenantResolver
     slug = tenant_slug_from_subdomain || tenant_slug_from_header
     return render_tenant_missing if slug.blank?
 
-    @current_tenant = Tenant.active.find_by(slug: slug)
-    render_tenant_missing unless @current_tenant
+    @current_tenant = Tenant.with_discarded.find_by(slug: slug)
+    return render_tenant_missing unless @current_tenant
+    return render_tenant_inactive if !@current_tenant.active? || (@current_tenant.respond_to?(:discarded?) && @current_tenant.discarded?)
   end
 
   def tenant_slug_from_subdomain
@@ -49,10 +50,10 @@ module TenantResolver
     end
   end
 
-  def render_tenant_missing
+  def render_tenant_inactive
     render json: {
-      error:   "tenant_missing",
-      message: "No se pudo resolver el tenant (usar subdominio o header X-Tenant-Slug)"
-    }, status: :bad_request
+      error: "tenant_inactive",
+      message: "El tenant existe pero está inactivo"
+    }, status: :forbidden
   end
 end

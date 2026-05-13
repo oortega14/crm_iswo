@@ -59,7 +59,8 @@ module WhatsApp
 
         # Twilio notifica entrega / fallo con POST a esta URL. Sin ella solo vemos «queued»
         # hasta que llegue otro medio (y en local necesitas API público tipo ngrok).
-        payload["StatusCallback"] = cb if (cb = status_callback_url)
+        status_cb = status_callback_url
+        payload["StatusCallback"] = status_cb if status_cb
 
         conn = faraday(base_url: BASE_URL)
         conn.set_basic_auth(account_sid, auth_token) if conn.respond_to?(:set_basic_auth)

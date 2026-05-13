@@ -21,6 +21,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ReminderDialog } from '@/components/reminders/ReminderDialog'
@@ -86,6 +89,17 @@ function RemindersPage() {
       const resources = (response.data?.data || []) as JsonApiReminder[]
       return resources.map(mapReminder)
     }
+  })
+
+  const snoozeMutation = useMutation({
+    mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
+      await api.post(`/reminders/${id}/snooze`, { minutes })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reminders'] })
+      toast.success('Recordatorio pospuesto')
+    },
+    onError: () => toast.error('No se pudo posponer el recordatorio'),
   })
 
   const toggleCompleteMutation = useMutation({
@@ -309,7 +323,39 @@ function RemindersPage() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem>Editar</DropdownMenuItem>
-                                    <DropdownMenuItem>Posponer</DropdownMenuItem>
+                                    {!reminder.completed && (
+                                      <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>Posponer</DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                          {([
+                                            { label: '15 minutos', minutes: 15 },
+                                            { label: '30 minutos', minutes: 30 },
+                                            { label: '1 hora', minutes: 60 },
+                                            { label: '2 horas', minutes: 120 },
+                                          ] as const).map(opt => (
+                                            <DropdownMenuItem
+                                              key={opt.minutes}
+                                              onClick={() =>
+                                                snoozeMutation.mutate({ id: reminder.id, minutes: opt.minutes })
+                                              }
+                                            >
+                                              {opt.label}
+                                            </DropdownMenuItem>
+                                          ))}
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              const t = new Date()
+                                              t.setDate(t.getDate() + 1)
+                                              t.setHours(9, 0, 0, 0)
+                                              const minutes = Math.round((t.getTime() - Date.now()) / 60000)
+                                              snoozeMutation.mutate({ id: reminder.id, minutes })
+                                            }}
+                                          >
+                                            Mañana (9:00)
+                                          </DropdownMenuItem>
+                                        </DropdownMenuSubContent>
+                                      </DropdownMenuSub>
+                                    )}
                                     <DropdownMenuItem className="text-destructive">
                                       Eliminar
                                     </DropdownMenuItem>

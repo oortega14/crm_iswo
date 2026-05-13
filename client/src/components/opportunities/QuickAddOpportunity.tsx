@@ -133,7 +133,7 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
         if (email) params.append('email', email)
 
         const response = await api.get<{ data: DuplicateInfo }>(
-          `/opportunities/check_duplicate?${params.toString()}`
+          `/contacts/check_duplicates?${params.toString()}`
         )
 
         if (phone) setDuplicatePhone(response.data.data)

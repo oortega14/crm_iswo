@@ -121,12 +121,11 @@ function LoginPage() {
     mutationFn: async (data: LoginForm): Promise<{ user: User; token: string }> => {
       const tenantSlug = data.tenantSlug.trim().toLowerCase()
       window.localStorage.setItem('crm-tenant-slug', tenantSlug)
-      const response = await api.post('/sessions', {
-        user: {
-          email: data.email,
-          password: data.password,
-        },
-      })
+      const response = await api.post(
+        '/sessions',
+        { user: { email: data.email, password: data.password } },
+        { headers: { 'X-Tenant-Slug': tenantSlug } },
+      )
 
       const authHeader = response.headers.authorization as string | undefined
       const accessToken = authHeader?.replace(/^Bearer\s+/i, '').trim()

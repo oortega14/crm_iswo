@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { User, Tenant, UserRole } from '@/types'
 
-interface AuthState {
+export interface AuthState {
   // State
   user: User | null
   tenant: Tenant | null

@@ -11,7 +11,8 @@ class WhatsappMessageSerializer < ApplicationSerializer
 
   attributes :direction, :provider, :provider_message_id, :status,
              :from_number, :to_number, :body, :media_url,
-             :sent_at, :delivered_at, :read_at, :error_message
+             :sent_at, :delivered_at, :read_at, :error_message,
+             :created_at, :updated_at
 
   attribute :raw_payload, if: ->(_r, params) { params && params[:include_raw] }
 

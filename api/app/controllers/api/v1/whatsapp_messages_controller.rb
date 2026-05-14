@@ -8,7 +8,7 @@ module Api
     # Los mensajes entrantes no se crean acá — entran por webhook.
     # ========================================================================
     class WhatsappMessagesController < BaseController
-      before_action :set_opportunity, only: :create
+      before_action :set_opportunity, only: %i[create destroy_all]
       before_action :set_message, only: :show
 
       # GET /api/v1/whatsapp_messages (standalone o anidado)
@@ -26,6 +26,13 @@ module Api
         authorize @message
         params_hash = { include_raw: ActiveModel::Type::Boolean.new.cast(params[:include_raw]) }
         render_resource(@message, with: WhatsappMessageSerializer, params: params_hash)
+      end
+
+      # DELETE /api/v1/opportunities/:opportunity_id/whatsapp_messages
+      def destroy_all
+        authorize @opportunity, :update?
+        @opportunity.whatsapp_messages.destroy_all
+        head :no_content
       end
 
       # POST /api/v1/opportunities/:opportunity_id/whatsapp_messages

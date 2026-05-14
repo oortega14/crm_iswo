@@ -1,11 +1,22 @@
 import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Send, Phone, Video, MoreVertical, Check, CheckCheck, AlertCircle } from 'lucide-react'
+import { Send, Phone, Video, Trash2, Check, CheckCheck, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { cn, normalizePhoneForWhatsAppDial } from '@/lib/utils'
@@ -57,6 +68,17 @@ export function WhatsAppThread({
         m.errorMessage?.includes('Authentication Error') ||
         m.errorMessage?.includes('invalid username'))
   )
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/opportunities/${opportunityId}/whatsapp_messages`)
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.messages(opportunityId) })
+      toast.success('Conversación eliminada')
+    },
+    onError: (e: unknown) => toast.error(formatRailsError(e)),
+  })
 
   const sendMutation = useMutation({
     mutationFn: async (body: string) => {
@@ -165,9 +187,37 @@ export function WhatsAppThread({
           <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary-foreground/15" type="button">
             <Phone className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary-foreground/15" type="button">
-            <MoreVertical className="h-5 w-5" />
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-primary-foreground hover:bg-destructive/80 hover:text-white"
+                type="button"
+                disabled={clearMutation.isPending || messages.length === 0}
+                title="Eliminar conversación"
+              >
+                <Trash2 className="h-5 w-5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar toda la conversación?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Se eliminarán los {messages.length} mensajes de este hilo. Esta acción no se puede deshacer.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  onClick={() => clearMutation.mutate()}
+                >
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

@@ -108,7 +108,9 @@ Rails.application.routes.draw do
         resources :whatsapp_messages,
                   only: %i[index create],
                   controller: :whatsapp_messages,
-                  as: :opportunity_whatsapp_messages
+                  as: :opportunity_whatsapp_messages do
+          delete :destroy_all, on: :collection, path: '/'
+        end
       end
 
       # ---- Auditoría global (ISO / seguridad) --------------------------------

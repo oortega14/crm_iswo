@@ -105,6 +105,12 @@ export function OpportunitySlideOver({
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
     },
     enabled: !!opportunity?.id && activeTab === 'whatsapp',
+    refetchInterval: (query) => {
+      // Deja de refrescar cuando todos los mensajes ya tienen estado final
+      const messages = query.state.data ?? []
+      const hasPending = messages.some((m) => m.status === 'queued' || m.status === 'sent')
+      return hasPending ? 8000 : false
+    },
   })
 
   // Update opportunity mutation

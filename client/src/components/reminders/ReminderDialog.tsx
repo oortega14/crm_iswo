@@ -27,9 +27,10 @@ import { toast } from 'sonner'
 interface ReminderDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCreated?: () => void
 }
 
-export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
+export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialogProps) {
   const queryClient = useQueryClient()
   // Get tomorrow's date as default
   const tomorrow = new Date()
@@ -50,9 +51,9 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
     queryFn: async () => {
       const response = await api.get('/opportunities', { params: { items: 100 } })
       const data = response.data?.data || []
-      return data.map((item: { id: string; attributes?: { title?: string } }) => ({
+      return data.map((item: { id: string; attributes?: { contact_name?: string; title?: string } }) => ({
         id: item.id,
-        label: item.attributes?.title || `Oportunidad ${item.id}`,
+        label: item.attributes?.contact_name || item.attributes?.title || `Oportunidad ${item.id}`,
       }))
     },
     enabled: open,
@@ -77,12 +78,13 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
       })
     },
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
       if (variables.linkedOpportunity) {
         queryClient.invalidateQueries({
           queryKey: queryKeys.reminders.byOpportunity(variables.linkedOpportunity),
         })
       }
+      onCreated?.()
       toast.success('Recordatorio creado exitosamente')
       onOpenChange(false)
       setFormData({
@@ -181,7 +183,7 @@ export function ReminderDialog({ open, onOpenChange }: ReminderDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="linkedOpportunity">Vincular a Oportunidad (opcional)</Label>
+            <Label htmlFor="linkedOpportunity">Oportunidad</Label>
             <Select 
               value={formData.linkedOpportunity} 
               onValueChange={(value) => handleChange('linkedOpportunity', value)}

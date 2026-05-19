@@ -23,7 +23,7 @@ module Api
         end
         scope = scope.upcoming if params[:upcoming] == "true"
 
-        render_collection(scope.order(:remind_at), with: ReminderSerializer)
+        render_collection(scope.includes(:user, :opportunity).order(:remind_at), with: ReminderSerializer)
       end
 
       def show

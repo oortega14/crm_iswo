@@ -13,13 +13,14 @@ class AuditEventSerializer < ApplicationSerializer
   attribute :actor do |e|
     if e.user
       {
-        id:    e.user.id,
-        name:  e.user.name.to_s,
-        email: e.user.email,
-        role:  e.user.role
+        id:         e.user.id,
+        name:       e.user.name.to_s,
+        email:      e.user.email,
+        role:       e.user.role,
+        avatar_url: e.user.avatar_url
       }
     else
-      { id: nil, name: "sistema", email: nil, role: nil }
+      { id: nil, name: "sistema", email: nil, role: nil, avatar_url: nil }
     end
   end
 end

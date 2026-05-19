@@ -41,7 +41,7 @@ type AuditLogRow = {
   entityName: string
   userName: string
   userEmail?: string
-  avatarSeed: string
+  avatarUrl?: string
   details?: string
   ip?: string
   createdAt: string
@@ -61,7 +61,7 @@ function entitySlugToApiType(slug: string): string {
 
 function mapAuditEvent(r: JsonApiResource): AuditLogRow {
   const a = r.attributes ?? {}
-  const actor = (a.actor as { name?: string; email?: string } | undefined) ?? {}
+  const actor = (a.actor as { name?: string; email?: string; avatar_url?: string } | undefined) ?? {}
   const entityType = typeof a.entity_type === 'string' ? a.entity_type : ''
   const entityId = a.entity_id != null ? String(a.entity_id) : ''
   const metadata = a.metadata
@@ -76,7 +76,7 @@ function mapAuditEvent(r: JsonApiResource): AuditLogRow {
   }
   const userName = typeof actor.name === 'string' && actor.name ? actor.name : 'Sistema'
   const userEmail = typeof actor.email === 'string' ? actor.email : undefined
-  const avatarSeed = userEmail || userName
+  const avatarUrl = typeof actor.avatar_url === 'string' && actor.avatar_url ? actor.avatar_url : undefined
   return {
     id: String(r.id),
     action: String(a.action ?? ''),
@@ -86,7 +86,7 @@ function mapAuditEvent(r: JsonApiResource): AuditLogRow {
       entityType && entityId ? `${entityType.replace(/^.*::/, '')} #${entityId}` : entityType || '—',
     userName,
     userEmail,
-    avatarSeed,
+    avatarUrl,
     details,
     ip: typeof a.ip_address === 'string' ? a.ip_address : undefined,
     createdAt: String(a.created_at ?? ''),
@@ -266,7 +266,7 @@ function AuditSettingsPage() {
                   return (
                     <div key={log.id} className="flex items-start gap-4 p-4 hover:bg-muted/50">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={`https://avatar.vercel.sh/${encodeURIComponent(log.avatarSeed)}`} />
+                        <AvatarImage src={log.avatarUrl} />
                         <AvatarFallback>
                           {log.userName
                             .split(' ')

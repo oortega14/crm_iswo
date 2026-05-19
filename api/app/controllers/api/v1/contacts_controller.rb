@@ -24,7 +24,7 @@ module Api
           )
         end
 
-        render_collection(scope.order(updated_at: :desc), with: ContactSerializer)
+        render_collection(scope.includes(:opportunities).order(updated_at: :desc), with: ContactSerializer)
       end
 
       def show
@@ -36,6 +36,7 @@ module Api
         authorize Contact
         @contact = current_tenant.contacts.new(contact_params.merge(owner_user: current_user))
         if @contact.save
+          audit_contact!("contact.create", @contact)
           render_created(@contact, with: ContactSerializer)
         else
           render_unprocessable(@contact)
@@ -45,6 +46,7 @@ module Api
       def update
         authorize @contact
         if @contact.update(contact_params)
+          audit_contact!("contact.update", @contact)
           render_resource(@contact, with: ContactSerializer)
         else
           render_unprocessable(@contact)
@@ -53,12 +55,14 @@ module Api
 
       def destroy
         authorize @contact
+        audit_contact!("contact.destroy", @contact)
         @contact.discard
         render_no_content
       end
 
       # GET /api/v1/contacts/check_duplicates?phone=...&email=...&full_name=...
       # Llamado desde el form del SPA mientras el consultor escribe.
+      # Devuelve { data: { exists: bool, opportunity?: { id, contact_name, owner_name, created_at } } }
       def check_duplicates
         authorize Contact, :check_duplicates?
 
@@ -68,7 +72,24 @@ module Api
           full_name: params[:full_name]
         ).call
 
-        render json: { data: matches.map(&:as_json) }, status: :ok
+        if matches.empty?
+          return render json: { data: { exists: false } }, status: :ok
+        end
+
+        contact = matches.first.contact
+        opp     = contact.opportunities.kept.order(created_at: :desc).first
+
+        payload = { exists: true }
+        if opp
+          payload[:opportunity] = {
+            id:           opp.id,
+            contact_name: opp.contact&.display_name || opp.title,
+            owner_name:   opp.owner_user&.name || "Sin asignar",
+            created_at:   opp.created_at
+          }
+        end
+
+        render json: { data: payload }, status: :ok
       rescue ArgumentError => e
         render json: { error: "bad_request", message: e.message }, status: :bad_request
       end
@@ -141,6 +162,19 @@ module Api
 
       def set_contact
         @contact = current_tenant.contacts.kept.find(params[:id])
+      end
+
+      def audit_contact!(action, contact)
+        AuditEvent.create!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      action,
+          entity_type: "Contact",
+          entity_id:   contact.id,
+          metadata:    { ip: request.remote_ip, ua: request.user_agent }
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] No se pudo registrar #{action}: #{e.message}")
       end
 
       def contact_params

@@ -10,7 +10,7 @@ class ReferralNetworkSerializer < ApplicationSerializer
 
     {
       id:    r.referrer_user.id,
-      name:  [r.referrer_user.first_name, r.referrer_user.last_name].compact.join(" "),
+      name:  r.referrer_user.name,
       email: r.referrer_user.email
     }
   end
@@ -20,7 +20,7 @@ class ReferralNetworkSerializer < ApplicationSerializer
 
     {
       id:    r.referred_user.id,
-      name:  [r.referred_user.first_name, r.referred_user.last_name].compact.join(" "),
+      name:  r.referred_user.name,
       email: r.referred_user.email
     }
   end

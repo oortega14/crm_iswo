@@ -7,11 +7,12 @@ import {
   Plus,
   TrendingUp,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { queryKeys } from '@/lib/queryClient'
 import {
   fetchDashboardActivity,
   fetchDashboardBantDistribution,
+  fetchDashboardKpis,
   fetchDashboardPipeline,
   fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
@@ -34,8 +35,12 @@ export const Route = createFileRoute('/_app/')({
 function DashboardPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
 
-  const [pipelineQ, activityQ, bantQ, consultantsQ] = useQueries({
+  const [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ] = useQueries({
     queries: [
+      {
+        queryKey: queryKeys.dashboard.kpis,
+        queryFn: fetchDashboardKpis,
+      },
       {
         queryKey: queryKeys.dashboard.pipeline,
         queryFn: fetchDashboardPipeline,
@@ -56,21 +61,12 @@ function DashboardPage() {
     ],
   })
 
-  const allPending = [pipelineQ, activityQ, bantQ, consultantsQ].every((q) => q.isPending)
+  const allPending = [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ].every((q) => q.isPending)
 
-  const pipelineRows = pipelineQ.data ?? []
-  const kpis = useMemo(() => {
-    const totalInPipeline = pipelineRows.reduce((sum, s) => sum + (s.count ?? 0), 0)
-    const pipelineValue = pipelineRows.reduce((sum, s) => sum + (Number(s.value) || 0), 0)
-    return { totalInPipeline, pipelineValue }
-  }, [pipelineRows])
-
-  const monthClosedValue = useMemo(() => {
-    const rows = consultantsQ.data ?? []
-    return rows.reduce((sum, c) => sum + (Number(c.total_value) || 0), 0)
-  }, [consultantsQ.data])
-
-  const bantAverage = bantQ.isSuccess && bantQ.data ? bantQ.data.average : null
+  const totalInPipeline = kpisQ.data?.total_in_pipeline ?? 0
+  const pipelineValue   = kpisQ.data?.pipeline_value    ?? 0
+  const monthClosedValue = kpisQ.data?.month_closed_value ?? 0
+  const bantAverage      = kpisQ.data?.bant_average      ?? null
 
   if (allPending) {
     return <DashboardSkeleton />
@@ -104,13 +100,13 @@ function DashboardPage() {
           accent="brand"
         >
         <DashboardKpiStrip
-          totalInPipeline={kpis.totalInPipeline}
-          pipelineValue={kpis.pipelineValue}
+          totalInPipeline={totalInPipeline}
+          pipelineValue={pipelineValue}
           bantAverage={bantAverage}
           monthClosedValue={monthClosedValue}
-          loadingPipeline={pipelineQ.isPending}
-          loadingBant={bantQ.isPending}
-          loadingConsultants={consultantsQ.isPending}
+          loadingPipeline={kpisQ.isPending}
+          loadingBant={kpisQ.isPending}
+          loadingConsultants={kpisQ.isPending}
         />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:gap-8 xl:items-start">

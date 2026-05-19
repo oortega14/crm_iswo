@@ -40,6 +40,19 @@ export interface DashboardTopConsultant {
   total_value: number
 }
 
+/** GET /api/v1/dashboard/kpis */
+export interface DashboardKpis {
+  total_in_pipeline: number
+  pipeline_value: number
+  month_closed_value: number
+  bant_average: number
+}
+
+export async function fetchDashboardKpis(): Promise<DashboardKpis> {
+  const res = await api.get<{ data: DashboardKpis }>('/dashboard/kpis')
+  return res.data.data
+}
+
 export async function fetchDashboardPipeline(): Promise<DashboardPipelineStage[]> {
   const res = await api.get<{ data: DashboardPipelineStage[] }>('/dashboard/pipeline')
   return Array.isArray(res.data.data) ? res.data.data : []

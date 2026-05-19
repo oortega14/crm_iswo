@@ -4,6 +4,31 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import type { OpportunityLog } from '@/types'
 
+const ACTION_LABELS: Record<string, string> = {
+  create:       'Oportunidad creada',
+  update:       'Campos actualizados',
+  stage_change: 'Cambio de etapa',
+  note:         'Nota añadida',
+  assign:       'Reasignada',
+  destroy:      'Eliminada',
+}
+
+function formatAction(action: string): string {
+  return ACTION_LABELS[action] ?? action.replace(/_/g, ' ')
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
+  if (typeof value === 'string') {
+    const formatted = formatStatusLabel(value)
+    if (formatted !== value) return formatted
+    return value
+  }
+  if (typeof value === 'number') return value.toString()
+  return String(value)
+}
+
 interface ActivityLogProps {
   logs: OpportunityLog[]
 }
@@ -51,22 +76,31 @@ export function ActivityLog({ logs }: ActivityLogProps) {
                     </span>
                   </div>
 
-                  <p className="text-sm text-muted-foreground mb-2">{log.action}</p>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    {formatAction(log.action)}
+                  </p>
 
-                  {/* Changes */}
-                  {log.changes && Object.keys(log.changes).length > 0 && (
+                  {/* Nota libre */}
+                  {log.note && (
+                    <p className="mb-2 rounded-md bg-muted/50 p-2 text-xs text-foreground">
+                      {log.note}
+                    </p>
+                  )}
+
+                  {/* Cambios de campos */}
+                  {log.changes_data && Object.keys(log.changes_data).length > 0 && (
                     <div className="rounded-md bg-muted/50 p-2 text-xs">
-                      {Object.entries(log.changes).map(([key, change]) => (
+                      {Object.entries(log.changes_data).map(([key, change]) => (
                         <div key={key} className="flex items-center gap-2">
                           <span className="text-muted-foreground capitalize">
                             {key.replace(/_/g, ' ')}:
                           </span>
                           <Badge variant="outline" className="text-[10px] px-1.5">
-                            {formatValue(change.old)}
+                            {formatValue(change.from)}
                           </Badge>
                           <span className="text-muted-foreground">→</span>
                           <Badge variant="secondary" className="text-[10px] px-1.5">
-                            {formatValue(change.new)}
+                            {formatValue(change.to)}
                           </Badge>
                         </div>
                       ))}
@@ -82,15 +116,3 @@ export function ActivityLog({ logs }: ActivityLogProps) {
   )
 }
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return '-'
-  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
-  if (typeof value === 'string') {
-    // Check if it's a status
-    const formatted = formatStatusLabel(value)
-    if (formatted !== value) return formatted
-    return value
-  }
-  if (typeof value === 'number') return value.toString()
-  return String(value)
-}

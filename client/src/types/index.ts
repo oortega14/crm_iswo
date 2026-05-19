@@ -7,6 +7,7 @@ export interface User {
   name: string
   role: UserRole
   avatar_url?: string
+  phone?: string
   active: boolean
   last_sign_in_at?: string
   created_at: string
@@ -63,11 +64,11 @@ export interface Opportunity {
 
 export interface OpportunityLog {
   id: string
-  opportunity_id: string
-  user_id: string
-  user?: User
   action: string
-  changes: Record<string, { old: unknown; new: unknown }>
+  changes_data?: Record<string, { from: unknown; to: unknown }>
+  note?: string
+  author_name?: string
+  user?: User
   created_at: string
 }
 
@@ -75,6 +76,7 @@ export interface OpportunityLog {
 export interface Pipeline {
   id: string
   name: string
+  description?: string
   is_default: boolean
   stages: PipelineStage[]
   created_at: string

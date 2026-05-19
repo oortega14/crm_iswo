@@ -7,6 +7,31 @@ module Api
     # Respetamos policy_scope de oportunidades y recordatorios (consultor vs admin).
     # ======================================================================
     class DashboardController < BaseController
+      def kpis
+        authorize Opportunity, :index?
+
+        scope = policy_scope(Opportunity).kept
+
+        open_scope   = scope.open
+        total        = open_scope.count
+        pipe_value   = open_scope.sum(:estimated_value).to_f
+
+        start_month  = Time.current.beginning_of_month
+        closed_value = scope.won.where("closed_at >= ?", start_month).sum(:estimated_value).to_f
+
+        avg          = scope.average(:bant_score)
+        bant_avg     = avg ? avg.round.to_i : 0
+
+        render json: {
+          data: {
+            total_in_pipeline:  total,
+            pipeline_value:     pipe_value,
+            month_closed_value: closed_value,
+            bant_average:       bant_avg
+          }
+        }, status: :ok
+      end
+
       def pipeline
         authorize Opportunity, :index?
 

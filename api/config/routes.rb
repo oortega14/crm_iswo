@@ -131,10 +131,11 @@ Rails.application.routes.draw do
       get "/search", to: "searches#index"
 
       # ---- Dashboard home (SPA) ----------------------------------------------
-      get "/dashboard/pipeline", to: "dashboard#pipeline"
-      get "/dashboard/activity", to: "dashboard#activity"
+      get "/dashboard/kpis",             to: "dashboard#kpis"
+      get "/dashboard/pipeline",         to: "dashboard#pipeline"
+      get "/dashboard/activity",         to: "dashboard#activity"
       get "/dashboard/bant_distribution", to: "dashboard#bant_distribution"
-      get "/dashboard/top_consultants", to: "dashboard#top_consultants"
+      get "/dashboard/top_consultants",  to: "dashboard#top_consultants"
 
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
@@ -200,6 +201,13 @@ Rails.application.routes.draw do
       namespace :public, path: "public" do
         get  "/landings/:slug",        to: "landing_pages#show", as: :landing_page
         post "/landings/:slug/submit", to: "landing_form_submissions#create", as: :landing_submit
+      end
+
+      # ========================================================================
+      # Super-admin — operaciones fuera del scope de tenant (SUPER_ADMIN_TOKEN)
+      # ========================================================================
+      namespace :admin do
+        resources :tenants, only: :create
       end
     end
   end

@@ -66,6 +66,11 @@ class OpportunitySerializer < ApplicationSerializer
     o.pipeline_stage&.probability
   end
 
+  attribute :reminder_due_at do |o|
+    pending = o.reminders.select { |r| r.status == "pending" }
+    pending.min_by(&:remind_at)&.remind_at&.iso8601
+  end
+
   attribute :age_in_days do |o|
     ((Time.current - o.created_at) / 1.day).floor
   end

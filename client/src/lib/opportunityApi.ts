@@ -272,6 +272,39 @@ export function mapOpportunityReminderResource(resource: JsonApiResource): Oppor
   }
 }
 
+/** Mapea un recurso JSON:API `opportunity_log` a nuestro tipo de dominio. */
+export function mapOpportunityLogResource(
+  resource: JsonApiResource,
+  included: JsonApiResource[] = [],
+): import('@/types').OpportunityLog {
+  const a = resource.attributes ?? {}
+  const rel = resource.relationships?.user?.data as { id?: string; type?: string } | null
+  const userId = rel?.id ? String(rel.id) : ''
+  const userInc = userId
+    ? included.find(
+        (r) =>
+          String(r.id) === userId &&
+          (r.type === 'user' || r.type === 'users'),
+      )
+    : undefined
+
+  const rawChanges = a.changes_data
+  const changes_data =
+    rawChanges != null && typeof rawChanges === 'object' && !Array.isArray(rawChanges)
+      ? (rawChanges as Record<string, { from: unknown; to: unknown }>)
+      : undefined
+
+  return {
+    id: String(resource.id ?? ''),
+    action: String(a.action ?? ''),
+    changes_data,
+    note: a.note != null && a.note !== '' ? String(a.note) : undefined,
+    author_name: a.author_name != null ? String(a.author_name) : undefined,
+    user: userInc ? mapUserResource(userInc) : undefined,
+    created_at: String(a.created_at ?? ''),
+  }
+}
+
 /** PATCH /opportunities/:id — solo claves que el API permite */
 export function toOpportunityUpdatePayload(
   patch: Partial<Opportunity> & {
@@ -279,7 +312,6 @@ export function toOpportunityUpdatePayload(
   },
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  if (patch.title !== undefined) out.title = patch.title
   if (patch.notes !== undefined) out.notes = patch.notes
   if (patch.estimated_value !== undefined) out.estimated_value = patch.estimated_value
   if (patch.status !== undefined) out.status = patch.status

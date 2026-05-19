@@ -5,7 +5,9 @@ import { toast } from 'sonner'
 import { X, Building, MessageSquare, FileText, Bell, History } from 'lucide-react'
 import api from '@/lib/api'
 import {
+  jsonApiIncluded,
   jsonApiPrimaryList,
+  mapOpportunityLogResource,
   mapOpportunityReminderResource,
   toOpportunityUpdatePayload,
 } from '@/lib/opportunityApi'
@@ -32,7 +34,7 @@ import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
-import type { Opportunity, OpportunityLog } from '@/types'
+import type { Opportunity } from '@/types'
 
 interface OpportunitySlideOverProps {
   opportunity?: Opportunity
@@ -52,10 +54,10 @@ export function OpportunitySlideOver({
   const { data: logs, isLoading: logsLoading } = useQuery({
     queryKey: queryKeys.opportunities.logs(opportunity?.id || ''),
     queryFn: async () => {
-      const response = await api.get<{ data: OpportunityLog[] }>(
-        `/opportunities/${opportunity?.id}/logs`
-      )
-      return response.data.data
+      const response = await api.get(`/opportunities/${opportunity?.id}/logs`)
+      const rows = jsonApiPrimaryList(response.data)
+      const inc = jsonApiIncluded(response.data)
+      return rows.map((r) => mapOpportunityLogResource(r, inc))
     },
     enabled: !!opportunity?.id && activeTab === 'activity',
   })
@@ -106,10 +108,11 @@ export function OpportunitySlideOver({
     },
     enabled: !!opportunity?.id && activeTab === 'whatsapp',
     refetchInterval: (query) => {
-      // Deja de refrescar cuando todos los mensajes ya tienen estado final
+      // Polling activo mientras la pestaña está abierta (para recibir entrantes)
+      // o mientras haya mensajes pendientes de confirmación
       const messages = query.state.data ?? []
       const hasPending = messages.some((m) => m.status === 'queued' || m.status === 'sent')
-      return hasPending ? 8000 : false
+      return hasPending ? 5000 : 10000
     },
   })
 

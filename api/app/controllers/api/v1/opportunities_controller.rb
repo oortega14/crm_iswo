@@ -10,7 +10,7 @@ module Api
 
       # GET /api/v1/opportunities
       def index
-        scope = policy_scope(Opportunity).kept.includes(:contact, :pipeline_stage, :owner_user)
+        scope = policy_scope(Opportunity).kept.includes(:contact, :pipeline_stage, :owner_user, :reminders)
 
         scope = scope.where(status: params[:status])                       if params[:status].present?
         scope = scope.where(pipeline_id: params[:pipeline_id])             if params[:pipeline_id].present?
@@ -68,6 +68,7 @@ module Api
         )
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
+          flag_duplicates_for!(@opportunity, contact)
           render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user])
         else
           render_unprocessable(@opportunity)
@@ -99,6 +100,7 @@ module Api
 
       def destroy
         authorize @opportunity
+        log_action!("destroy", { title: @opportunity.title, contact_id: @opportunity.contact_id })
         @opportunity.discard
         render_no_content
       end
@@ -277,6 +279,60 @@ module Api
         keys.each_with_object({}) do |k, h|
           h[k] = { from: before[k], to: after[k] } if before[k] != after[k]
         end
+      end
+
+      # Crea DuplicateFlag para cada oportunidad abierta existente del mismo
+      # contacto que no tenga ya un flag con la oportunidad recién creada.
+      def flag_duplicates_for!(opportunity, contact)
+        existing_opps = current_tenant.opportunities.kept
+                                      .where(contact_id: contact.id)
+                                      .where.not(id: opportunity.id)
+                                      .where.not(status: %w[won lost merged])
+
+        existing_opps.find_each do |existing|
+          next if DuplicateFlag.exists?(opportunity_id: opportunity.id, duplicate_of_opportunity_id: existing.id)
+          next if DuplicateFlag.exists?(opportunity_id: existing.id, duplicate_of_opportunity_id: opportunity.id)
+
+          matched = if contact.email.present? && contact.phone_e164.present?
+                      "both"
+                    elsif contact.phone_e164.present?
+                      "phone"
+                    else
+                      "email"
+                    end
+
+          flag = DuplicateFlag.create!(
+            tenant:                   current_tenant,
+            opportunity:              opportunity,
+            duplicate_of_opportunity: existing,
+            detected_by_user:         current_user,
+            matched_on:               matched,
+            match_score:              1.0
+          )
+          notify_duplicate_collision!(flag, existing)
+        rescue ActiveRecord::RecordInvalid => e
+          Rails.logger.warn("[DuplicateFlag] No se pudo crear flag opp=#{opportunity.id} vs #{existing.id}: #{e.message}")
+        end
+      end
+
+      # Notifica al dueño de la oportunidad existente que hay un posible duplicado.
+      def notify_duplicate_collision!(flag, existing_opp)
+        owner = existing_opp.owner_user
+        return unless owner
+
+        Notification.create!(
+          tenant:        current_tenant,
+          user:          owner,
+          kind:          "duplicate_found",
+          title:         "Posible duplicado detectado",
+          body:          "#{current_user.name} registró una oportunidad para #{existing_opp.contact&.display_name} " \
+                         "que ya tienes en tu pipeline.",
+          resource:      flag,
+          resource_type: "DuplicateFlag",
+          resource_id:   flag.id
+        )
+      rescue ActiveRecord::RecordInvalid => e
+        Rails.logger.warn("[Notification] No se pudo crear notificación de duplicado: #{e.message}")
       end
     end
   end

@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, 
-  Calendar, 
-  Clock, 
+import {
+  Plus,
+  Calendar,
+  Clock,
   Bell,
   CheckCircle2,
   Circle,
@@ -13,7 +13,7 @@ import {
   Filter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -31,6 +31,7 @@ import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import api from '@/lib/api'
 import { formatDate, cn } from '@/lib/utils'
+import { queryKeys } from '@/lib/queryClient'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_app/reminders')({
@@ -64,8 +65,8 @@ const mapReminder = (resource: JsonApiReminder): ReminderItem => {
   const attrs = resource.attributes
   return {
     id: resource.id,
-    title: attrs.title || attrs.subject || 'Recordatorio',
-    description: attrs.body || attrs.message || '',
+    title: attrs.subject || attrs.title || 'Recordatorio',
+    description: attrs.message || attrs.body || '',
     dueDate: attrs.remind_at,
     channel: attrs.channel,
     status: attrs.status,
@@ -73,30 +74,65 @@ const mapReminder = (resource: JsonApiReminder): ReminderItem => {
   }
 }
 
+const groupOrder = ['Atrasados', 'Hoy', 'Manana', 'Proximos']
+
+function groupReminder(reminder: ReminderItem): string {
+  const date = new Date(reminder.dueDate)
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  if (date.toDateString() === today.toDateString()) return 'Hoy'
+  if (date.toDateString() === tomorrow.toDateString()) return 'Manana'
+  if (date < today) return 'Atrasados'
+  return 'Proximos'
+}
+
+function isOverdue(dueDate: string) {
+  return new Date(dueDate) < new Date()
+}
+
 function RemindersPage() {
   const queryClient = useQueryClient()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
 
-  const { data: reminders, isLoading } = useQuery({
-    queryKey: ['reminders', filter],
+  // Fetch all reminders (no server-side status filter); filter client-side so stats are always accurate
+  const { data: allReminders = [], isLoading } = useQuery({
+    queryKey: queryKeys.reminders.all,
     queryFn: async () => {
-      const params =
-        filter === 'pending' ? { status: 'pending' } :
-        filter === 'completed' ? { status: 'done' } :
-        undefined
-      const response = await api.get('/reminders', { params })
+      const response = await api.get('/reminders', { params: { items: 200 } })
       const resources = (response.data?.data || []) as JsonApiReminder[]
       return resources.map(mapReminder)
-    }
+    },
   })
+
+  // Apply filter client-side for the list
+  const reminders =
+    filter === 'pending'
+      ? allReminders.filter((r) => !r.completed)
+      : filter === 'completed'
+        ? allReminders.filter((r) => r.completed)
+        : allReminders
+
+  const groupedReminders = reminders.reduce(
+    (acc, r) => {
+      const group = groupReminder(r)
+      if (!acc[group]) acc[group] = []
+      acc[group].push(r)
+      return acc
+    },
+    {} as Record<string, ReminderItem[]>,
+  )
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
 
   const snoozeMutation = useMutation({
     mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
       await api.post(`/reminders/${id}/snooze`, { minutes })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] })
+      invalidate()
       toast.success('Recordatorio pospuesto')
     },
     onError: () => toast.error('No se pudo posponer el recordatorio'),
@@ -112,9 +148,18 @@ function RemindersPage() {
       return { id, completed }
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['reminders'] })
+      invalidate()
       toast.success(data.completed ? 'Recordatorio completado' : 'Recordatorio reabierto')
-    }
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => api.delete(`/reminders/${id}`),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Recordatorio eliminado')
+    },
+    onError: () => toast.error('No se pudo eliminar el recordatorio'),
   })
 
   const getStatusBadge = (status: string) => {
@@ -134,40 +179,17 @@ function RemindersPage() {
     }
   }
 
-  const isOverdue = (dueDate: string) => {
-    return new Date(dueDate) < new Date()
-  }
-
-  const groupedReminders = reminders?.reduce((acc, reminder) => {
-    const date = new Date(reminder.dueDate)
-    const today = new Date()
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    
-    let group: string
-    if (date.toDateString() === today.toDateString()) {
-      group = 'Hoy'
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-      group = 'Manana'
-    } else if (date < today) {
-      group = 'Atrasados'
-    } else {
-      group = 'Proximos'
-    }
-
-    if (!acc[group]) acc[group] = []
-    acc[group].push(reminder)
-    return acc
-  }, {} as Record<string, ReminderItem[]>)
-
-  const groupOrder = ['Atrasados', 'Hoy', 'Manana', 'Proximos']
+  // Stats from the full (unfiltered) list
+  const pendingCount   = allReminders.filter((r) => !r.completed).length
+  const overdueCount   = allReminders.filter((r) => !r.completed && isOverdue(r.dueDate)).length
+  const todayCount     = allReminders.filter(
+    (r) => !r.completed && new Date(r.dueDate).toDateString() === new Date().toDateString()
+  ).length
+  const completedCount = allReminders.filter((r) => r.completed).length
 
   return (
     <AppPageShell contentClassName="gap-8">
-      <PageHeader
-        title="Recordatorios"
-        description="Gestiona tus tareas y recordatorios"
-      >
+      <PageHeader title="Recordatorios" description="Gestiona tus tareas y recordatorios">
         <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo recordatorio
@@ -183,7 +205,7 @@ function RemindersPage() {
                 <Bell className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">{reminders?.filter(r => !r.completed).length ?? 0}</p>
+                <p className="text-2xl font-semibold">{pendingCount}</p>
                 <p className="text-xs text-muted-foreground">Pendientes</p>
               </div>
             </div>
@@ -196,9 +218,7 @@ function RemindersPage() {
                 <AlertCircle className="h-5 w-5 text-red-500" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">
-                  {reminders?.filter(r => !r.completed && isOverdue(r.dueDate)).length ?? 0}
-                </p>
+                <p className="text-2xl font-semibold">{overdueCount}</p>
                 <p className="text-xs text-muted-foreground">Atrasados</p>
               </div>
             </div>
@@ -211,9 +231,7 @@ function RemindersPage() {
                 <Clock className="h-5 w-5 text-amber-500" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">
-                  {reminders?.filter(r => !r.completed && new Date(r.dueDate).toDateString() === new Date().toDateString()).length ?? 0}
-                </p>
+                <p className="text-2xl font-semibold">{todayCount}</p>
                 <p className="text-xs text-muted-foreground">Para hoy</p>
               </div>
             </div>
@@ -226,9 +244,7 @@ function RemindersPage() {
                 <CheckCircle2 className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">
-                  {reminders?.filter(r => r.completed).length ?? 0}
-                </p>
+                <p className="text-2xl font-semibold">{completedCount}</p>
                 <p className="text-xs text-muted-foreground">Completados</p>
               </div>
             </div>
@@ -238,24 +254,24 @@ function RemindersPage() {
 
       {/* Filter */}
       <div className="flex items-center gap-2">
-        <Button 
-          variant={filter === 'pending' ? 'default' : 'outline'} 
+        <Button
+          variant={filter === 'pending' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setFilter('pending')}
         >
           <Circle className="mr-2 h-4 w-4" />
           Pendientes
         </Button>
-        <Button 
-          variant={filter === 'completed' ? 'default' : 'outline'} 
+        <Button
+          variant={filter === 'completed' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setFilter('completed')}
         >
           <CheckCircle2 className="mr-2 h-4 w-4" />
           Completados
         </Button>
-        <Button 
-          variant={filter === 'all' ? 'default' : 'outline'} 
+        <Button
+          variant={filter === 'all' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setFilter('all')}
         >
@@ -268,24 +284,26 @@ function RemindersPage() {
         <RemindersSkeleton />
       ) : (
         <div className="space-y-6">
-          {groupOrder.map(group => {
-            const items = groupedReminders?.[group]
+          {groupOrder.map((group) => {
+            const items = groupedReminders[group]
             if (!items?.length) return null
 
             return (
               <div key={group}>
-                <h2 className={cn(
-                  "text-sm font-medium mb-3",
-                  group === 'Atrasados' ? 'text-red-500' : 'text-muted-foreground'
-                )}>
+                <h2
+                  className={cn(
+                    'text-sm font-medium mb-3',
+                    group === 'Atrasados' ? 'text-red-500' : 'text-muted-foreground',
+                  )}
+                >
                   {group} ({items.length})
                 </h2>
                 <div className="space-y-2">
-                  {items.map(reminder => (
-                    <Card key={reminder.id} className={cn(
-                      "transition-colors",
-                      reminder.completed && "opacity-60"
-                    )}>
+                  {items.map((reminder) => (
+                    <Card
+                      key={reminder.id}
+                      className={cn('transition-colors', reminder.completed && 'opacity-60')}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-start gap-3">
                           <Checkbox
@@ -293,7 +311,7 @@ function RemindersPage() {
                             onCheckedChange={(checked) => {
                               toggleCompleteMutation.mutate({
                                 id: reminder.id,
-                                completed: checked as boolean
+                                completed: checked as boolean,
                               })
                             }}
                             className="mt-1"
@@ -301,10 +319,12 @@ function RemindersPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <h3 className={cn(
-                                  "font-medium",
-                                  reminder.completed && "line-through"
-                                )}>
+                                <h3
+                                  className={cn(
+                                    'font-medium',
+                                    reminder.completed && 'line-through',
+                                  )}
+                                >
                                   {reminder.title}
                                 </h3>
                                 {reminder.description && (
@@ -322,21 +342,25 @@ function RemindersPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem>Editar</DropdownMenuItem>
                                     {!reminder.completed && (
                                       <DropdownMenuSub>
                                         <DropdownMenuSubTrigger>Posponer</DropdownMenuSubTrigger>
                                         <DropdownMenuSubContent>
-                                          {([
-                                            { label: '15 minutos', minutes: 15 },
-                                            { label: '30 minutos', minutes: 30 },
-                                            { label: '1 hora', minutes: 60 },
-                                            { label: '2 horas', minutes: 120 },
-                                          ] as const).map(opt => (
+                                          {(
+                                            [
+                                              { label: '15 minutos', minutes: 15 },
+                                              { label: '30 minutos', minutes: 30 },
+                                              { label: '1 hora', minutes: 60 },
+                                              { label: '2 horas', minutes: 120 },
+                                            ] as const
+                                          ).map((opt) => (
                                             <DropdownMenuItem
                                               key={opt.minutes}
                                               onClick={() =>
-                                                snoozeMutation.mutate({ id: reminder.id, minutes: opt.minutes })
+                                                snoozeMutation.mutate({
+                                                  id: reminder.id,
+                                                  minutes: opt.minutes,
+                                                })
                                               }
                                             >
                                               {opt.label}
@@ -347,7 +371,9 @@ function RemindersPage() {
                                               const t = new Date()
                                               t.setDate(t.getDate() + 1)
                                               t.setHours(9, 0, 0, 0)
-                                              const minutes = Math.round((t.getTime() - Date.now()) / 60000)
+                                              const minutes = Math.round(
+                                                (t.getTime() - Date.now()) / 60000,
+                                              )
                                               snoozeMutation.mutate({ id: reminder.id, minutes })
                                             }}
                                           >
@@ -356,7 +382,10 @@ function RemindersPage() {
                                         </DropdownMenuSubContent>
                                       </DropdownMenuSub>
                                     )}
-                                    <DropdownMenuItem className="text-destructive">
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => deleteMutation.mutate(reminder.id)}
+                                    >
                                       Eliminar
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
@@ -365,10 +394,14 @@ function RemindersPage() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-4 mt-3 text-sm">
-                              <div className={cn(
-                                "flex items-center gap-1",
-                                isOverdue(reminder.dueDate) && !reminder.completed ? 'text-red-500' : 'text-muted-foreground'
-                              )}>
+                              <div
+                                className={cn(
+                                  'flex items-center gap-1',
+                                  isOverdue(reminder.dueDate) && !reminder.completed
+                                    ? 'text-red-500'
+                                    : 'text-muted-foreground',
+                                )}
+                              >
                                 <Calendar className="h-3 w-3" />
                                 {formatDate(reminder.dueDate)}
                               </div>
@@ -388,7 +421,7 @@ function RemindersPage() {
             )
           })}
 
-          {!reminders?.length && (
+          {reminders.length === 0 && (
             <Card>
               <CardContent className="py-12">
                 <div className="text-center">
@@ -411,6 +444,7 @@ function RemindersPage() {
       <ReminderDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
+        onCreated={invalidate}
       />
     </AppPageShell>
   )

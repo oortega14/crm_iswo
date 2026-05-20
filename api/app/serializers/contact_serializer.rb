@@ -13,6 +13,10 @@ class ContactSerializer < ApplicationSerializer
              :company, :position, :city, :country,
              :notes, :custom_fields, :discarded_at
 
+  attribute :data_classification do |c|
+    c.class.data_classification
+  end
+
   attribute :source_kind do |c|
     c.has_attribute?(:source_kind) ? c[:source_kind] : nil
   end

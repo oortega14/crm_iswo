@@ -14,6 +14,10 @@ class WhatsappMessageSerializer < ApplicationSerializer
              :sent_at, :delivered_at, :read_at, :error_message,
              :created_at, :updated_at
 
+  attribute :data_classification do |m|
+    m.class.data_classification
+  end
+
   attribute :raw_payload, if: ->(_r, params) { params && params[:include_raw] }
 
   belongs_to :contact,     serializer: :contact

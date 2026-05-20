@@ -10,6 +10,7 @@
 class Contact < ApplicationRecord
   include TenantScoped
   include Discard::Model
+  include DataClassifiable
 
   # Compatibilidad con serializers/frontend que usan company/position.
   alias_attribute :company, :company_name

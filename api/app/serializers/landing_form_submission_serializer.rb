@@ -7,6 +7,10 @@ class LandingFormSubmissionSerializer < ApplicationSerializer
              :utm_term, :utm_content, :ip_address, :user_agent,
              :processed_at, :process_error
 
+  attribute :data_classification do |s|
+    s.class.data_classification
+  end
+
   belongs_to :landing_page, serializer: :landing_page
   belongs_to :contact,      serializer: :contact
   belongs_to :opportunity,  serializer: :opportunity

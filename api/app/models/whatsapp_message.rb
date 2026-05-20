@@ -5,6 +5,7 @@
 # ============================================================================
 class WhatsappMessage < ApplicationRecord
   include TenantScoped
+  include DataClassifiable
 
   DIRECTIONS = %w[in out].freeze
   PROVIDERS  = %w[twilio whatsapp_cloud].freeze

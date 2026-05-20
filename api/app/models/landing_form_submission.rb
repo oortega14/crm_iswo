@@ -8,6 +8,7 @@
 # ============================================================================
 class LandingFormSubmission < ApplicationRecord
   include TenantScoped
+  include DataClassifiable
 
   belongs_to :tenant
   belongs_to :landing_page

@@ -21,7 +21,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import type { Pipeline } from '@/types'
 
 const opportunitySchema = z.object({
   contact_name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
@@ -202,8 +201,12 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
     createMutation.mutate(data)
   }
 
-  const duplicateWarning = duplicatePhone?.exists || duplicateEmail?.exists
-  const duplicateInfo = duplicatePhone?.exists ? duplicatePhone : duplicateEmail
+  // Solo bloquear si el contacto existente ya tiene una oportunidad abierta.
+  // Si el contacto existe pero no tiene oportunidad, el backend lo reutiliza sin problema.
+  const duplicateWarning =
+    (duplicatePhone?.exists && !!duplicatePhone.opportunity) ||
+    (duplicateEmail?.exists && !!duplicateEmail.opportunity)
+  const duplicateInfo = duplicatePhone?.opportunity ? duplicatePhone : duplicateEmail
 
   const pipelinesReady = !pipelinesLoading && !pipelinesFetching
   const noPipelines = pipelinesReady && pipelines.length === 0

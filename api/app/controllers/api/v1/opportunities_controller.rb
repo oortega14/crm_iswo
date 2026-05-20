@@ -19,6 +19,7 @@ module Api
         elsif params[:stage_id].present?
           scope = scope.where(pipeline_stage_id: params[:stage_id])
         end
+        scope = scope.where(contact_id: params[:contact_id])               if params[:contact_id].present?
         scope = scope.where(owner_user_id: params[:owner_id])              if params[:owner_id].present?
         scope = scope.where("title ILIKE ?", "%#{params[:q]}%")            if params[:q].present?
         scope = scope.stale(params[:stale_days].to_i)                      if params[:stale_days].present?

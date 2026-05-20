@@ -7,6 +7,13 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { KanbanBoard } from '@/components/opportunities/KanbanBoard'
 import { OpportunitiesTable } from '@/components/opportunities/OpportunitiesTable'
 import { OpportunitySlideOver } from '@/components/opportunities/OpportunitySlideOver'
@@ -14,7 +21,6 @@ import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportun
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Opportunity, Pipeline } from '@/types'
 import {
   jsonApiIncluded,
   jsonApiPrimaryList,
@@ -24,8 +30,10 @@ import {
 
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
+  pipeline: z.string().optional(),
   stage: z.string().optional(),
   selected: z.string().optional(),
+  contact: z.string().optional(),
 })
 
 export const Route = createFileRoute('/_app/opportunities')({
@@ -41,7 +49,6 @@ function OpportunitiesPage() {
   const view = search.view || 'kanban'
   const selectedId = search.selected
 
-  // Fetch pipelines (kanban/tablas usan el pipeline por defecto para columnas coherentes)
   const { data: pipelines, isLoading: pipelinesLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
     queryFn: async () => {
@@ -53,14 +60,24 @@ function OpportunitiesPage() {
 
   const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
 
-  // Listado alineado al mismo pipeline que el tablero (evita tarjetas sin columna)
+  // Usa el pipeline del search param, o cae al por defecto
+  const activePipelineId = search.pipeline || defaultPipeline?.id
+  const activePipeline = pipelines?.find((p) => p.id === activePipelineId) || defaultPipeline
+
   const { data: opportunities, isLoading: opportunitiesLoading } = useQuery({
     queryKey: queryKeys.opportunities.list({
+      pipeline_id: search.contact ? undefined : activePipelineId,
       stage: search.stage,
+      contact_id: search.contact,
     }),
     queryFn: async () => {
       const params = new URLSearchParams()
-      if (search.stage) params.append('stage_id', search.stage)
+      if (search.contact) {
+        params.append('contact_id', search.contact)
+      } else {
+        if (activePipelineId) params.append('pipeline_id', activePipelineId)
+        if (search.stage) params.append('stage_id', search.stage)
+      }
       const response = await api.get(`/opportunities?${params.toString()}`)
       const rows = jsonApiPrimaryList(response.data)
       const included = jsonApiIncluded(response.data)
@@ -69,7 +86,7 @@ function OpportunitiesPage() {
         .map((r) => mapOpportunityResource(r, included))
         .filter((o) => o.id.length > 0)
     },
-    enabled: !pipelinesLoading && !!defaultPipeline?.id,
+    enabled: !pipelinesLoading && (!!activePipelineId || !!search.contact),
   })
 
   const selectedOpportunity = opportunities?.find((o) => o.id === selectedId)
@@ -78,15 +95,19 @@ function OpportunitiesPage() {
     navigate({ search: (prev) => ({ ...prev, view: newView as 'kanban' | 'table' }) })
   }
 
+  const handlePipelineChange = (pipelineId: string) => {
+    navigate({ search: (prev) => ({ ...prev, pipeline: pipelineId, stage: undefined }) })
+  }
+
   const handleSelectOpportunity = (id: string | null) => {
     navigate({ search: (prev) => ({ ...prev, selected: id || undefined }) })
   }
 
-  const isLoading = pipelinesLoading || (!!defaultPipeline?.id && opportunitiesLoading)
+  const isLoading = pipelinesLoading || (!!activePipelineId && opportunitiesLoading)
 
   const oppCount = opportunities?.length ?? 0
   const subtitle =
-    oppCount === 1 ? '1 oportunidad en tu tenant' : `${oppCount} oportunidades en tu tenant`
+    oppCount === 1 ? '1 oportunidad' : `${oppCount} oportunidades`
 
   return (
     <AppPageShell
@@ -97,6 +118,27 @@ function OpportunitiesPage() {
         title="Oportunidades"
         description={subtitle}
       >
+        {/* Selector de pipeline */}
+        {pipelines && pipelines.length > 1 && (
+          <Select
+            value={activePipelineId}
+            onValueChange={handlePipelineChange}
+            disabled={pipelinesLoading}
+          >
+            <SelectTrigger className="h-8 w-[180px] text-sm">
+              <SelectValue placeholder="Selecciona pipeline" />
+            </SelectTrigger>
+            <SelectContent>
+              {pipelines.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                  {p.is_default ? ' ★' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         <Tabs value={view} onValueChange={handleViewChange}>
           <TabsList>
             <TabsTrigger value="kanban" className="gap-1.5">
@@ -132,17 +174,17 @@ function OpportunitiesPage() {
               ))}
             </div>
           </div>
-        ) : !defaultPipeline ? (
+        ) : !activePipeline ? (
           <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
             {pipelines && pipelines.length === 0
               ? 'No hay embudos. Crea un pipeline y etapas en Ajustes → Pipelines.'
-              : 'No se pudo determinar el embudo por defecto.'}
+              : 'No se pudo determinar el embudo activo.'}
           </div>
         ) : view === 'kanban' ? (
           <div className="flex min-h-[280px] flex-1 flex-col">
             <KanbanBoard
               opportunities={opportunities || []}
-              pipeline={defaultPipeline}
+              pipeline={activePipeline}
               onSelectOpportunity={handleSelectOpportunity}
             />
           </div>
@@ -156,7 +198,6 @@ function OpportunitiesPage() {
         )}
       </div>
 
-      {/* Opportunity detail slide-over */}
       <OpportunitySlideOver
         opportunity={selectedOpportunity}
         open={!!selectedId}
@@ -165,7 +206,6 @@ function OpportunitiesPage() {
         }}
       />
 
-      {/* Quick add */}
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
     </AppPageShell>
   )

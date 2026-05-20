@@ -1,13 +1,14 @@
-import { 
-  Mail, 
-  Phone, 
-  Building2, 
-  Briefcase, 
+import {
+  Mail,
+  Phone,
+  Building2,
+  Briefcase,
   MapPin,
   Edit,
   Trash2,
   Link as LinkIcon
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -73,7 +74,14 @@ export function ContactSlideOver({
   onDelete,
   canDelete = false,
 }: ContactSlideOverProps) {
+  const navigate = useNavigate()
+
   if (!contact) return null
+
+  const handleViewOpportunities = () => {
+    onOpenChange(false)
+    void navigate({ to: '/opportunities', search: { view: 'table', contact: contact.id } })
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -196,7 +204,7 @@ export function ContactSlideOver({
                 <p className="text-sm text-muted-foreground">Oportunidades vinculadas</p>
                 <p className="text-lg font-semibold">{contact.opportunitiesCount}</p>
               </div>
-              <Button variant="outline" className="w-full mt-2">
+              <Button variant="outline" className="w-full mt-2" onClick={handleViewOpportunities}>
                 <LinkIcon className="mr-2 h-4 w-4" />
                 Ver oportunidades
               </Button>

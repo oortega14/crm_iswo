@@ -5,7 +5,6 @@ import {
 } from '@dnd-kit/sortable'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { OpportunityCard } from './OpportunityCard'
 import type { Opportunity, PipelineStage } from '@/types'
 
@@ -50,8 +49,8 @@ export function KanbanColumn({
         </Badge>
       </div>
 
-      {/* Cards */}
-      <ScrollArea className="flex-1 p-2">
+      {/* Cards — div nativo para no bloquear los eventos de puntero de dnd-kit */}
+      <div className="flex-1 overflow-y-auto p-2">
         <SortableContext
           items={opportunityIds}
           strategy={verticalListSortingStrategy}
@@ -72,7 +71,7 @@ export function KanbanColumn({
             )}
           </div>
         </SortableContext>
-      </ScrollArea>
+      </div>
     </div>
   )
 }

@@ -7,10 +7,11 @@
 # Crear exports requiere manager/admin (son costosos y tocan datos sensibles).
 # ============================================================================
 class ExportPolicy < ApplicationPolicy
-  def index?   = staff?
-  def show?    = manager_or_admin? || owner?
-  def create?  = manager_or_admin?
-  def destroy? = admin?
+  def index?    = staff?
+  def show?     = manager_or_admin? || owner?
+  def download? = show?
+  def create?   = manager_or_admin?
+  def destroy?  = admin?
 
   class Scope < ApplicationPolicy::Scope
     def resolve

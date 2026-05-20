@@ -176,7 +176,9 @@ Rails.application.routes.draw do
       resources :whatsapp_messages, only: %i[index show]
 
       # ---- Exports ----------------------------------------------------------
-      resources :exports, only: %i[index show create]
+      resources :exports, only: %i[index show create] do
+        member { get :download }
+      end
 
       # ========================================================================
       # Webhooks (autenticación por firma, no JWT)

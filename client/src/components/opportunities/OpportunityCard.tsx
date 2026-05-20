@@ -1,11 +1,14 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Bell, GripVertical } from 'lucide-react'
+import { Bell, Clock, GripVertical, Network } from 'lucide-react'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { cn, formatCurrency, formatRelativeTime, getBantScoreColor, getInitials } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
+import { useTenant, useUser } from '@/stores/auth'
 import type { Opportunity } from '@/types'
 
 interface OpportunityCardProps {
@@ -33,9 +36,24 @@ export function OpportunityCard({
     transition,
   }
 
+  const currentUser = useUser()
+  const tenant = useTenant()
+  const networkUserIds = useNetworkUserIds()
+  const ownerId = opportunity.owner?.id
+  const isFromNetwork =
+    ownerId !== undefined &&
+    ownerId !== String(currentUser?.id) &&
+    networkUserIds.has(ownerId)
+
   const hasReminder =
     opportunity.reminder_due_at &&
     new Date(opportunity.reminder_due_at) <= new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+  const staleDays = tenant?.settings?.stale_days ?? 7
+  const isStale =
+    opportunity.last_activity_at != null &&
+    new Date(opportunity.last_activity_at) <
+      new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000)
 
   return (
     <Card
@@ -113,7 +131,7 @@ export function OpportunityCard({
 
           {/* Footer */}
           <div className="flex items-center justify-between gap-2">
-            {/* Owner */}
+            {/* Owner + network indicator */}
             <div className="flex items-center gap-1.5">
               <Avatar className="size-5">
                 <AvatarImage src={opportunity.owner?.avatar_url} />
@@ -121,16 +139,43 @@ export function OpportunityCard({
                   {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-xs text-muted-foreground truncate max-w-[80px]">
+              <span className="text-xs text-muted-foreground truncate max-w-[70px]">
                 {opportunity.owner?.name?.split(' ')[0]}
               </span>
+              {isFromNetwork && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center">
+                      <Network className="size-3 text-indigo-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    De tu red de referidos
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
 
-            {/* Last activity */}
+            {/* Last activity — amber + Clock icon when stale */}
             {opportunity.last_activity_at && (
-              <span className="text-[10px] text-muted-foreground">
-                {formatRelativeTime(opportunity.last_activity_at)}
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'flex items-center gap-0.5 text-[10px]',
+                      isStale ? 'text-amber-500' : 'text-muted-foreground'
+                    )}
+                  >
+                    {isStale && <Clock className="size-3 shrink-0" />}
+                    {formatRelativeTime(opportunity.last_activity_at)}
+                  </span>
+                </TooltipTrigger>
+                {isStale && (
+                  <TooltipContent side="top" className="text-xs">
+                    Sin actividad hace más de {staleDays} días
+                  </TooltipContent>
+                )}
+              </Tooltip>
             )}
           </div>
         </div>

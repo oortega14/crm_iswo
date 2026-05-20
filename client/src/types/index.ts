@@ -20,6 +20,11 @@ export interface AuthPayload {
   exp: number
 }
 
+export interface TenantSettings {
+  stale_days?: number
+  [key: string]: unknown
+}
+
 export interface Tenant {
   id: string
   name: string
@@ -28,6 +33,7 @@ export interface Tenant {
   primary_color: string
   currency: string
   timezone: string
+  settings?: TenantSettings
   created_at: string
 }
 

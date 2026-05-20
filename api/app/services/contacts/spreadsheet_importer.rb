@@ -128,9 +128,18 @@ module Contacts
       sheet = book.sheet(0)
       return [[], nil] unless sheet.last_row&.positive?
 
-      # Buscar la fila que tenga más cabeceras reconocidas (salta títulos antes del encabezado real)
       header_row_idx = detect_header_row(sheet)
-      headers = sheet.row(header_row_idx).map { |c| c.nil? ? "" : c.to_s.strip }
+
+      if header_row_idx
+        # Archivo con cabeceras reconocidas
+        headers    = sheet.row(header_row_idx).map { |c| c.nil? ? "" : c.to_s.strip }
+        data_start = header_row_idx + 1
+      else
+        # Sin cabeceras: inferir tipos de columna por los valores
+        headers    = infer_column_types(sheet)
+        data_start = 1
+      end
+
       unless headers.compact_blank.any?
         return [
           [],
@@ -139,7 +148,7 @@ module Contacts
       end
 
       rows = []
-      ((header_row_idx + 1)..sheet.last_row).each do |i|
+      (data_start..sheet.last_row).each do |i|
         vals = sheet.row(i)
         row_h = {}
         headers.each_with_index do |h, j|
@@ -156,9 +165,11 @@ module Contacts
       city country kind notes document_id
     ].freeze
 
+    # Devuelve el índice (1-based) de la fila con más cabeceras reconocidas.
+    # Retorna nil si ninguna fila alcanza score >= 1 (archivo sin cabeceras).
     def detect_header_row(sheet)
       max_check = [sheet.last_row.to_i, 10].min
-      best_row  = 1
+      best_row  = nil
       best_score = 0
 
       (1..max_check).each do |i|
@@ -172,7 +183,50 @@ module Contacts
         end
       end
 
-      best_row
+      best_score >= 1 ? best_row : nil
+    end
+
+    # Para archivos sin cabecera, detecta el tipo de cada columna muestreando
+    # las primeras filas y asigna un nombre de campo reconocido.
+    def infer_column_types(sheet)
+      sample_count = [sheet.last_row.to_i, 10].min
+      samples_by_col = Hash.new { |h, k| h[k] = [] }
+
+      (1..sample_count).each do |i|
+        sheet.row(i).each_with_index do |val, col_idx|
+          samples_by_col[col_idx] << cell_to_string(val) unless val.nil?
+        end
+      end
+
+      col_count = (samples_by_col.keys.max || -1) + 1
+      assigned  = Array.new(col_count)
+      used      = Set.new
+
+      col_count.times do |col_idx|
+        samples = samples_by_col[col_idx].reject(&:blank?)
+        next if samples.empty?
+
+        type =
+          if !used.include?("email") && samples.count { |v| v.include?("@") } > samples.size / 3
+            "email"
+          elsif !used.include?("full_name") &&
+                samples.count { |v| v.match?(/[[:alpha:]]/) && v.include?(" ") } > samples.size / 2
+            "full_name"
+          elsif !used.include?("phone") &&
+                samples.count { |v| v.gsub(/\D/, "").match?(/\A3\d{8,10}\z/) } > samples.size / 3
+            "phone"
+          elsif !used.include?("document_id") &&
+                samples.count { |v| v.gsub(/\D/, "").match?(/\A\d{5,12}\z/) } > samples.size / 2
+            "document_id"
+          else
+            "col_#{col_idx + 1}"
+          end
+
+        assigned[col_idx] = type
+        used << type unless type.start_with?("col_")
+      end
+
+      assigned
     end
 
     def normalize_row(row)
@@ -182,17 +236,27 @@ module Contacts
           next if header.blank?
 
           key = normalize_header_key(header)
-          h[key] = val.to_s.strip.presence
+          h[key] = cell_to_string(val).presence
         end
       else
         row.headers.each do |header|
           next if header.blank?
 
           key = normalize_header_key(header)
-          h[key] = row[header].to_s.strip.presence
+          h[key] = cell_to_string(row[header]).presence
         end
       end
       h.compact
+    end
+
+    # Convierte un valor de celda Excel a String, manejando tipos especiales de Roo.
+    def cell_to_string(val)
+      return "" if val.nil?
+      # Roo::Link (hipervínculo) — usar el texto visible, no el href
+      return val.text.to_s.strip if val.respond_to?(:text)
+      # Float que representa un entero (evita "3164068553.0")
+      return val.to_i.to_s if val.is_a?(Float) && val == val.to_i
+      val.to_s.strip
     end
 
     def normalize_header_key(header)

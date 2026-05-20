@@ -128,7 +128,9 @@ module Contacts
       sheet = book.sheet(0)
       return [[], nil] unless sheet.last_row&.positive?
 
-      headers = sheet.row(1).map { |c| c.nil? ? "" : c.to_s.strip }
+      # Buscar la fila que tenga más cabeceras reconocidas (salta títulos antes del encabezado real)
+      header_row_idx = detect_header_row(sheet)
+      headers = sheet.row(header_row_idx).map { |c| c.nil? ? "" : c.to_s.strip }
       unless headers.compact_blank.any?
         return [
           [],
@@ -137,7 +139,7 @@ module Contacts
       end
 
       rows = []
-      (2..sheet.last_row).each do |i|
+      ((header_row_idx + 1)..sheet.last_row).each do |i|
         vals = sheet.row(i)
         row_h = {}
         headers.each_with_index do |h, j|
@@ -147,6 +149,30 @@ module Contacts
       end
 
       [rows, nil]
+    end
+
+    KNOWN_IMPORT_KEYS = %w[
+      first_name last_name full_name email phone company position
+      city country kind notes document_id
+    ].freeze
+
+    def detect_header_row(sheet)
+      max_check = [sheet.last_row.to_i, 10].min
+      best_row  = 1
+      best_score = 0
+
+      (1..max_check).each do |i|
+        score = sheet.row(i).count do |c|
+          key = normalize_header_key(c.to_s)
+          KNOWN_IMPORT_KEYS.include?(key)
+        end
+        if score > best_score
+          best_score = score
+          best_row   = i
+        end
+      end
+
+      best_row
     end
 
     def normalize_row(row)
@@ -170,7 +196,8 @@ module Contacts
     end
 
     def normalize_header_key(header)
-      s = header.to_s.strip.downcase.gsub(/\s+/, " ")
+      # [[:space:]] captura espacios unicode (non-breaking space, etc.) que \s no captura
+      s = header.to_s.gsub(/[[:space:]]+/, " ").strip.downcase
       case s
       when "nombre", "first_name", "firstname", "nombres" then "first_name"
       when "apellido", "last_name", "lastname", "apellidos" then "last_name"

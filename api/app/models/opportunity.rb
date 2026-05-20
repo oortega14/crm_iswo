@@ -15,6 +15,7 @@
 class Opportunity < ApplicationRecord
   include TenantScoped
   include Discard::Model
+  include DataClassifiable
 
   STATUSES = {
     "new_lead"  => "new_lead",

@@ -14,6 +14,10 @@ class OpportunitySerializer < ApplicationSerializer
              :expected_close_date, :closed_at, :lost_reason, :notes,
              :last_activity_at, :custom_fields, :discarded_at, :currency
 
+  attribute :data_classification do |o|
+    o.class.data_classification
+  end
+
   attribute :bant_data do |o|
     (o.custom_fields || {})["bant_data"] || {}
   end

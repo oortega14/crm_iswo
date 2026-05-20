@@ -267,16 +267,28 @@ function ExportsPage() {
     if (!exp.fileUrl) return
     setDownloadingId(exp.id)
     try {
-      const response = await api.get(exp.fileUrl, { responseType: 'blob' })
-      const blob = response.data as Blob
-      const url = URL.createObjectURL(blob)
+      const { accessToken } = useAuthStore.getState()
+      const tenantSlug = window.localStorage.getItem('crm-tenant-slug') || ''
+      // fileUrl ya incluye el path completo ("/api/v1/exports/:id/download")
+      const url = exp.fileUrl
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Tenant-Slug': tenantSlug,
+        },
+      })
+      if (!res.ok) throw new Error('No se pudo descargar el archivo')
+      const arrayBuffer = await res.arrayBuffer()
+      const mime = exp.format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      const blob = new Blob([arrayBuffer], { type: mime })
+      const objectUrl = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = url
+      a.href = objectUrl
       a.download = `export_${exp.resource}_${exp.id}.${exp.format}`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      URL.revokeObjectURL(objectUrl)
     } catch {
       toast.error('No se pudo descargar el archivo')
     } finally {

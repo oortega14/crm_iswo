@@ -11,10 +11,10 @@ interface BantSlidersProps {
 }
 
 const sliders = [
-  { key: 'bant_budget', label: 'Budget', color: 'bg-chart-1' },
-  { key: 'bant_authority', label: 'Authority', color: 'bg-chart-3' },
-  { key: 'bant_need', label: 'Need', color: 'bg-chart-2' },
-  { key: 'bant_timeline', label: 'Timeline', color: 'bg-chart-5' },
+  { key: 'bant_budget', label: 'Presupuesto', color: 'bg-chart-1' },
+  { key: 'bant_authority', label: 'Autoridad', color: 'bg-chart-3' },
+  { key: 'bant_need', label: 'Necesidad', color: 'bg-chart-2' },
+  { key: 'bant_timeline', label: 'Tiempo', color: 'bg-chart-5' },
 ]
 
 export function BantSliders({

@@ -26,11 +26,11 @@ class ExportGenerationJob < ApplicationJob
     ActsAsTenant.with_tenant(export.tenant) do
       export.update!(status: "running", started_at: Time.current)
 
-      path = case export.format
-             when "xlsx" then build_xlsx(export)
-             when "csv"  then build_csv(export)
-             else raise "Formato no soportado: #{export.format}"
-             end
+      path, row_count = case export.format
+                        when "xlsx" then build_xlsx(export)
+                        when "csv"  then build_csv(export)
+                        else raise "Formato no soportado: #{export.format}"
+                        end
 
       url = upload_or_persist(export, path)
 
@@ -38,6 +38,7 @@ class ExportGenerationJob < ApplicationJob
         status:      "succeeded",
         file_url:    url,
         file_size:   File.size(path),
+        row_count:   row_count,
         expires_at:  EXPIRY.from_now,
         finished_at: Time.current
       )
@@ -57,33 +58,41 @@ class ExportGenerationJob < ApplicationJob
   def build_xlsx(export)
     require "caxlsx"
 
-    path  = tmp_path(export, "xlsx")
-    p     = Axlsx::Package.new
-    wb    = p.workbook
-    rows  = collection(export)
+    path    = tmp_path(export, "xlsx")
+    pkg     = Axlsx::Package.new
+    wb      = pkg.workbook
+    rows    = collection(export)
+    count   = 0
 
     wb.add_worksheet(name: export.resource.titleize) do |sheet|
       headers = rows.first&.attributes&.keys || []
       sheet.add_row(headers)
-      rows.find_each { |r| sheet.add_row(headers.map { |h| r[h] }) }
+      rows.find_each do |r|
+        sheet.add_row(headers.map { |h| r[h] })
+        count += 1
+      end
     end
 
-    p.serialize(path)
-    path
+    pkg.serialize(path)
+    [path, count]
   end
 
   def build_csv(export)
     require "csv"
 
-    path = tmp_path(export, "csv")
-    rows = collection(export)
+    path    = tmp_path(export, "csv")
+    rows    = collection(export)
     headers = rows.first&.attributes&.keys || []
+    count   = 0
 
     CSV.open(path, "w") do |csv|
       csv << headers
-      rows.find_each { |r| csv << headers.map { |h| r[h] } }
+      rows.find_each do |r|
+        csv << headers.map { |h| r[h] }
+        count += 1
+      end
     end
-    path
+    [path, count]
   end
 
   def collection(export)
@@ -107,19 +116,22 @@ class ExportGenerationJob < ApplicationJob
     dir.join("#{export.id}.#{ext}").to_s
   end
 
-  # Si hay S3 configurado lo sube; si no, mueve a /public/exports y devuelve URL local.
+  # S3: sube con ACL privada y devuelve presigned URL.
+  # Local: mueve a storage/exports/ (fuera de public/) y devuelve la URL
+  #        del endpoint autenticado /api/v1/exports/:id/download.
   def upload_or_persist(export, path)
     if ENV["AWS_S3_BUCKET"].present? && defined?(Aws::S3::Resource)
-      key = "exports/#{export.tenant_id}/#{export.id}.#{export.format}"
-      bucket = Aws::S3::Resource.new(region: ENV.fetch("AWS_REGION", "us-east-1")).bucket(ENV["AWS_S3_BUCKET"])
+      key    = "exports/#{export.tenant_id}/#{export.id}.#{export.format}"
+      bucket = Aws::S3::Resource.new(region: ENV.fetch("AWS_REGION", "us-east-1"))
+                                 .bucket(ENV["AWS_S3_BUCKET"])
       bucket.object(key).upload_file(path, acl: "private")
       bucket.object(key).presigned_url(:get, expires_in: EXPIRY.to_i)
     else
-      public_dir = Rails.root.join("public", "exports", export.tenant_id.to_s)
-      FileUtils.mkdir_p(public_dir)
-      dest = public_dir.join("#{export.id}.#{export.format}")
+      storage_dir = Rails.root.join("storage", "exports", export.tenant_id.to_s)
+      FileUtils.mkdir_p(storage_dir)
+      dest = storage_dir.join("#{export.id}.#{export.format}")
       FileUtils.cp(path, dest)
-      "#{ENV.fetch('APP_HOST', 'http://localhost:3000')}/exports/#{export.tenant_id}/#{export.id}.#{export.format}"
+      "#{ENV.fetch('APP_HOST', 'http://localhost:3000')}/api/v1/exports/#{export.id}/download"
     end
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_14_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_20_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -65,12 +65,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_000001) do
     t.index ["tenant_id"], name: "index_bant_criteria_on_tenant_id", unique: true
     t.check_constraint "(budget_weight + authority_weight + need_weight + timeline_weight) = 100", name: "bant_weights_sum_100"
     t.check_constraint "threshold_qualified >= 0 AND threshold_qualified <= 100", name: "bant_threshold_range"
-  end
-
-  create_table "companies", force: :cascade do |t|
-    t.datetime "created_at", null: false
-    t.string "name"
-    t.datetime "updated_at", null: false
   end
 
   create_table "contacts", force: :cascade do |t|
@@ -275,7 +269,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_14_000001) do
     t.datetime "created_at", null: false
     t.string "ip_address"
     t.text "note"
-    t.bigint "opportunity_id", null: false
+    t.bigint "opportunity_id"
     t.bigint "tenant_id", null: false
     t.string "user_agent"
     t.bigint "user_id", comment: "Autor del cambio"

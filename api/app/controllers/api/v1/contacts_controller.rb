@@ -46,7 +46,8 @@ module Api
       def update
         authorize @contact
         if @contact.update(contact_params)
-          audit_contact!("contact.update", @contact)
+          audit_contact!("contact.update", @contact,
+                         changed_fields: @contact.previous_changes.except("updated_at").keys)
           render_resource(@contact, with: ContactSerializer)
         else
           render_unprocessable(@contact)
@@ -135,6 +136,8 @@ module Api
           filename: file.original_filename
         ).call
 
+        audit_contact_import!(result, file.original_filename) if result.created_count.positive?
+
         render json: {
           data: {
             created_count: result.created_count,
@@ -164,17 +167,35 @@ module Api
         @contact = current_tenant.contacts.kept.find(params[:id])
       end
 
-      def audit_contact!(action, contact)
+      def audit_contact!(action, contact, extra = {})
         AuditEvent.create!(
           tenant:      current_tenant,
           user:        current_user,
           action:      action,
           entity_type: "Contact",
           entity_id:   contact.id,
-          metadata:    { ip: request.remote_ip, ua: request.user_agent }
+          metadata:    { ip: request.remote_ip, ua: request.user_agent }.merge(extra)
         )
       rescue StandardError => e
         Rails.logger.warn("[AuditEvent] No se pudo registrar #{action}: #{e.message}")
+      end
+
+      def audit_contact_import!(result, filename)
+        AuditEvent.create!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      "contact.import",
+          entity_type: "Contact",
+          metadata:    {
+            ip:            request.remote_ip,
+            ua:            request.user_agent,
+            filename:      filename,
+            created_count: result.created_count,
+            skipped_count: result.skipped_count
+          }
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] No se pudo registrar contact.import: #{e.message}")
       end
 
       def contact_params

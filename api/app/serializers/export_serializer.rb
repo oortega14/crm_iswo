@@ -4,9 +4,14 @@ class ExportSerializer < ApplicationSerializer
   set_type :export
 
   attributes :resource, :format, :status, :filters,
-             :file_url, :error_message, :expires_at, :user_id
+             :error_message, :expires_at, :user_id
 
-  # Columnas opcionales si la migración aún no está aplicada en una BD antigua.
+  # Siempre apunta al endpoint autenticado; el backend decide si redirige a S3
+  # o sirve el archivo desde storage/ según dónde esté guardado.
+  attribute :file_url do |e|
+    "/api/v1/exports/#{e.id}/download" if e.status == "succeeded"
+  end
+
   attribute :file_size do |e|
     e.try(:file_size)
   end

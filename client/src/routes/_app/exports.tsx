@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import {
   Download,
   FileSpreadsheet,
@@ -43,7 +43,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList } from '@/lib/opportunityApi'
+import { jsonApiPrimaryList, mapPipelineResource, mapUserResource } from '@/lib/opportunityApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
@@ -145,21 +145,28 @@ function mapExportRow(r: JsonApiResource): ExportRow | null {
   }
 }
 
-function buildFilters(dateRange: string): Record<string, string> {
+function buildFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
   const filters: Record<string, string> = {}
   const daysByRange: Record<string, number> = {
-    all: 0,
-    week: 7,
-    month: 30,
-    quarter: 90,
-    year: 365,
+    all: 0, week: 7, month: 30, quarter: 90, year: 365,
   }
-  const days = daysByRange[dateRange] ?? 0
+  const days = daysByRange[config.dateRange] ?? 0
   if (days > 0) {
     const d = new Date(Date.now() - days * 86400000)
     filters.updated_at_gteq = d.toISOString()
   }
+  if (config.stageId)    filters.pipeline_stage_id_eq = config.stageId
+  if (config.ownerId)    filters.owner_user_id_eq     = config.ownerId
+  if (config.sourceId)   filters.lead_source_id_eq    = config.sourceId
   return filters
+}
+
+const INITIAL_CONFIG = {
+  resource:  'opportunities' as ExportResource,
+  dateRange: 'all',
+  stageId:   '',
+  ownerId:   '',
+  sourceId:  '',
 }
 
 function ExportsPage() {
@@ -171,13 +178,48 @@ function ExportsPage() {
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
-  const [exportConfig, setExportConfig] = useState<{
-    resource: ExportResource
-    dateRange: string
-  }>({
-    resource: 'opportunities',
-    dateRange: 'all',
+  const [exportConfig, setExportConfig] = useState(INITIAL_CONFIG)
+
+  const isOpportunities = exportConfig.resource === 'opportunities'
+
+  // Carga pipelines, usuarios y fuentes solo cuando se abre el diálogo de oportunidades
+  const [pipelinesQ, usersQ, sourcesQ] = useQueries({
+    queries: [
+      {
+        queryKey: queryKeys.pipelines.all,
+        queryFn: async () => {
+          const res = await api.get('/pipelines')
+          return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapPipelineResource)
+        },
+        enabled: isExportDialogOpen && isOpportunities,
+        staleTime: 60_000,
+      },
+      {
+        queryKey: queryKeys.users.all,
+        queryFn: async () => {
+          const res = await api.get('/users')
+          return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapUserResource)
+        },
+        enabled: isExportDialogOpen && isOpportunities,
+        staleTime: 60_000,
+      },
+      {
+        queryKey: queryKeys.leadSources.all,
+        queryFn: async () => {
+          const res = await api.get('/lead_sources')
+          return jsonApiPrimaryList(res.data)
+            .filter((r) => r.id)
+            .map((r) => ({ id: String(r.id), name: String(r.attributes?.name ?? '') }))
+        },
+        enabled: isExportDialogOpen && isOpportunities,
+        staleTime: 60_000,
+      },
+    ],
   })
+
+  const allStages = (pipelinesQ.data ?? []).flatMap((p) =>
+    (p.stages ?? []).map((s) => ({ id: s.id, name: `${p.name} › ${s.name}` }))
+  )
 
   const {
     data: exports = [],
@@ -201,7 +243,7 @@ function ExportsPage() {
 
   const createExportMutation = useMutation({
     mutationFn: async (config: typeof exportConfig) => {
-      const filters = buildFilters(config.dateRange)
+      const filters = buildFilters(config)
       const response = await api.post('/exports', {
         resource: config.resource,
         export_format: 'xlsx' satisfies ExportFormat,
@@ -218,6 +260,29 @@ function ExportsPage() {
       toast.error(formatRailsError(err, 'No se pudo iniciar la exportación'))
     },
   })
+
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+
+  const handleDownload = async (exp: ExportRow) => {
+    if (!exp.fileUrl) return
+    setDownloadingId(exp.id)
+    try {
+      const response = await api.get(exp.fileUrl, { responseType: 'blob' })
+      const blob = response.data as Blob
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `export_${exp.resource}_${exp.id}.${exp.format}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('No se pudo descargar el archivo')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const getStatusBadge = (exp: ExportRow) => {
     if (exp.expired || exp.uiStatus === 'expired') {
@@ -451,11 +516,16 @@ function ExportsPage() {
                     <TableCell className="text-muted-foreground">{formatDate(exp.createdAt)}</TableCell>
                     <TableCell className="text-right">
                       {exp.fileUrl && (exp.ready || exp.uiStatus === 'completed') ? (
-                        <Button variant="ghost" size="sm" asChild>
-                          <a href={exp.fileUrl} target="_blank" rel="noopener noreferrer" download>
-                            <Download className="mr-1 h-4 w-4" />
-                            Descargar
-                          </a>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={downloadingId === exp.id}
+                          onClick={() => void handleDownload(exp)}
+                        >
+                          {downloadingId === exp.id
+                            ? <Spinner className="mr-1 h-4 w-4" />
+                            : <Download className="mr-1 h-4 w-4" />}
+                          Descargar
                         </Button>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
@@ -483,7 +553,13 @@ function ExportsPage() {
               <Label>Recurso</Label>
               <Select
                 value={exportConfig.resource}
-                onValueChange={(v) => setExportConfig((c) => ({ ...c, resource: v as ExportResource }))}
+                onValueChange={(v) =>
+                  setExportConfig((c) => ({
+                    ...INITIAL_CONFIG,
+                    dateRange: c.dateRange,
+                    resource: v as ExportResource,
+                  }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -496,7 +572,7 @@ function ExportsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Filtro por última actualización (opcional)</Label>
+              <Label>Rango de fecha (última actualización)</Label>
               <Select
                 value={exportConfig.dateRange}
                 onValueChange={(v) => setExportConfig((c) => ({ ...c, dateRange: v }))}
@@ -512,11 +588,68 @@ function ExportsPage() {
                   <SelectItem value="year">Últimos 365 días</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Se envía como <code className="rounded bg-muted px-1">updated_at_gteq</code> para Ransack en el job de
-                exportación.
-              </p>
             </div>
+
+            {isOpportunities && (
+              <>
+                <div className="space-y-2">
+                  <Label>Etapa del pipeline (opcional)</Label>
+                  <Select
+                    value={exportConfig.stageId || '__all__'}
+                    onValueChange={(v) => setExportConfig((c) => ({ ...c, stageId: v === '__all__' ? '' : v }))}
+                    disabled={pipelinesQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todas las etapas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todas las etapas</SelectItem>
+                      {allStages.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Consultor asignado (opcional)</Label>
+                  <Select
+                    value={exportConfig.ownerId || '__all__'}
+                    onValueChange={(v) => setExportConfig((c) => ({ ...c, ownerId: v === '__all__' ? '' : v }))}
+                    disabled={usersQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos los consultores" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos los consultores</SelectItem>
+                      {(usersQ.data ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Origen del lead (opcional)</Label>
+                  <Select
+                    value={exportConfig.sourceId || '__all__'}
+                    onValueChange={(v) => setExportConfig((c) => ({ ...c, sourceId: v === '__all__' ? '' : v }))}
+                    disabled={sourcesQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos los orígenes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos los orígenes</SelectItem>
+                      {(sourcesQ.data ?? []).map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>

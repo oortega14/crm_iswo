@@ -54,14 +54,20 @@ module Opportunities
     end
 
     def call
+      contact    = nil
+      dup_match  = nil
+      opportunity = nil
+
       ActsAsTenant.with_tenant(@tenant) do
         ActiveRecord::Base.transaction do
           contact, dup_match = upsert_contact
           opportunity        = create_opportunity(contact)
-
-          Result.new(contact: contact, opportunity: opportunity, duplicate_match: dup_match)
         end
+
+        audit_new_contact!(contact) if dup_match.nil?
       end
+
+      Result.new(contact: contact, opportunity: opportunity, duplicate_match: dup_match)
     end
 
     # =========================================================================
@@ -153,6 +159,19 @@ module Opportunities
       label = @source_label.presence || @source_kind.capitalize
       name  = full_name.presence || @attrs["email"].presence || "Sin nombre"
       "Lead #{label} — #{name}"
+    end
+
+    def audit_new_contact!(contact)
+      AuditEvent.create!(
+        tenant:      @tenant,
+        user:        nil,
+        action:      "contact.create",
+        entity_type: "Contact",
+        entity_id:   contact.id,
+        metadata:    { origin: "system", source_kind: @source_kind, source_label: @source_label }.compact
+      )
+    rescue StandardError => e
+      Rails.logger.warn("[AuditEvent] LeadImporter contact=#{contact.id} #{e.message}")
     end
 
     # Round-robin: consultant con menos oportunidades abiertas.

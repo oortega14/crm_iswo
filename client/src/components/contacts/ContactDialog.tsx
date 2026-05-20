@@ -20,12 +20,12 @@ import { queryKeys } from '@/lib/queryClient'
 interface ContactDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Llamado tras crear: p. ej. volver a página 1 y limpiar búsqueda para que el contacto se vea al instante. */
   onCreated?: () => void
 }
 
 export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogProps) {
   const queryClient = useQueryClient()
+  const [kind, setKind] = useState<'person' | 'company'>('person')
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -39,13 +39,13 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
     mutationFn: async (data: typeof formData) => {
       return api.post('/contacts', {
         contact: {
-          kind: 'person',
-          first_name: data.firstName || undefined,
-          last_name: data.lastName || undefined,
-          email: data.email || undefined,
-          phone_e164: data.phone || undefined,
-          company: data.company || undefined,
-          position: data.position || undefined,
+          kind,
+          first_name:  kind === 'person' ? (data.firstName || undefined) : undefined,
+          last_name:   kind === 'person' ? (data.lastName  || undefined) : undefined,
+          email:       data.email    || undefined,
+          phone_e164:  data.phone    || undefined,
+          company:     data.company  || undefined,
+          position:    kind === 'person' ? (data.position || undefined) : undefined,
         },
       })
     },
@@ -53,22 +53,14 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
       await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
       await queryClient.invalidateQueries({ queryKey: ['companies'] })
       onCreated?.()
-      toast.success('Contacto creado exitosamente')
+      toast.success(kind === 'company' ? 'Empresa creada exitosamente' : 'Contacto creado exitosamente')
       onOpenChange(false)
-      setFormData({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        company: '',
-        position: '',
-      })
+      setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+      setKind('person')
     },
     onError: (err: unknown) => {
       if (isAxiosError(err) && err.response?.status === 403) {
-        toast.error(
-          'No tienes permiso para crear contactos. Solo consultores, managers y administradores pueden hacerlo.'
-        )
+        toast.error('No tienes permiso para crear contactos.')
         return
       }
       toast.error(formatRailsError(err, 'Error al crear el contacto'))
@@ -84,101 +76,162 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
+  const handleKindChange = (newKind: 'person' | 'company') => {
+    setKind(newKind)
+    setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Nuevo Contacto</DialogTitle>
-          <DialogDescription className="space-y-1">
-            <span className="block">
-              Completa nombre, apellido y correo. Si añades teléfono, usa formato internacional (por ejemplo{' '}
-              <span className="font-medium text-foreground">+57 300 123 4567</span>) para que el servidor lo valide.
-            </span>
+          <DialogTitle>{kind === 'company' ? 'Nueva Empresa' : 'Nuevo Contacto'}</DialogTitle>
+          <DialogDescription>
+            {kind === 'company'
+              ? 'Registra una empresa como prospecto. Puedes vincularle personas después.'
+              : 'Completa los datos de la persona. El teléfono debe estar en formato internacional (+57...).'}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="firstName">Nombre</Label>
-              <Input
-                id="firstName"
-                value={formData.firstName}
-                onChange={(e) => handleChange('firstName', e.target.value)}
-                placeholder="Juan"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">Apellido</Label>
-              <Input
-                id="lastName"
-                value={formData.lastName}
-                onChange={(e) => handleChange('lastName', e.target.value)}
-                placeholder="Garcia"
-                required
-              />
-            </div>
+          {/* Selector de tipo */}
+          <div className="flex rounded-md border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => handleKindChange('person')}
+              className={`flex-1 py-1.5 text-sm font-medium transition-colors ${
+                kind === 'person'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-background text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Persona
+            </button>
+            <button
+              type="button"
+              onClick={() => handleKindChange('company')}
+              className={`flex-1 py-1.5 text-sm font-medium transition-colors ${
+                kind === 'company'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-background text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              Empresa
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => handleChange('email', e.target.value)}
-              placeholder="juan@empresa.com"
-              required
-            />
-          </div>
+          {/* Campos según tipo */}
+          {kind === 'person' ? (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">Nombre *</Label>
+                  <Input
+                    id="firstName"
+                    value={formData.firstName}
+                    onChange={(e) => handleChange('firstName', e.target.value)}
+                    placeholder="Juan"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Apellido *</Label>
+                  <Input
+                    id="lastName"
+                    value={formData.lastName}
+                    onChange={(e) => handleChange('lastName', e.target.value)}
+                    placeholder="García"
+                    required
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="phone">Teléfono (opcional)</Label>
-            <Input
-              id="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => handleChange('phone', e.target.value)}
-              placeholder="+57 300 123 4567"
-            />
-            <p className="text-xs text-muted-foreground">
-              Déjalo vacío si no lo tienes. Si lo rellenas, debe ser un número reconocible (E.164); si no, verás un error
-              de validación.
-            </p>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange('email', e.target.value)}
+                  placeholder="juan@empresa.com"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="company">Empresa</Label>
-            <Input
-              id="company"
-              value={formData.company}
-              onChange={(e) => handleChange('company', e.target.value)}
-              placeholder="Nombre de la empresa"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Teléfono</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => handleChange('phone', e.target.value)}
+                  placeholder="+57 300 123 4567"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="position">Cargo</Label>
-            <Input
-              id="position"
-              value={formData.position}
-              onChange={(e) => handleChange('position', e.target.value)}
-              placeholder="Director de Ventas"
-            />
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="company">Empresa donde trabaja</Label>
+                <Input
+                  id="company"
+                  value={formData.company}
+                  onChange={(e) => handleChange('company', e.target.value)}
+                  placeholder="Nombre de la empresa"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="position">Cargo</Label>
+                <Input
+                  id="position"
+                  value={formData.position}
+                  onChange={(e) => handleChange('position', e.target.value)}
+                  placeholder="Director de Ventas"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="company">Razón social *</Label>
+                <Input
+                  id="company"
+                  value={formData.company}
+                  onChange={(e) => handleChange('company', e.target.value)}
+                  placeholder="Empresa S.A.S."
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email corporativo</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleChange('email', e.target.value)}
+                  placeholder="contacto@empresa.com"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Teléfono</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => handleChange('phone', e.target.value)}
+                  placeholder="+57 300 123 4567"
+                />
+              </div>
+            </>
+          )}
 
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={createContactMutation.isPending}>
               {createContactMutation.isPending && <Spinner className="mr-2" />}
-              Crear Contacto
+              {kind === 'company' ? 'Crear Empresa' : 'Crear Contacto'}
             </Button>
           </DialogFooter>
         </form>

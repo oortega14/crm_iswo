@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Download, FileSpreadsheet, Upload } from 'lucide-react'
 import api, { formatRailsError } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
 import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,13 +37,30 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
 
   const downloadTemplateMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.get('/contacts/import_template', { responseType: 'blob' })
-      const blob = new Blob([response.data], { type: XLSX_MIME })
+      // Usar fetch directamente para evitar que axios reinterprete la respuesta binaria
+      const { accessToken } = useAuthStore.getState()
+      const tenantSlug = window.localStorage.getItem('crm-tenant-slug') || ''
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+      const res = await fetch(`${baseUrl}/contacts/import_template`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'X-Tenant-Slug': tenantSlug,
+        },
+      })
+      if (!res.ok) {
+        const text = await res.text()
+        console.error('[template] status:', res.status, 'body:', text)
+        throw new Error(`Error ${res.status}: ${text.slice(0, 200)}`)
+      }
+      const arrayBuffer = await res.arrayBuffer()
+      const blob = new Blob([arrayBuffer], { type: XLSX_MIME })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = 'plantilla_contactos.xlsx'
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
     },
     onSuccess: () => toast.success('Plantilla Excel descargada'),
@@ -53,7 +71,10 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
     mutationFn: async (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      const response = await api.post<{ data: ImportPayload }>('/contacts/import', formData)
+      // Content-Type: undefined para que el browser setee multipart/form-data con el boundary correcto
+      const response = await api.post<{ data: ImportPayload }>('/contacts/import', formData, {
+        headers: { 'Content-Type': undefined },
+      })
       return response.data.data
     },
     onSuccess: async (data) => {

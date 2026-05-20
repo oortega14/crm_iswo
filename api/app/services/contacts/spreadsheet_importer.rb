@@ -7,11 +7,15 @@ module Contacts
   # ==========================================================================
   # Importación masiva desde CSV UTF-8 o Excel (.xlsx / .xls).
   # Columnas reconocidas (cabeceras case-insensitive; alias en español):
-  #   first_name / nombre, last_name / apellido, email / correo,
-  #   phone / telefono / tel, company / empresa / razon_social,
+  #   first_name / nombre, last_name / apellido,
+  #   full_name / nombre_y_apellido / nombre completo  → se parte en first/last
+  #   email / correo / correo electronico,
+  #   phone / telefono / celular / movil,
+  #   company / empresa / cliente / razon_social,
   #   position / cargo, city / ciudad, country / pais,
+  #   document_id / cc / cedula / nit,
   #   kind / tipo (person|company|persona|empresa),
-  #   notes / notas
+  #   notes / notas / observaciones
   # ==========================================================================
   class SpreadsheetImporter
     MAX_ROWS = 2000
@@ -166,18 +170,26 @@ module Contacts
     end
 
     def normalize_header_key(header)
-      s = header.to_s.strip.downcase
+      s = header.to_s.strip.downcase.gsub(/\s+/, " ")
       case s
       when "nombre", "first_name", "firstname", "nombres" then "first_name"
       when "apellido", "last_name", "lastname", "apellidos" then "last_name"
-      when "email", "correo", "e-mail" then "email"
-      when "telefono", "teléfono", "phone", "tel", "movil", "móvil", "celular" then "phone"
-      when "empresa", "company", "company_name", "razon_social", "razón_social" then "company"
+      when "nombre y apellido", "nombre_y_apellido", "nombre completo",
+           "nombre_completo", "full_name", "fullname", "nombre y apellidos" then "full_name"
+      when "email", "correo", "e-mail", "correo electronico",
+           "correo electrónico", "correo_electronico" then "email"
+      when "telefono", "teléfono", "phone", "tel", "movil",
+           "móvil", "celular", "cel" then "phone"
+      when "empresa", "company", "company_name", "razon_social",
+           "razón_social", "cliente", "razon social", "razón social" then "company"
       when "cargo", "position", "job_title", "puesto" then "position"
       when "ciudad", "city" then "city"
       when "pais", "país", "country" then "country"
       when "tipo", "kind", "clase" then "kind"
-      when "notas", "notes", "observaciones" then "notes"
+      when "notas", "notes", "observaciones", "observacion",
+           "observación" then "notes"
+      when "cc", "cedula", "cédula", "nit", "documento",
+           "document_id", "identificacion", "identificación" then "document_id"
       else
         s.gsub(/\s+/, "_")
       end
@@ -185,6 +197,13 @@ module Contacts
 
     def build_attrs(h)
       return nil if h.values.all?(&:blank?)
+
+      # Partir "NOMBRE Y APELLIDO" en first_name + last_name si vienen juntos
+      if h["full_name"].present? && h["first_name"].blank?
+        parts = h["full_name"].strip.split(/\s+/, 2)
+        h["first_name"] = parts[0]
+        h["last_name"]  = parts[1]
+      end
 
       kind = infer_kind(h)
 
@@ -195,12 +214,21 @@ module Contacts
           @filename.present? ? "CSV: #{File.basename(@filename)}" : "CSV import"
         end
 
+      country = h["country"].presence || "CO"
+
+      # Normalizar teléfono: intentar parsear con país por defecto; descartar si inválido
+      phone = safe_phone(h["phone"], country)
+
+      # Normalizar email: descartar silenciosamente si el formato no es válido
+      email = safe_email(h["email"])
+
       attrs = {
-        email:        h["email"],
-        phone_e164:   h["phone"],
+        email:        email,
+        phone_e164:   phone,
         city:         h["city"],
-        country:      h["country"].presence || "CO",
+        country:      country,
         notes:        h["notes"],
+        document_id:  h["document_id"],
         source_kind:  "import",
         source_label: src
       }
@@ -227,9 +255,27 @@ module Contacts
       return "company" if %w[company empresa organizacion organización].include?(raw)
       return "person" if %w[person persona individual contacto].include?(raw)
 
-      return "company" if h["first_name"].blank? && h["last_name"].blank? && h["company"].present?
+      return "company" if h["first_name"].blank? && h["last_name"].blank? && h["full_name"].blank? && h["company"].present?
 
       "person"
+    end
+
+    # Intenta normalizar al formato E.164.  Si el número no es válido devuelve nil
+    # para que no falle la validación del modelo.
+    def safe_phone(raw, country = "CO")
+      return nil if raw.blank?
+
+      cleaned = raw.to_s.gsub(/[\s\-\(\)\.]+/, "")
+      parsed  = Phonelib.parse(cleaned, country)
+      parsed.valid? ? parsed.e164 : nil
+    end
+
+    # Devuelve el email si tiene formato válido; nil en caso contrario.
+    def safe_email(raw)
+      addr = raw.to_s.strip.downcase.presence
+      return nil if addr.nil?
+
+      addr =~ URI::MailTo::EMAIL_REGEXP ? addr : nil
     end
   end
 end

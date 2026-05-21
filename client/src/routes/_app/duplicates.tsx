@@ -82,14 +82,10 @@ function parseContact(raw: unknown): ContactLite | null {
 
 function matchedOnLabel(m: string): string {
   switch (m) {
-    case 'phone':
-      return 'Coincidencia por teléfono'
-    case 'email':
-      return 'Coincidencia por email'
-    case 'both':
-      return 'Coincidencia por email y teléfono'
-    default:
-      return m || 'Coincidencia detectada'
+    case 'phone': return 'Coincidencia por teléfono'
+    case 'email': return 'Coincidencia por email'
+    case 'both':  return 'Coincidencia por email y teléfono'
+    default:      return m || 'Coincidencia detectada'
   }
 }
 
@@ -106,21 +102,18 @@ function mapDuplicateFlagResource(r: JsonApiResource): DuplicateFlagRow | null {
   const matchPercent = Number.isFinite(score) ? Math.min(100, Math.round(score * 100)) : 0
 
   const oppNew = a.opportunity_a_id ?? a.opportunity_a
-  const oppEx = a.opportunity_b_id ?? a.opportunity_b
-  const opportunityNewId =
-    oppNew !== undefined && oppNew !== null ? String(oppNew) : ''
-  const opportunityExistingId = oppEx !== undefined && oppEx !== null ? String(oppEx) : ''
+  const oppEx  = a.opportunity_b_id ?? a.opportunity_b
 
   return {
-    id: String(r.id),
-    matchedOn: typeof a.matched_on === 'string' ? a.matched_on : '',
+    id:                    String(r.id),
+    matchedOn:             typeof a.matched_on === 'string' ? a.matched_on : '',
     matchPercent,
-    resolution: typeof a.resolution === 'string' ? a.resolution : 'pending',
-    pending: Boolean(a.pending),
-    contactNew: parseContact(a.contact_a),
-    contactExisting: parseContact(a.contact_b),
-    opportunityNewId,
-    opportunityExistingId,
+    resolution:            typeof a.resolution === 'string' ? a.resolution : 'pending',
+    pending:               Boolean(a.pending),
+    contactNew:            parseContact(a.contact_a),
+    contactExisting:       parseContact(a.contact_b),
+    opportunityNewId:      oppNew != null ? String(oppNew) : '',
+    opportunityExistingId: oppEx  != null ? String(oppEx)  : '',
   }
 }
 
@@ -196,10 +189,7 @@ function DuplicatesPage() {
   } = useQuery({
     queryKey: queryKeys.duplicateFlags.list({ resolution: resolutionFilter }),
     queryFn: async () => {
-      const params: Record<string, string | number> = {
-        items: 50,
-        page: 1,
-      }
+      const params: Record<string, string | number> = { items: 50, page: 1 }
       if (resolutionFilter === 'pending') params.resolution = 'pending'
       const response = await api.get('/duplicate_flags', { params })
       return jsonApiPrimaryList(response.data)
@@ -209,59 +199,36 @@ function DuplicatesPage() {
     },
   })
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.duplicateFlags.all })
-  }
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.duplicateFlags.all })
 
   const mergeMutation = useMutation({
-    mutationFn: async (flagId: string) => {
-      await api.post(`/duplicate_flags/${flagId}/merge`, {})
-    },
-    onSuccess: () => {
-      invalidate()
-      toast.success('Duplicados fusionados en la oportunidad existente')
-      setMergeConfirmFlag(null)
-    },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'No se pudo fusionar'))
-    },
+    mutationFn: (flagId: string) => api.post(`/duplicate_flags/${flagId}/merge`, {}),
+    onSuccess: () => { invalidate(); toast.success('Duplicados fusionados en la oportunidad existente'); setMergeConfirmFlag(null) },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo fusionar')),
   })
 
   const ignoreMutation = useMutation({
-    mutationFn: async (flagId: string) => {
-      await api.post(`/duplicate_flags/${flagId}/ignore`, {})
-    },
-    onSuccess: () => {
-      invalidate()
-      toast.success('Marcado como no duplicado')
-      setIgnoreConfirmFlag(null)
-    },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'No se pudo descartar'))
-    },
+    mutationFn: (flagId: string) => api.post(`/duplicate_flags/${flagId}/ignore`, {}),
+    onSuccess: () => { invalidate(); toast.success('Marcado como no duplicado'); setIgnoreConfirmFlag(null) },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo descartar')),
   })
 
   const scanMutation = useMutation({
-    mutationFn: async () => {
-      const res = await api.post('/duplicate_flags/scan', {})
-      return res.data as { scanned: number; created: number }
-    },
-    onSuccess: (data) => {
+    mutationFn: () => api.post('/duplicate_flags/scan', {}),
+    onSuccess: (res) => {
+      const d = res.data as { scanned: number; created: number }
       invalidate()
-      if (data.created > 0) {
-        toast.success(`Escaneo completado: ${data.created} duplicado(s) nuevo(s) detectado(s)`)
-      } else {
-        toast.info(`Escaneo completado: no se encontraron duplicados nuevos (${data.scanned} contacto(s) revisados)`)
-      }
+      toast[d.created > 0 ? 'success' : 'info'](
+        d.created > 0
+          ? `Escaneo completado: ${d.created} duplicado(s) nuevo(s) detectado(s)`
+          : `Sin duplicados nuevos (${d.scanned} contacto(s) revisados)`
+      )
     },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'Error durante el escaneo'))
-    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'Error durante el escaneo')),
   })
 
   const pendingCount = resolutionFilter === 'pending' ? flags.length : flags.filter((f) => f.pending).length
-  const resolvedInView =
-    resolutionFilter === 'all' ? flags.filter((f) => !f.pending).length : 0
+  const resolvedInView = resolutionFilter === 'all' ? flags.filter((f) => !f.pending).length : 0
 
   const getMatchScoreColor = (score: number) => {
     if (score >= 90) return 'text-red-600'
@@ -388,7 +355,7 @@ function DuplicatesPage() {
               <h3 className="mt-4 text-lg font-medium">Sin resultados</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 {resolutionFilter === 'pending'
-                  ? 'No hay colisiones pendientes en el tenant.'
+                  ? 'No hay colisiones pendientes en el tenant. Usa "Escanear duplicados" para detectar oportunidades existentes sin flag.'
                   : 'No hay registros de duplicados que mostrar con el filtro actual.'}
               </p>
             </div>
@@ -428,7 +395,11 @@ function DuplicatesPage() {
                         <Trash2 className="mr-2 h-4 w-4" />
                         Ignorar
                       </Button>
-                      <Button size="sm" onClick={() => setMergeConfirmFlag(flag)} disabled={mergeMutation.isPending}>
+                      <Button
+                        size="sm"
+                        onClick={() => setMergeConfirmFlag(flag)}
+                        disabled={mergeMutation.isPending}
+                      >
                         <Merge className="mr-2 h-4 w-4" />
                         Fusionar
                       </Button>

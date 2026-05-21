@@ -126,6 +126,7 @@ export function formatStatusLabel(status: string): string {
     closed_won: 'Cerrada',
     lost: 'Perdido',
     closed_lost: 'Perdida',
+    merged: 'Fusionada',
     pending: 'Pendiente',
     sent: 'Enviado',
     done: 'Completado',

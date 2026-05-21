@@ -8,6 +8,7 @@ import { X, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from '@tanstack/react-router'
 import api, { formatRailsError } from '@/lib/api'
+import { useTenant } from '@/stores/auth'
 import {
   jsonApiIncluded,
   jsonApiPrimaryList,
@@ -61,6 +62,7 @@ interface QuickAddOpportunityProps {
 
 export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: QuickAddOpportunityProps) {
   const queryClient = useQueryClient()
+  const tenant = useTenant()
   const [duplicatePhone, setDuplicatePhone] = useState<DuplicateInfo | null>(null)
   const [duplicateEmail, setDuplicateEmail] = useState<DuplicateInfo | null>(null)
 
@@ -355,7 +357,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
 
                   {/* Estimated value */}
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="estimated_value">Valor estimado (COP)</Label>
+                    <Label htmlFor="estimated_value">Valor estimado ({tenant?.currency ?? 'COP'})</Label>
                     <Input
                       id="estimated_value"
                       type="number"

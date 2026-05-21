@@ -117,7 +117,7 @@ function PublicLandingPage() {
   const { data: landing, isLoading, isError } = useQuery<PublicLanding>({
     queryKey: ['public-landing', slug, tenantParam],
     queryFn: async () => {
-      const res = await api.get(`/api/v1/public/landings/${slug}`, { headers: tenantHeaders })
+      const res = await api.get(`/public/landings/${slug}`, { headers: tenantHeaders })
       return res.data.data as PublicLanding
     },
     retry: false,
@@ -276,7 +276,7 @@ function LandingForm({
 
   const submitMutation = useMutation({
     mutationFn: async (data: FormValues) => {
-      await api.post(`/api/v1/public/landings/${slug}/submit`, {
+      await api.post(`/public/landings/${slug}/submit`, {
         payload: data,
         ...utmParams,
       }, { headers: tenantHeaders })

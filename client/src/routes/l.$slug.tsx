@@ -21,6 +21,8 @@ const utmSearchSchema = z.object({
   utm_campaign: z.string().optional(),
   utm_term:     z.string().optional(),
   utm_content:  z.string().optional(),
+  // En local no hay subdominio; se puede forzar el tenant con ?tenant=micasita
+  tenant:       z.string().optional(),
 })
 
 export const Route = createFileRoute('/l/$slug')({
@@ -103,14 +105,19 @@ function buildSchema(fields: FieldConfig[]) {
 
 function PublicLandingPage() {
   const { slug } = Route.useParams()
-  const utmParams = useSearch({ from: '/l/$slug' })
+  const searchParams = useSearch({ from: '/l/$slug' })
+  const { tenant: tenantParam, ...utmParams } = searchParams
   const [submitted, setSubmitted] = useState(false)
+
+  // En producción el tenant se resuelve por subdominio.
+  // En local se puede pasar ?tenant=micasita como fallback.
+  const tenantHeaders = tenantParam ? { 'X-Tenant-Slug': tenantParam } : {}
 
   // Fetch de la landing pública (sin autenticación)
   const { data: landing, isLoading, isError } = useQuery<PublicLanding>({
-    queryKey: ['public-landing', slug],
+    queryKey: ['public-landing', slug, tenantParam],
     queryFn: async () => {
-      const res = await api.get(`/api/v1/public/landings/${slug}`)
+      const res = await api.get(`/api/v1/public/landings/${slug}`, { headers: tenantHeaders })
       return res.data.data as PublicLanding
     },
     retry: false,
@@ -151,6 +158,7 @@ function PublicLandingPage() {
       ctaText={ctaText}
       primaryColor={primaryColor}
       utmParams={utmParams}
+      tenantHeaders={tenantHeaders}
       onSuccess={() => setSubmitted(true)}
     />
   )
@@ -246,13 +254,15 @@ function LandingForm({
   ctaText,
   primaryColor,
   utmParams,
+  tenantHeaders,
   onSuccess,
 }: {
   slug: string
   fields: FieldConfig[]
   ctaText: string
   primaryColor: string
-  utmParams: z.infer<typeof utmSearchSchema>
+  utmParams: Omit<z.infer<typeof utmSearchSchema>, 'tenant'>
+  tenantHeaders: Record<string, string>
   onSuccess: () => void
 }) {
   const schema = buildSchema(fields)
@@ -269,7 +279,7 @@ function LandingForm({
       await api.post(`/api/v1/public/landings/${slug}/submit`, {
         payload: data,
         ...utmParams,
-      })
+      }, { headers: tenantHeaders })
     },
     onSuccess,
   })

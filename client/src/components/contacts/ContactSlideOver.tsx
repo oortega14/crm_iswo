@@ -6,8 +6,10 @@ import {
   MapPin,
   Edit,
   Trash2,
-  Link as LinkIcon
+  Link as LinkIcon,
+  PlusCircle,
 } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 
 interface ContactDetails {
   id: string
@@ -75,6 +78,7 @@ export function ContactSlideOver({
   canDelete = false,
 }: ContactSlideOverProps) {
   const navigate = useNavigate()
+  const [addOpportunityOpen, setAddOpportunityOpen] = useState(false)
 
   if (!contact) return null
 
@@ -84,6 +88,7 @@ export function ContactSlideOver({
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg p-0">
         <SheetHeader className="p-6 pb-0">
@@ -163,7 +168,7 @@ export function ContactSlideOver({
                   </div>
                 </div>
 
-                {contact.company && (
+                {contact.company != null && (
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -204,7 +209,11 @@ export function ContactSlideOver({
                 <p className="text-sm text-muted-foreground">Oportunidades vinculadas</p>
                 <p className="text-lg font-semibold">{contact.opportunitiesCount}</p>
               </div>
-              <Button variant="outline" className="w-full mt-2" onClick={handleViewOpportunities}>
+              <Button className="w-full" onClick={() => setAddOpportunityOpen(true)}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Nueva Oportunidad
+              </Button>
+              <Button variant="outline" className="w-full" onClick={handleViewOpportunities}>
                 <LinkIcon className="mr-2 h-4 w-4" />
                 Ver oportunidades
               </Button>
@@ -213,5 +222,12 @@ export function ContactSlideOver({
         </ScrollArea>
       </SheetContent>
     </Sheet>
+
+    <QuickAddOpportunity
+      open={addOpportunityOpen}
+      onOpenChange={setAddOpportunityOpen}
+      prefilledContact={{ id: contact.id, name: contact.fullName }}
+    />
+    </>
   )
 }

@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
 const opportunitySchema = z.object({
-  contact_name: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
+  contact_name: z.string().optional().default(''),
   contact_email: z.string().email('Correo inválido').optional().or(z.literal('')),
   contact_phone: z.string().min(7, 'Teléfono inválido').optional().or(z.literal('')),
   company_name: z.string().optional(),
@@ -48,12 +48,18 @@ interface DuplicateInfo {
   }
 }
 
+interface PrefilledContact {
+  id: string
+  name: string
+}
+
 interface QuickAddOpportunityProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  prefilledContact?: PrefilledContact
 }
 
-export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityProps) {
+export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: QuickAddOpportunityProps) {
   const queryClient = useQueryClient()
   const [duplicatePhone, setDuplicatePhone] = useState<DuplicateInfo | null>(null)
   const [duplicateEmail, setDuplicateEmail] = useState<DuplicateInfo | null>(null)
@@ -166,18 +172,25 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: OpportunityForm) => {
-      const response = await api.post('/opportunities', {
-        opportunity: {
-          contact_name: data.contact_name,
-          contact_email: data.contact_email || undefined,
-          contact_phone: data.contact_phone || undefined,
-          company_name: data.company_name || undefined,
-          estimated_value: data.estimated_value,
-          pipeline_id: data.pipeline_id,
-          pipeline_stage_id: data.stage_id,
-          notes: data.notes || undefined,
-        },
-      })
+      const body = prefilledContact
+        ? {
+            contact_id: prefilledContact.id,
+            estimated_value: data.estimated_value,
+            pipeline_id: data.pipeline_id,
+            pipeline_stage_id: data.stage_id,
+            notes: data.notes || undefined,
+          }
+        : {
+            contact_name: data.contact_name,
+            contact_email: data.contact_email || undefined,
+            contact_phone: data.contact_phone || undefined,
+            company_name: data.company_name || undefined,
+            estimated_value: data.estimated_value,
+            pipeline_id: data.pipeline_id,
+            pipeline_stage_id: data.stage_id,
+            notes: data.notes || undefined,
+          }
+      const response = await api.post('/opportunities', { opportunity: body })
       const raw = jsonApiPrimaryOne(response.data)
       if (!raw?.id) {
         throw new Error('Respuesta inválida del servidor al crear la oportunidad')
@@ -239,7 +252,12 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
             <div className="flex h-full flex-col">
               {/* Header */}
               <div className="flex items-center justify-between border-b px-4 py-3">
-                <h2 className="text-lg font-semibold">Nueva Oportunidad</h2>
+                <div>
+                  <h2 className="text-lg font-semibold">Nueva Oportunidad</h2>
+                  {prefilledContact && (
+                    <p className="text-sm text-muted-foreground">Para: {prefilledContact.name}</p>
+                  )}
+                </div>
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -258,82 +276,82 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
                 className="flex-1 overflow-y-auto p-4"
               >
                 <div className="flex flex-col gap-4">
-                  {/* Contact name */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="contact_name">Nombre del contacto *</Label>
-                    <Input
-                      id="contact_name"
-                      placeholder="Juan Pérez"
-                      {...register('contact_name')}
-                      aria-invalid={!!errors.contact_name}
-                    />
-                    {errors.contact_name && (
-                      <p className="text-sm text-destructive">
-                        {errors.contact_name.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Phone */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="contact_phone">Teléfono</Label>
-                    <Input
-                      id="contact_phone"
-                      type="tel"
-                      placeholder="+57 300 123 4567"
-                      {...register('contact_phone')}
-                    />
-                    {errors.contact_phone && (
-                      <p className="text-sm text-destructive">
-                        {errors.contact_phone.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Email */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="contact_email">Correo electrónico</Label>
-                    <Input
-                      id="contact_email"
-                      type="email"
-                      placeholder="juan@ejemplo.com"
-                      {...register('contact_email')}
-                    />
-                    {errors.contact_email && (
-                      <p className="text-sm text-destructive">
-                        {errors.contact_email.message}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Duplicate warning */}
-                  {duplicateWarning && duplicateInfo?.opportunity && (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50 p-3">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                        <div className="text-sm">
-                          <p className="font-medium text-amber-800 dark:text-amber-200">
-                            Este prospecto ya está registrado
+                  {/* Campos de contacto: solo cuando NO hay contacto preseleccionado */}
+                  {!prefilledContact && (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="contact_name">Nombre del contacto *</Label>
+                        <Input
+                          id="contact_name"
+                          placeholder="Juan Pérez"
+                          {...register('contact_name')}
+                          aria-invalid={!!errors.contact_name}
+                        />
+                        {errors.contact_name && (
+                          <p className="text-sm text-destructive">
+                            {errors.contact_name.message}
                           </p>
-                          <p className="text-amber-700 dark:text-amber-300 mt-1">
-                            por <strong>{duplicateInfo.opportunity.owner_name}</strong> desde{' '}
-                            {formatDate(duplicateInfo.opportunity.created_at)}. 
-                            Contacta al administrador para reasignarlo.
-                          </p>
-                        </div>
+                        )}
                       </div>
-                    </div>
-                  )}
 
-                  {/* Company name */}
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="company_name">Empresa</Label>
-                    <Input
-                      id="company_name"
-                      placeholder="Empresa S.A.S."
-                      {...register('company_name')}
-                    />
-                  </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="contact_phone">Teléfono</Label>
+                        <Input
+                          id="contact_phone"
+                          type="tel"
+                          placeholder="+57 300 123 4567"
+                          {...register('contact_phone')}
+                        />
+                        {errors.contact_phone && (
+                          <p className="text-sm text-destructive">
+                            {errors.contact_phone.message}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="contact_email">Correo electrónico</Label>
+                        <Input
+                          id="contact_email"
+                          type="email"
+                          placeholder="juan@ejemplo.com"
+                          {...register('contact_email')}
+                        />
+                        {errors.contact_email && (
+                          <p className="text-sm text-destructive">
+                            {errors.contact_email.message}
+                          </p>
+                        )}
+                      </div>
+
+                      {duplicateWarning && duplicateInfo?.opportunity && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50 p-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                            <div className="text-sm">
+                              <p className="font-medium text-amber-800 dark:text-amber-200">
+                                Este prospecto ya está registrado
+                              </p>
+                              <p className="text-amber-700 dark:text-amber-300 mt-1">
+                                por <strong>{duplicateInfo.opportunity.owner_name}</strong> desde{' '}
+                                {formatDate(duplicateInfo.opportunity.created_at)}.
+                                Contacta al administrador para reasignarlo.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="company_name">Empresa</Label>
+                        <Input
+                          id="company_name"
+                          placeholder="Empresa S.A.S."
+                          {...register('company_name')}
+                        />
+                      </div>
+                    </>
+                  )}
 
                   {/* Estimated value */}
                   <div className="flex flex-col gap-2">
@@ -458,7 +476,7 @@ export function QuickAddOpportunity({ open, onOpenChange }: QuickAddOpportunityP
                   type="button"
                   disabled={
                     createMutation.isPending ||
-                    duplicateWarning ||
+                    (!prefilledContact && duplicateWarning) ||
                     noPipelines ||
                     noStages ||
                     pipelinesLoading ||

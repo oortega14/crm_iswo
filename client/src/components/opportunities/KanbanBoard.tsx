@@ -10,19 +10,14 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useState } from 'react'
 import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 import { KanbanColumn } from './KanbanColumn'
 import { OpportunityCard } from './OpportunityCard'
-import type { Opportunity, Pipeline, PipelineStage } from '@/types'
+import type { Opportunity, Pipeline } from '@/types'
 
 interface KanbanBoardProps {
   opportunities: Opportunity[]
@@ -66,12 +61,12 @@ export function KanbanBoard({
     return grouped
   }, [opportunities, pipeline?.stages, firstStageId])
 
-  // Update stage mutation with optimistic updates
+  // Usa move_stage para que el backend actualice status (won/lost) y registre el log
   const updateStageMutation = useMutation({
     mutationFn: async ({ id, stage_id }: { id: string; stage_id: string }) => {
-      const response = await api.patch(
-        `/opportunities/${id}`,
-        JSON.stringify({ opportunity: { pipeline_stage_id: stage_id } }),
+      const response = await api.post(
+        `/opportunities/${id}/move_stage`,
+        JSON.stringify({ pipeline_stage_id: stage_id }),
         { headers: { 'Content-Type': 'application/json' } },
       )
       return response.data.data
@@ -81,6 +76,7 @@ export function KanbanBoard({
     },
     onError: () => {
       toast.error('Error al mover la oportunidad')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
@@ -129,8 +125,9 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <ScrollArea className="h-full">
-        <div className="flex gap-4 p-4 lg:p-6 min-h-full">
+      {/* Scrollable sólo si hay overflow; columnas se reparten el espacio disponible */}
+      <div className="h-full w-full overflow-x-auto">
+        <div className="flex gap-2 p-2 h-full min-w-full">
           {pipeline.stages.map((stage) => (
             <KanbanColumn
               key={stage.id}
@@ -140,8 +137,7 @@ export function KanbanBoard({
             />
           ))}
         </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
+      </div>
 
       <DragOverlay>
         {activeOpportunity && (

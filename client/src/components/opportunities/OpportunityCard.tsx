@@ -60,40 +60,40 @@ export function OpportunityCard({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'p-3 cursor-pointer hover:shadow-md transition-shadow',
+        'p-2 cursor-pointer hover:shadow-md transition-shadow',
         (isDragging || isSortableDragging) && 'opacity-50 shadow-lg rotate-2'
       )}
       onClick={onClick}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         {/* Drag handle */}
         <button
-          className="mt-0.5 p-0.5 rounded hover:bg-muted cursor-grab active:cursor-grabbing text-muted-foreground"
+          className="mt-0.5 p-0.5 rounded hover:bg-muted cursor-grab active:cursor-grabbing text-muted-foreground shrink-0"
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-3" />
         </button>
 
         <div className="flex-1 min-w-0">
           {/* Contact name */}
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <h3 className="font-medium text-sm truncate">{opportunity.contact_name}</h3>
+          <div className="flex items-start justify-between gap-1 mb-0.5">
+            <h3 className="font-medium text-xs truncate leading-tight">{opportunity.contact_name}</h3>
             {hasReminder && (
-              <Bell className="size-3.5 text-amber-500 shrink-0 animate-pulse" />
+              <Bell className="size-3 text-amber-500 shrink-0 animate-pulse" />
             )}
           </div>
 
           {/* Company */}
           {opportunity.company_name && (
-            <p className="text-xs text-muted-foreground truncate mb-2">
+            <p className="text-[10px] text-muted-foreground truncate mb-1">
               {opportunity.company_name}
             </p>
           )}
 
           {/* Value and BANT */}
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-sm font-mono font-medium">
+          <div className="flex items-center justify-between gap-1 mb-1">
+            <span className="text-xs font-mono font-medium">
               {formatCurrency(
                 Number.isFinite(Number(opportunity.estimated_value))
                   ? Number(opportunity.estimated_value)
@@ -103,7 +103,7 @@ export function OpportunityCard({
             </span>
             <Badge
               className={cn(
-                'text-xs font-mono px-1.5 py-0',
+                'text-[10px] font-mono px-1 py-0 h-4',
                 getBantScoreColor(
                   Number.isFinite(Number(opportunity.bant_score))
                     ? Number(opportunity.bant_score)
@@ -118,7 +118,7 @@ export function OpportunityCard({
           </div>
 
           {(opportunity.contact_phone || opportunity.contact_email) && (
-            <div className="mb-2 pt-1 border-t border-border/60">
+            <div className="mb-1 pt-1 border-t border-border/60">
               <ContactActionButtons
                 compact
                 phone={opportunity.contact_phone}
@@ -130,23 +130,22 @@ export function OpportunityCard({
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between gap-2">
-            {/* Owner + network indicator */}
-            <div className="flex items-center gap-1.5">
-              <Avatar className="size-5">
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center gap-1">
+              <Avatar className="size-4">
                 <AvatarImage src={opportunity.owner?.avatar_url} />
-                <AvatarFallback className="text-[9px]">
+                <AvatarFallback className="text-[8px]">
                   {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-xs text-muted-foreground truncate max-w-[70px]">
+              <span className="text-[10px] text-muted-foreground truncate max-w-[50px]">
                 {opportunity.owner?.name?.split(' ')[0]}
               </span>
               {isFromNetwork && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="inline-flex items-center">
-                      <Network className="size-3 text-indigo-500" />
+                      <Network className="size-2.5 text-indigo-500" />
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">
@@ -156,7 +155,6 @@ export function OpportunityCard({
               )}
             </div>
 
-            {/* Last activity — amber + Clock icon when stale */}
             {opportunity.last_activity_at && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -166,7 +164,7 @@ export function OpportunityCard({
                       isStale ? 'text-amber-500' : 'text-muted-foreground'
                     )}
                   >
-                    {isStale && <Clock className="size-3 shrink-0" />}
+                    {isStale && <Clock className="size-2.5 shrink-0" />}
                     {formatRelativeTime(opportunity.last_activity_at)}
                   </span>
                 </TooltipTrigger>

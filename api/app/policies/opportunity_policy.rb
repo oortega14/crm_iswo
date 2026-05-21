@@ -30,7 +30,11 @@ class OpportunityPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        scope.where(owner_user_id: user.id)
+        # RFC F2: consultor ve sus oportunidades + las de su red de referidos
+        depth = user.tenant&.settings&.dig("network_depth").to_i
+        depth = 3 if depth < 1
+        network_ids = user.network_user_ids(depth: depth)
+        scope.where(owner_user_id: [user.id] + network_ids)
       else
         scope.none
       end

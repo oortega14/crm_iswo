@@ -82,6 +82,31 @@ class User < ApplicationRecord
     role_admin? || role_manager?
   end
 
+  # Devuelve los IDs de usuarios en la red de referidos hasta `depth` niveles.
+  # Usa WITH RECURSIVE para evitar N+1. El resultado NO incluye al usuario mismo.
+  def network_user_ids(depth: 3)
+    return [] unless tenant_id.present? && id.present?
+
+    sql = <<~SQL
+      WITH RECURSIVE tree AS (
+        SELECT referred_user_id, 1 AS lvl
+        FROM referral_networks
+        WHERE tenant_id = :tenant_id AND referrer_user_id = :user_id AND active = true
+        UNION ALL
+        SELECT r.referred_user_id, t.lvl + 1
+        FROM referral_networks r
+        INNER JOIN tree t ON r.referrer_user_id = t.referred_user_id
+        WHERE t.lvl < :depth AND r.tenant_id = :tenant_id AND r.active = true
+      )
+      SELECT DISTINCT referred_user_id FROM tree
+    SQL
+
+    rows = ActiveRecord::Base.connection.exec_query(
+      ActiveRecord::Base.sanitize_sql([sql, { tenant_id: tenant_id, user_id: id, depth: depth }])
+    )
+    rows.map { |r| r["referred_user_id"] }
+  end
+
   private
 
   def normalize_email

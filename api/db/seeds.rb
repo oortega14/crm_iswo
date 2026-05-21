@@ -31,9 +31,10 @@ VERTICALS = [
       locale:        "es-CO",
       timezone:      "America/Bogota",
       settings: {
-        "modules"   => %w[opportunities contacts pipeline reminders network exports landings],
-        "industry"  => "consulting_iso",
-        "show_bant" => true
+        "modules"       => %w[opportunities contacts pipeline reminders network exports landings],
+        "industry"      => "consulting_iso",
+        "show_bant"     => true,
+        "network_depth" => 3
       }
     },
     bant: {
@@ -92,6 +93,7 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "real_estate",
         "show_bant"       => true,
+        "network_depth"   => 3,
         "opportunity_fields" => {
           "estimated_value_label" => "Valor del inmueble",
           "show_document_id"      => true
@@ -157,6 +159,7 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "payroll_credit",
         "show_bant"       => true,
+        "network_depth"   => 3,
         "opportunity_fields" => {
           "estimated_value_label" => "Monto del crédito",
           "show_document_id"      => true

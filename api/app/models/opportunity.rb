@@ -23,7 +23,8 @@ class Opportunity < ApplicationRecord
     "qualified" => "qualified",
     "proposal"  => "proposal",
     "won"       => "won",
-    "lost"      => "lost"
+    "lost"      => "lost",
+    "merged"    => "merged"   # estado terminal: fusionada via DuplicateFlag → se descarta automáticamente
   }.freeze
   enum :status, STATUSES, prefix: true, default: "new_lead"
 

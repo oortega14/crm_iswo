@@ -304,6 +304,55 @@ def seed_demo_contacts(tenant, contacts_config, owner_user)
   end
 end
 
+def seed_duplicate_flags(tenant, contacts, pipeline, admin_user)
+  # Ya existe al menos un flag pendiente → idempotente, nada que hacer
+  return if DuplicateFlag.where(tenant: tenant, resolution: "pending").exists?
+
+  stage = pipeline.pipeline_stages.order(:position).first
+  return unless stage
+
+  # Encuentra el contacto con exactamente 1 opp abierta para crear la segunda
+  contact = contacts.find do |c|
+    Opportunity.where(tenant: tenant, contact: c)
+               .where.not(status: %w[won lost merged])
+               .count == 1
+  end
+  return unless contact
+
+  existing_opp = Opportunity.where(tenant: tenant, contact: contact)
+                             .where.not(status: %w[won lost merged])
+                             .first
+  return unless existing_opp
+
+  title = "Duplicado de #{contact.first_name} (demo)"
+  duplicate_opp = Opportunity.find_or_initialize_by(tenant: tenant, contact: contact, title: title)
+  unless duplicate_opp.persisted?
+    duplicate_opp.assign_attributes(
+      pipeline:        pipeline,
+      pipeline_stage:  stage,
+      owner_user:      admin_user,
+      status:          "new_lead",
+      estimated_value: existing_opp.estimated_value,
+      currency:        tenant.currency
+    )
+    duplicate_opp.save!
+  end
+
+  return if duplicate_opp.id == existing_opp.id
+
+  DuplicateFlag.find_or_create_by!(
+    tenant:                   tenant,
+    opportunity:              duplicate_opp,
+    duplicate_of_opportunity: existing_opp
+  ) do |f|
+    f.detected_by_user = admin_user
+    f.matched_on       = contact.phone_e164.present? ? "phone" : "email"
+    f.match_score      = 1.0
+  end
+rescue ActiveRecord::RecordInvalid => e
+  puts "     [duplicados] skip: #{e.message}"
+end
+
 def seed_referral_networks(tenant, users)
   admin      = users.find { |u| u.role == "admin" }
   manager    = users.find { |u| u.role == "manager" }
@@ -404,6 +453,9 @@ VERTICALS.each do |config|
 
     seed_demo_opportunities(tenant, contacts, pipeline, demo_owner)
     puts "     #{contacts.size} oportunidades de demo"
+
+    seed_duplicate_flags(tenant, contacts, pipeline, users.find { |u| u.role == 'admin' } || users.first)
+    puts "     #{DuplicateFlag.where(tenant: tenant).count} flag(s) de duplicados de demo"
 
     seed_referral_networks(tenant, users)
     puts "     Red de referidos sembrada (#{ReferralNetwork.where(tenant: tenant).count} relaciones)"

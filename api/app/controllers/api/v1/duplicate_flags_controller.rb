@@ -56,6 +56,56 @@ module Api
         render_no_content
       end
 
+      # POST /api/v1/duplicate_flags/scan
+      # Escanea todas las oportunidades abiertas del tenant y crea flags para
+      # pares que compartan el mismo contacto y aún no tengan un flag existente.
+      def scan
+        authorize DuplicateFlag, :create?
+        created = 0
+
+        contact_ids = current_tenant.opportunities.kept
+                                    .where.not(status: %w[won lost merged])
+                                    .group(:contact_id)
+                                    .having("COUNT(*) > 1")
+                                    .pluck(:contact_id)
+
+        contact_ids.each do |contact_id|
+          opps = current_tenant.opportunities.kept
+                               .where(contact_id: contact_id)
+                               .where.not(status: %w[won lost merged])
+                               .order(:created_at)
+                               .to_a
+
+          opps.combination(2).each do |a, b|
+            next if DuplicateFlag.exists?(opportunity_id: a.id, duplicate_of_opportunity_id: b.id)
+            next if DuplicateFlag.exists?(opportunity_id: b.id, duplicate_of_opportunity_id: a.id)
+
+            contact = a.contact
+            matched = if contact.phone_e164.present? && contact.email.present?
+                        "both"
+                      elsif contact.phone_e164.present?
+                        "phone"
+                      else
+                        "email"
+                      end
+
+            DuplicateFlag.create!(
+              tenant:                   current_tenant,
+              opportunity:              a,
+              duplicate_of_opportunity: b,
+              detected_by_user:         current_user,
+              matched_on:               matched,
+              match_score:              1.0
+            )
+            created += 1
+          rescue ActiveRecord::RecordInvalid
+            next
+          end
+        end
+
+        render json: { scanned: contact_ids.size, created: created }, status: :ok
+      end
+
       private
 
       def set_flag

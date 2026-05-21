@@ -10,7 +10,7 @@ class DuplicateFlagPolicy < ApplicationPolicy
   def index?   = staff?
   def show?    = staff?
   def update?  = manager_or_admin?
-  def create?  = false # se generan automáticamente por el detector
+  def create?  = manager_or_admin? # usado por scan retroactivo
   def destroy? = admin?
 
   def reassign? = manager_or_admin?

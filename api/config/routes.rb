@@ -139,6 +139,9 @@ Rails.application.routes.draw do
 
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
+        collection do
+          post :scan
+        end
         member do
           post :reassign
           post :merge

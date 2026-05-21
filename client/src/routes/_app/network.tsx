@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Search,
   Network as NetworkIcon,
@@ -8,6 +8,9 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Plus,
+  Trash2,
+  ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +25,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
@@ -35,7 +54,6 @@ export const Route = createFileRoute('/_app/network')({
   component: NetworkPage,
 })
 
-/** Respuesta JSON de `GET /referral_networks/my_network` o `tree` */
 type ReferralTreeUser = {
   id: number
   name: string
@@ -55,6 +73,13 @@ type ReferralTreePayload = {
   edges: ReferralTreeEdge[]
 }
 
+type ReferralEdgeRecord = {
+  id: string
+  depth: number
+  referrer: { id: number; name: string; email: string } | null
+  referred: { id: number; name: string; email: string } | null
+}
+
 interface ConsultantNode {
   id: string
   name: string
@@ -68,11 +93,27 @@ interface ConsultantNode {
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) {
-    return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
-  }
+  if (parts.length >= 2) return `${parts[0][0] ?? ''}${parts[parts.length - 1][0] ?? ''}`.toUpperCase()
   if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase()
   return '?'
+}
+
+function roleColor(role: string, active: boolean): string {
+  if (!active) return 'fill-muted-foreground/40'
+  switch (role) {
+    case 'admin':    return 'fill-indigo-500'
+    case 'manager':  return 'fill-violet-500'
+    case 'consultant': return 'fill-sky-500'
+    default:         return 'fill-slate-400'
+  }
+}
+
+function roleBadgeVariant(role: string): 'default' | 'secondary' | 'outline' {
+  switch (role) {
+    case 'admin':    return 'default'
+    case 'manager':  return 'secondary'
+    default:         return 'outline'
+  }
 }
 
 type UserStub = {
@@ -83,7 +124,6 @@ type UserStub = {
   treeDepth: number
 }
 
-/** Construye nodos y adyacencia a partir del árbol del backend (sin datos inventados). */
 function buildConsultantNodes(payload: ReferralTreePayload): ConsultantNode[] {
   const byId = new Map<string, UserStub>()
 
@@ -145,20 +185,8 @@ function buildConsultantNodes(payload: ReferralTreePayload): ConsultantNode[] {
     const resolved =
       stub ||
       (root && String(root.id) === idStr
-        ? {
-            id: root.id,
-            name: root.name,
-            role: root.role,
-            active: root.active,
-            treeDepth: 0,
-          }
-        : {
-            id: Number(idStr),
-            name: '',
-            role: '',
-            active: true,
-            treeDepth: 0,
-          })
+        ? { id: root.id, name: root.name, role: root.role, active: root.active, treeDepth: 0 }
+        : { id: Number(idStr), name: '', role: '', active: true, treeDepth: 0 })
     nodes.push({
       id: idStr,
       name: resolved.name,
@@ -172,7 +200,6 @@ function buildConsultantNodes(payload: ReferralTreePayload): ConsultantNode[] {
   return nodes.sort((a, b) => a.treeDepth - b.treeDepth || a.name.localeCompare(b.name))
 }
 
-/** Posiciones por niveles concéntricos (profundidad = distancia desde la raíz en el modelo API). */
 function layoutNodes(nodes: ConsultantNode[]): ConsultantNode[] {
   const byDepth = new Map<number, ConsultantNode[]>()
   for (const n of nodes) {
@@ -182,11 +209,11 @@ function layoutNodes(nodes: ConsultantNode[]): ConsultantNode[] {
   }
   const depths = [...byDepth.keys()].sort((a, b) => a - b)
   const cx = 400
-  const cy = 280
+  const cy = 300
 
   for (const d of depths) {
     const ring = byDepth.get(d)!
-    const radius = d === 0 ? 0 : 70 + (d - 1) * 95
+    const radius = d === 0 ? 0 : 80 + (d - 1) * 100
     ring.forEach((node, i) => {
       const n = ring.length
       const angleStart = -Math.PI / 2
@@ -199,23 +226,42 @@ function layoutNodes(nodes: ConsultantNode[]): ConsultantNode[] {
   return nodes
 }
 
+// Deduplica aristas para no dibujar A→B y B→A dos veces
+function uniqueEdges(nodes: ConsultantNode[]): Array<{ a: ConsultantNode; b: ConsultantNode }> {
+  const seen = new Set<string>()
+  const result: Array<{ a: ConsultantNode; b: ConsultantNode }> = []
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  for (const node of nodes) {
+    for (const connId of node.connections) {
+      const key = [node.id, connId].sort().join('-')
+      if (seen.has(key)) continue
+      seen.add(key)
+      const other = byId.get(connId)
+      if (other) result.push({ a: node, b: other })
+    }
+  }
+  return result
+}
+
 function NetworkPage() {
   const currentUser = useAuthStore((s) => s.user)
+  const qc = useQueryClient()
   const canPickRoot = currentUser?.role === 'admin' || currentUser?.role === 'manager'
+  const canCreate   = canPickRoot
+  const canDelete   = currentUser?.role === 'admin'
 
-  const [searchTerm, setSearchTerm] = useState('')
-  const [zoom, setZoom] = useState(1)
+  const [searchTerm, setSearchTerm]     = useState('')
+  const [zoom, setZoom]                 = useState(1)
   const [selectedNode, setSelectedNode] = useState<ConsultantNode | null>(null)
-  /** `null`: raíz del usuario actual (`my_network`). Otro valor: `/tree?root_user_id=` */
-  const [rootUserId, setRootUserId] = useState<string | null>(null)
-  /** Profundidad enviada al backend en `tree` (my_network usa 5 fijo en servidor). */
-  const [treeDepth, setTreeDepth] = useState(5)
+  const [rootUserId, setRootUserId]     = useState<string | null>(null)
+  const [treeDepth, setTreeDepth]       = useState(5)
+  const [addOpen, setAddOpen]           = useState(false)
+  const [addReferrer, setAddReferrer]   = useState('')
+  const [addReferred, setAddReferred]   = useState('')
+  const [deleteEdge, setDeleteEdge]     = useState<{ id: string; name: string } | null>(null)
 
-  const {
-    data: staffUsers,
-    isLoading: usersLoadingForPicker,
-    isError: usersPickerError,
-  } = useQuery({
+  // Lista de usuarios para el picker (admin/manager)
+  const { data: staffUsers } = useQuery({
     enabled: !!canPickRoot,
     queryKey: queryKeys.users.list({ q: '', forReferralPicker: true }),
     queryFn: async () => {
@@ -226,6 +272,7 @@ function NetworkPage() {
     },
   })
 
+  // Árbol para visualizar
   const {
     data: treePayload,
     isLoading: treeLoading,
@@ -235,25 +282,77 @@ function NetworkPage() {
   } = useQuery({
     queryKey: queryKeys.referralNetworks.tree(rootUserId, treeDepth),
     queryFn: async (): Promise<ReferralTreePayload> => {
-      if (rootUserId) {
-        const response = await api.get('/referral_networks/tree', {
-          params: { root_user_id: rootUserId, depth: treeDepth },
-        })
-        const data = response.data?.data as ReferralTreePayload | undefined
-        if (!data) throw new Error('Respuesta sin datos de red')
-        return data
-      }
-      const response = await api.get('/referral_networks/my_network')
+      const response = rootUserId
+        ? await api.get('/referral_networks/tree', { params: { root_user_id: rootUserId, depth: treeDepth } })
+        : await api.get('/referral_networks/my_network')
       const data = response.data?.data as ReferralTreePayload | undefined
       if (!data) throw new Error('Respuesta sin datos de red')
       return data
     },
   })
 
+  // Listado plano de aristas para obtener IDs (necesarios para eliminar)
+  const { data: edgeList } = useQuery({
+    enabled: canDelete,
+    queryKey: queryKeys.referralNetworks.list,
+    queryFn: async (): Promise<ReferralEdgeRecord[]> => {
+      const response = await api.get('/referral_networks')
+      const rows = jsonApiPrimaryList(response.data)
+      return rows.map((r) => {
+        const attrs = r.attributes as { depth?: number; referrer?: ReferralEdgeRecord['referrer']; referred?: ReferralEdgeRecord['referred'] } | undefined
+        return {
+          id: r.id,
+          depth: attrs?.depth ?? 1,
+          referrer: attrs?.referrer ?? null,
+          referred: attrs?.referred ?? null,
+        }
+      })
+    },
+  })
+
+  // Mapa pair → edge_id para saber qué borrar
+  const edgeIdByPair = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const e of edgeList ?? []) {
+      if (e.referrer && e.referred) {
+        m.set(`${e.referrer.id}_${e.referred.id}`, e.id)
+        m.set(`${e.referred.id}_${e.referrer.id}`, e.id)
+      }
+    }
+    return m
+  }, [edgeList])
+
+  // Crear relación
+  const createMutation = useMutation({
+    mutationFn: async ({ referrerId, referredId }: { referrerId: string; referredId: string }) =>
+      api.post('/referral_networks', {
+        referral_network: { referrer_user_id: referrerId, referred_user_id: referredId, depth: 1 },
+      }),
+    onSuccess: () => {
+      toast.success('Relación de referido creada')
+      void qc.invalidateQueries({ queryKey: ['referralNetworks'] })
+      setAddOpen(false)
+      setAddReferrer('')
+      setAddReferred('')
+    },
+    onError: (err) => toast.error(formatRailsError(err, 'No se pudo crear la relación')),
+  })
+
+  // Eliminar relación
+  const deleteMutation = useMutation({
+    mutationFn: async (edgeId: string) => api.delete(`/referral_networks/${edgeId}`),
+    onSuccess: () => {
+      toast.success('Relación eliminada')
+      void qc.invalidateQueries({ queryKey: ['referralNetworks'] })
+      setDeleteEdge(null)
+      setSelectedNode(null)
+    },
+    onError: (err) => toast.error(formatRailsError(err, 'No se pudo eliminar la relación')),
+  })
+
   const graphNodes = useMemo(() => {
     if (!treePayload) return [] as ConsultantNode[]
-    const hasEdges = (treePayload.edges?.length ?? 0) > 0
-    if (!treePayload.root && !hasEdges) return [] as ConsultantNode[]
+    if (!treePayload.root && !(treePayload.edges?.length)) return [] as ConsultantNode[]
     return layoutNodes(buildConsultantNodes(treePayload))
   }, [treePayload])
 
@@ -261,18 +360,15 @@ function NetworkPage() {
     const q = searchTerm.trim().toLowerCase()
     if (!q) return graphNodes
     return graphNodes.filter(
-      (node) =>
-        node.name.toLowerCase().includes(q) ||
-        node.role.toLowerCase().includes(q) ||
-        node.id.includes(q),
+      (n) => n.name.toLowerCase().includes(q) || n.role.toLowerCase().includes(q),
     )
   }, [graphNodes, searchTerm])
 
+  const edges = useMemo(() => uniqueEdges(filteredNodes), [filteredNodes])
+
   const stats = useMemo(() => {
     const n = graphNodes.length
-    const e = Math.round(
-      graphNodes.reduce((acc, node) => acc + node.connections.length, 0) / 2,
-    )
+    const e = Math.round(graphNodes.reduce((acc, node) => acc + node.connections.length, 0) / 2)
     const maxDepth = graphNodes.reduce((m, node) => Math.max(m, node.treeDepth), 0)
     return { consultants: n, links: e, maxDepth }
   }, [graphNodes])
@@ -282,32 +378,37 @@ function NetworkPage() {
     toast.error(formatRailsError(treeQueryError, 'No se pudo cargar la red de referidos'))
   }, [treeError, treeQueryError])
 
-  const isLoading = treeLoading || (canPickRoot && usersLoadingForPicker)
+  const isLoading = treeLoading
 
   return (
-    <AppPageShell contentClassName="gap-8">
+    <AppPageShell contentClassName="gap-6">
       <PageHeader
         title="Red de referidos"
-        description="Árbol de consultores enlazados por referencias del tenant (datos desde el API)."
-      />
+        description="Árbol de consultores enlazados por referencias."
+      >
+        {canCreate && (
+          <Button size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
+            <Plus className="size-4" />
+            Nueva conexión
+          </Button>
+        )}
+      </PageHeader>
 
+      {/* Controles admin */}
       {canPickRoot && (
         <div className="flex flex-wrap items-end gap-4">
-          <div className="space-y-2 min-w-[220px]">
+          <div className="space-y-1.5 min-w-[220px]">
             <label className="text-sm font-medium">Raíz del árbol</label>
             <Select
               value={rootUserId ?? '__me__'}
-              onValueChange={(v) => {
-                setRootUserId(v === '__me__' ? null : v)
-                setSelectedNode(null)
-              }}
+              onValueChange={(v) => { setRootUserId(v === '__me__' ? null : v); setSelectedNode(null) }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar usuario raíz" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__me__">
-                  Mi red ({currentUser?.name ?? currentUser?.email ?? 'usuario actual'})
+                  Mi red ({currentUser?.name ?? currentUser?.email ?? 'yo'})
                 </SelectItem>
                 {staffUsers
                   ?.filter((u) => u.name || u.email || u.id)
@@ -321,103 +422,69 @@ function NetworkPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Profundidad (solo vista por árbol)</label>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Profundidad</label>
             <Select
               value={String(treeDepth)}
-              onValueChange={(v) => {
-                setTreeDepth(Number(v))
-                setSelectedNode(null)
-              }}
+              onValueChange={(v) => { setTreeDepth(Number(v)); setSelectedNode(null) }}
               disabled={!rootUserId}
             >
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-[100px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {[2, 3, 5, 7, 10].map((d) => (
-                  <SelectItem key={d} value={String(d)}>
-                    {d}
-                  </SelectItem>
+                  <SelectItem key={d} value={String(d)}>{d} niveles</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!rootUserId && (
-              <p className="text-xs text-muted-foreground">
-                Para &quot;Mi red&quot;, el servidor usa profundidad 5.
-              </p>
-            )}
           </div>
         </div>
       )}
-      {canPickRoot && usersPickerError && (
-        <p className="text-sm text-muted-foreground">
-          No se pudo cargar la lista de usuarios para cambiar la raíz. Puedes seguir usando &quot;Mi red&quot;.
-        </p>
-      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
-                <User className="h-5 w-5 text-primary" />
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { icon: User, label: 'Consultores', value: stats.consultants, color: 'bg-sky-500/10 text-sky-600' },
+          { icon: NetworkIcon, label: 'Relaciones', value: stats.links, color: 'bg-violet-500/10 text-violet-600' },
+          { icon: Maximize2, label: 'Nivel máximo', value: stats.maxDepth, color: 'bg-muted text-muted-foreground' },
+        ].map(({ icon: Icon, label, value, color }) => (
+          <Card key={label}>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', color)}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xl font-semibold">{value}</p>
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-semibold">{stats.consultants}</p>
-                <p className="text-xs text-muted-foreground">Consultores en el árbol</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15">
-                <NetworkIcon className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{stats.links}</p>
-                <p className="text-xs text-muted-foreground">Relaciones referrer → referido</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                <Maximize2 className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="text-2xl font-semibold">{stats.maxDepth}</p>
-                <p className="text-xs text-muted-foreground">Nivel máximo desde la raíz</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Buscador + controles de zoom */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, rol o ID…"
+            placeholder="Buscar por nombre o rol…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 w-64"
+            className="pl-9 w-56"
           />
         </div>
-
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
             Actualizar
           </Button>
-          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.max(0.5, z - 0.1))}>
+          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.max(0.4, z - 0.15))}>
             <ZoomOut className="h-4 w-4" />
           </Button>
           <span className="text-sm text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
-          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.min(2, z + 0.1))}>
+          <Button variant="outline" size="icon" onClick={() => setZoom((z) => Math.min(2.5, z + 0.15))}>
             <ZoomIn className="h-4 w-4" />
           </Button>
           <Button variant="outline" size="icon" onClick={() => setZoom(1)}>
@@ -426,11 +493,12 @@ function NetworkPage() {
         </div>
       </div>
 
+      {/* Grafo + detalle */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         <Card className="lg:col-span-3">
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="h-[500px] flex items-center justify-center">
+              <div className="h-[520px] flex items-center justify-center">
                 <Skeleton className="h-full w-full" />
               </div>
             ) : treeError ? (
@@ -438,127 +506,178 @@ function NetworkPage() {
                 <p className="text-sm text-destructive">
                   {formatRailsError(treeQueryError, 'Error al cargar la red')}
                 </p>
-                <Button variant="outline" size="sm" onClick={() => void refetch()}>
-                  Reintentar
-                </Button>
+                <Button variant="outline" size="sm" onClick={() => void refetch()}>Reintentar</Button>
               </div>
             ) : graphNodes.length === 0 ? (
-              <div className="h-[240px] flex items-center justify-center p-6 text-center text-muted-foreground text-sm">
-                No hay referidos registrados bajo esta raíz. Cuando existan relaciones en el tenant, aparecerán aquí.
+              <div className="h-[240px] flex flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground text-sm">
+                <NetworkIcon className="size-10 opacity-30" />
+                <p>No hay referidos registrados bajo esta raíz.</p>
+                {canCreate && (
+                  <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+                    <Plus className="size-4 mr-2" /> Crear primera conexión
+                  </Button>
+                )}
               </div>
             ) : (
-              <div className="relative h-[520px] overflow-hidden bg-muted/30">
+              <div className="relative h-[520px] overflow-hidden rounded-lg bg-muted/20">
                 <svg
                   className="w-full h-full select-none"
                   style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-                  viewBox="0 0 800 560"
+                  viewBox="0 0 800 600"
                   preserveAspectRatio="xMidYMid meet"
                 >
+                  <defs>
+                    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                      <path d="M0,0 L0,6 L6,3 z" className="fill-border" />
+                    </marker>
+                  </defs>
+
                   {/* Aristas */}
-                  {filteredNodes.map((node) =>
-                    node.connections.map((connId) => {
-                      const other = graphNodes.find((n) => n.id === connId)
-                      if (!other || node.id >= connId) return null
-                      if (!filteredNodes.includes(other)) return null
-                      return (
-                        <line
-                          key={`${node.id}-${connId}`}
-                          x1={node.x}
-                          y1={node.y}
-                          x2={other.x}
-                          y2={other.y}
-                          stroke="currentColor"
-                          strokeOpacity={0.25}
-                          strokeWidth={1.5}
-                        />
-                      )
-                    }),
-                  )}
+                  {edges.map(({ a, b }) => {
+                    const dx = (b.x ?? 0) - (a.x ?? 0)
+                    const dy = (b.y ?? 0) - (a.y ?? 0)
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1
+                    const ra = a.treeDepth === 0 ? 22 : 18
+                    const rb = b.treeDepth === 0 ? 22 : 18
+                    const x1 = (a.x ?? 0) + (dx / len) * ra
+                    const y1 = (a.y ?? 0) + (dy / len) * ra
+                    const x2 = (b.x ?? 0) - (dx / len) * (rb + 6)
+                    const y2 = (b.y ?? 0) - (dy / len) * (rb + 6)
+                    return (
+                      <line
+                        key={`${a.id}-${b.id}`}
+                        x1={x1} y1={y1} x2={x2} y2={y2}
+                        strokeOpacity={0.35}
+                        strokeWidth={1.5}
+                        className="stroke-foreground"
+                        markerEnd="url(#arrow)"
+                      />
+                    )
+                  })}
+
+                  {/* Nodos */}
                   {filteredNodes.map((node) => {
-                    const r = node.treeDepth === 0 ? 22 : 16
+                    const r = node.treeDepth === 0 ? 22 : 18
+                    const isSelected = selectedNode?.id === node.id
                     return (
                       <g
                         key={node.id}
-                        transform={`translate(${node.x}, ${node.y})`}
+                        transform={`translate(${node.x ?? 0}, ${node.y ?? 0})`}
                         className="cursor-pointer"
-                        onClick={() => setSelectedNode(node)}
+                        onClick={() => setSelectedNode(isSelected ? null : node)}
                       >
-                        <circle
-                          r={r}
-                          className={cn(
-                            node.active ? 'fill-primary/90' : 'fill-muted-foreground/50',
-                            selectedNode?.id === node.id && 'stroke-2 stroke-foreground',
-                          )}
-                        />
-                        <title>{[node.name, node.role ? `(${node.role})` : ''].filter(Boolean).join(' ')}</title>
+                        {isSelected && (
+                          <circle r={r + 5} className="fill-none stroke-foreground" strokeWidth={2} strokeDasharray="4 2" />
+                        )}
+                        <circle r={r} className={cn(roleColor(node.role, node.active))} />
+                        <text
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          className="fill-white font-semibold pointer-events-none"
+                          style={{ fontSize: node.treeDepth === 0 ? 11 : 9 }}
+                        >
+                          {initialsFromName(node.name || `?`)}
+                        </text>
                         <text
                           y={r + 14}
                           textAnchor="middle"
-                          className="fill-foreground text-[11px]"
+                          className="fill-foreground pointer-events-none"
+                          style={{ fontSize: 10 }}
                         >
-                          {(node.name || `ID ${node.id}`).length > 14
-                            ? `${(node.name || node.id).slice(0, 14)}…`
+                          {(node.name || node.id).length > 12
+                            ? `${(node.name || node.id).slice(0, 12)}…`
                             : node.name || node.id}
                         </text>
+                        <title>{[node.name, node.role ? `(${node.role})` : ''].filter(Boolean).join(' ')}</title>
                       </g>
                     )
                   })}
                 </svg>
 
-                <div className="absolute bottom-4 left-4 flex gap-4 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-primary/90" />
-                    <span className="text-xs">Activo</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-3 w-3 rounded-full bg-muted-foreground/50" />
-                    <span className="text-xs">Inactivo</span>
-                  </div>
+                {/* Leyenda */}
+                <div className="absolute bottom-3 left-3 flex gap-3 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-2 text-xs">
+                  {[
+                    { color: 'bg-indigo-500', label: 'Admin' },
+                    { color: 'bg-violet-500', label: 'Gerente' },
+                    { color: 'bg-sky-500',    label: 'Consultor' },
+                    { color: 'bg-muted-foreground/40', label: 'Inactivo' },
+                  ].map(({ color, label }) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <div className={cn('h-2.5 w-2.5 rounded-full', color)} />
+                      <span className="text-muted-foreground">{label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Panel de detalle */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Detalle</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Detalle</CardTitle>
           </CardHeader>
           <CardContent>
             {selectedNode ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
-                  <Avatar className="h-12 w-12">
-                    <AvatarFallback>{initialsFromName(selectedNode.name || selectedNode.id)}</AvatarFallback>
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback className={cn('text-white text-sm', {
+                      'bg-indigo-500': selectedNode.role === 'admin',
+                      'bg-violet-500': selectedNode.role === 'manager',
+                      'bg-sky-500':    selectedNode.role === 'consultant',
+                      'bg-slate-400':  !['admin','manager','consultant'].includes(selectedNode.role),
+                    })}>
+                      {initialsFromName(selectedNode.name || selectedNode.id)}
+                    </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <h3 className="font-medium">{selectedNode.name || `Usuario ${selectedNode.id}`}</h3>
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedNode.role || 'sin rol'}
-                    </Badge>{' '}
-                    <Badge variant={selectedNode.active ? 'outline' : 'destructive'} className="text-xs">
-                      {selectedNode.active ? 'Activo' : 'Inactivo'}
-                    </Badge>
+                  <div className="min-w-0">
+                    <h3 className="font-medium text-sm truncate">{selectedNode.name || `Usuario ${selectedNode.id}`}</h3>
+                    <div className="flex gap-1 mt-0.5 flex-wrap">
+                      <Badge variant={roleBadgeVariant(selectedNode.role)} className="text-xs">
+                        {selectedNode.role || 'sin rol'}
+                      </Badge>
+                      {!selectedNode.active && (
+                        <Badge variant="destructive" className="text-xs">Inactivo</Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
+
                 <div>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Referidos enlazados ({selectedNode.connections.length})
+                    Conexiones ({selectedNode.connections.length})
                   </p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                  <div className="space-y-1 max-h-52 overflow-y-auto">
                     {selectedNode.connections.map((connId) => {
                       const other = graphNodes.find((n) => n.id === connId)
                       if (!other) return null
+                      const edgeId = edgeIdByPair.get(`${selectedNode.id}_${connId}`)
+                        || edgeIdByPair.get(`${connId}_${selectedNode.id}`)
                       return (
-                        <button
-                          type="button"
+                        <div
                           key={connId}
-                          className="flex w-full items-center gap-2 rounded-md p-2 text-left hover:bg-muted"
-                          onClick={() => setSelectedNode(other)}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted group"
                         >
-                          <User className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="text-sm">{other.name || `Usuario ${other.id}`}</span>
-                        </button>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 flex-1 text-left"
+                            onClick={() => setSelectedNode(other)}
+                          >
+                            <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span className="text-sm truncate">{other.name || `Usuario ${other.id}`}</span>
+                          </button>
+                          {canDelete && edgeId && (
+                            <button
+                              type="button"
+                              className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
+                              onClick={() => setDeleteEdge({ id: edgeId, name: other.name || other.id })}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
                       )
                     })}
                   </div>
@@ -566,13 +685,88 @@ function NetworkPage() {
               </div>
             ) : (
               <div className="text-center py-8">
-                <NetworkIcon className="h-12 w-12 mx-auto text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground mt-2">Selecciona un consultor en el gráfico</p>
+                <NetworkIcon className="h-10 w-10 mx-auto text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground mt-2">
+                  Selecciona un nodo en el gráfico
+                </p>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Dialog: Nueva conexión */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nueva conexión de referido</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Referente (quien refiere)</label>
+              <Select value={addReferrer} onValueChange={setAddReferrer}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar usuario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffUsers
+                    ?.sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => (
+                      <SelectItem key={u.id} value={u.id} disabled={u.id === addReferred}>
+                        {u.name || u.email} · {u.role}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Referido (quien fue referido)</label>
+              <Select value={addReferred} onValueChange={setAddReferred}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar usuario..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {staffUsers
+                    ?.sort((a, b) => a.name.localeCompare(b.name))
+                    .map((u) => (
+                      <SelectItem key={u.id} value={u.id} disabled={u.id === addReferrer}>
+                        {u.name || u.email} · {u.role}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              className="w-full"
+              disabled={!addReferrer || !addReferred || createMutation.isPending}
+              onClick={() => createMutation.mutate({ referrerId: addReferrer, referredId: addReferred })}
+            >
+              {createMutation.isPending ? 'Guardando…' : 'Crear relación'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog: confirmar eliminación */}
+      <AlertDialog open={!!deleteEdge} onOpenChange={(o) => { if (!o) setDeleteEdge(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta conexión?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la relación de referido con <strong>{deleteEdge?.name}</strong>. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => deleteEdge && deleteMutation.mutate(deleteEdge.id)}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppPageShell>
   )
 }

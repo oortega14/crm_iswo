@@ -99,6 +99,7 @@ export const queryKeys = {
     tree: (rootUserId: string | null, depth: number) =>
       ['referralNetworks', 'tree', rootUserId ?? 'me', depth] as const,
     myNetwork: ['referralNetworks', 'myNetwork'] as const,
+    list: ['referralNetworks', 'list'] as const,
   },
   
   // Dashboard

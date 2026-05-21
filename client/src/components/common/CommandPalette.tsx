@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Search, Target, Users, FileText, LayoutDashboard } from 'lucide-react'
+import { Target, Users, FileText, LayoutDashboard } from 'lucide-react'
 import {
   CommandDialog,
   CommandEmpty,
@@ -48,16 +48,17 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }
 
   // Search API
-  const { data: searchResults, isLoading } = useQuery({
+  const { data: searchResults, isLoading, error: searchError } = useQuery({
     queryKey: queryKeys.search(debouncedSearch),
     queryFn: async () => {
       if (!debouncedSearch || debouncedSearch.length < 2) return []
       const response = await api.get<{ data: SearchResult[] }>(
         `/search?q=${encodeURIComponent(debouncedSearch)}`
       )
-      return response.data.data
+      return response.data.data ?? []
     },
     enabled: debouncedSearch.length >= 2,
+    staleTime: 0,
   })
 
   const handleSelect = (href: string) => {
@@ -84,7 +85,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   )
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} commandProps={{ shouldFilter: false }}>
       <CommandInput
         placeholder="Buscar oportunidades, contactos o páginas..."
         value={search}
@@ -92,7 +93,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       />
       <CommandList>
         <CommandEmpty>
-          {isLoading ? 'Buscando...' : 'No se encontraron resultados.'}
+          {isLoading
+            ? 'Buscando...'
+            : searchError
+              ? 'Error al buscar. Intenta de nuevo.'
+              : 'No se encontraron resultados.'}
         </CommandEmpty>
 
         {/* Search results */}

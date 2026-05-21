@@ -14,7 +14,10 @@ import {
   Globe,
   CopyPlus,
   Pencil,
+  QrCode,
+  Download,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -104,6 +107,7 @@ function LandingsPage() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [editorLanding, setEditorLanding] = useState<{ id: string; title: string } | null>(null)
   const [metricsLanding, setMetricsLanding] = useState<{ id: string; title: string } | null>(null)
+  const [qrLanding, setQrLanding] = useState<LandingPage | null>(null)
 
   const {
     data: landings = [],
@@ -329,6 +333,10 @@ function LandingsPage() {
                         <Copy className="mr-2 h-4 w-4" />
                         Copiar URL
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setQrLanding(landing)}>
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Ver QR
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setMetricsLanding({ id: landing.id, title: landing.title })}>
                         <BarChart3 className="mr-2 h-4 w-4" />
                         Ver estadísticas
@@ -433,6 +441,62 @@ function LandingsPage() {
           </Card>
         </div>
       )}
+
+      {/* QR Dialog */}
+      <Dialog open={!!qrLanding} onOpenChange={(o) => { if (!o) setQrLanding(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Código QR</DialogTitle>
+            <DialogDescription className="truncate">{qrLanding?.title}</DialogDescription>
+          </DialogHeader>
+          {qrLanding && (
+            <div className="flex flex-col items-center gap-4 py-2">
+              <div id="landing-qr-container" className="rounded-xl border bg-white p-4">
+                <QRCodeSVG
+                  value={getPublicUrl(qrLanding)}
+                  size={220}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground text-center break-all px-2">
+                {getPublicUrl(qrLanding)}
+              </p>
+              <div className="flex gap-2 w-full">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(getPublicUrl(qrLanding))
+                    toast.success('URL copiada')
+                  }}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copiar URL
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => {
+                    const svg = document.querySelector('#landing-qr-container svg') as SVGElement | null
+                    if (!svg) return
+                    const xml = new XMLSerializer().serializeToString(svg)
+                    const blob = new Blob([xml], { type: 'image/svg+xml' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `qr-${qrLanding.slug}.svg`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar SVG
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Métricas */}
       <LandingMetricsSheet

@@ -45,7 +45,7 @@ import { cn } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useTenant } from '@/stores/auth'
 import { toast } from 'sonner'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -245,10 +245,15 @@ function uniqueEdges(nodes: ConsultantNode[]): Array<{ a: ConsultantNode; b: Con
 
 function NetworkPage() {
   const currentUser = useAuthStore((s) => s.user)
+  const tenant      = useTenant()
   const qc = useQueryClient()
   const canPickRoot = currentUser?.role === 'admin' || currentUser?.role === 'manager'
   const canCreate   = canPickRoot
   const canDelete   = currentUser?.role === 'admin'
+  const isConsultant = currentUser?.role === 'consultant'
+
+  // RFC F2: profundidad de visibilidad del tenant (default 3)
+  const networkDepth: number = (tenant?.settings?.network_depth as number | undefined) ?? 3
 
   const [searchTerm, setSearchTerm]     = useState('')
   const [zoom, setZoom]                 = useState(1)
@@ -321,6 +326,17 @@ function NetworkPage() {
     }
     return m
   }, [edgeList])
+
+  // Actualizar network_depth del tenant (solo admin)
+  const depthMutation = useMutation({
+    mutationFn: async (depth: number) =>
+      api.patch('/tenant', { tenant: { settings: { ...tenant?.settings, network_depth: depth } } }),
+    onSuccess: () => {
+      toast.success('Profundidad de visibilidad actualizada')
+      void qc.invalidateQueries({ queryKey: queryKeys.tenant })
+    },
+    onError: (err) => toast.error(formatRailsError(err, 'No se pudo actualizar')),
+  })
 
   // Crear relación
   const createMutation = useMutation({
@@ -441,6 +457,51 @@ function NetworkPage() {
           </div>
         </div>
       )}
+
+      {/* RFC F2: Visibilidad por profundidad */}
+      <Card className="border-dashed">
+        <CardContent className="pt-4 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10">
+                <NetworkIcon className="h-4 w-4 text-indigo-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Visibilidad de oportunidades (RFC F2)</p>
+                {isConsultant ? (
+                  <p className="text-xs text-muted-foreground">
+                    Ves las oportunidades de tu red hasta <strong>{networkDepth} niveles</strong> de profundidad
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Los consultores ven oportunidades de su red hasta <strong>{networkDepth} niveles</strong>.
+                    {canDelete && ' Ajusta la profundidad para todos los consultores del tenant.'}
+                  </p>
+                )}
+              </div>
+            </div>
+            {canDelete && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Profundidad:</span>
+                <Select
+                  value={String(networkDepth)}
+                  onValueChange={(v) => depthMutation.mutate(Number(v))}
+                  disabled={depthMutation.isPending}
+                >
+                  <SelectTrigger className="w-[110px] h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 7, 10].map((d) => (
+                      <SelectItem key={d} value={String(d)}>{d} nivel{d !== 1 ? 'es' : ''}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">

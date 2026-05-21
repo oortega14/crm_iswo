@@ -22,6 +22,8 @@ export interface AuthPayload {
 
 export interface TenantSettings {
   stale_days?: number
+  /** RFC F2: profundidad de visibilidad de la red para consultores (default 3) */
+  network_depth?: number
   [key: string]: unknown
 }
 

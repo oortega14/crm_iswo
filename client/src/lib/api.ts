@@ -23,8 +23,11 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     
-    // Backend tenant resolver expects X-Tenant-Slug
-    config.headers['X-Tenant-Slug'] = getSubdomain()
+    // Backend tenant resolver expects X-Tenant-Slug.
+    // Solo sobreescribir si la petición no trae ya el header (ej. rutas públicas con ?tenant=).
+    if (!config.headers['X-Tenant-Slug']) {
+      config.headers['X-Tenant-Slug'] = getSubdomain()
+    }
     
     return config
   },

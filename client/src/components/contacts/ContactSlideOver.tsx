@@ -9,7 +9,6 @@ import {
   Link as LinkIcon,
   PlusCircle,
 } from 'lucide-react'
-import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +21,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 
 interface ContactDetails {
   id: string
@@ -66,6 +64,7 @@ interface ContactSlideOverProps {
   onOpenChange: (open: boolean) => void
   onEdit?: (contact: ContactDetails) => void
   onDelete?: (contact: ContactDetails) => void
+  onAddOpportunity?: (contact: ContactDetails) => void
   canDelete?: boolean
 }
 
@@ -75,10 +74,10 @@ export function ContactSlideOver({
   onOpenChange,
   onEdit,
   onDelete,
+  onAddOpportunity,
   canDelete = false,
 }: ContactSlideOverProps) {
   const navigate = useNavigate()
-  const [addOpportunityOpen, setAddOpportunityOpen] = useState(false)
 
   if (!contact) return null
 
@@ -88,7 +87,6 @@ export function ContactSlideOver({
   }
 
   return (
-    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg p-0">
         <SheetHeader className="p-6 pb-0">
@@ -209,7 +207,7 @@ export function ContactSlideOver({
                 <p className="text-sm text-muted-foreground">Oportunidades vinculadas</p>
                 <p className="text-lg font-semibold">{contact.opportunitiesCount}</p>
               </div>
-              <Button className="w-full" onClick={() => setAddOpportunityOpen(true)}>
+              <Button className="w-full" onClick={() => onAddOpportunity?.(contact)}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Nueva Oportunidad
               </Button>
@@ -222,12 +220,5 @@ export function ContactSlideOver({
         </ScrollArea>
       </SheetContent>
     </Sheet>
-
-    <QuickAddOpportunity
-      open={addOpportunityOpen}
-      onOpenChange={setAddOpportunityOpen}
-      prefilledContact={{ id: contact.id, name: contact.fullName }}
-    />
-    </>
   )
 }

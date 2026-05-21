@@ -43,6 +43,7 @@ import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
 import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
+import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useUserRole } from '@/stores/auth'
@@ -160,6 +161,8 @@ function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<ContactRow | null>(null)
   const [isSlideOverOpen, setIsSlideOverOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [quickAddContact, setQuickAddContact] = useState<{ id: string; name: string } | null>(null)
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editFormData, setEditFormData] = useState({
@@ -775,7 +778,22 @@ function ContactsPage() {
         }}
         onEdit={openEditDialog}
         onDelete={handleDeleteContact}
+        onAddOpportunity={(contact) => {
+          setIsSlideOverOpen(false)
+          setQuickAddContact({ id: contact.id, name: contact.fullName })
+          setIsQuickAddOpen(true)
+        }}
         canDelete={canDeleteContacts}
+      />
+
+      {/* Quick Add Opportunity para contacto existente */}
+      <QuickAddOpportunity
+        open={isQuickAddOpen}
+        onOpenChange={(open) => {
+          setIsQuickAddOpen(open)
+          if (!open) setQuickAddContact(null)
+        }}
+        prefilledContact={quickAddContact ?? undefined}
       />
 
       {/* Create Contact Dialog */}

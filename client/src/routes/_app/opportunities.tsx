@@ -1,7 +1,7 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
-import { LayoutGrid, Table as TableIcon, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { LayoutGrid, Table as TableIcon, Plus, Search } from 'lucide-react'
 import { z } from 'zod'
 import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { KanbanBoard } from '@/components/opportunities/KanbanBoard'
 import { OpportunitiesTable } from '@/components/opportunities/OpportunitiesTable'
 import { OpportunitySlideOver } from '@/components/opportunities/OpportunitySlideOver'
@@ -45,6 +46,7 @@ function OpportunitiesPage() {
   const search = useSearch({ from: '/_app/opportunities' })
   const navigate = Route.useNavigate()
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
 
   const view = search.view || 'kanban'
   const selectedId = search.selected
@@ -89,6 +91,19 @@ function OpportunitiesPage() {
     enabled: !pipelinesLoading && (!!activePipelineId || !!search.contact),
   })
 
+  const filteredOpportunities = useMemo(() => {
+    const all = opportunities ?? []
+    if (!searchTerm.trim()) return all
+    const q = searchTerm.trim().toLowerCase()
+    return all.filter(
+      (o) =>
+        o.contact_name?.toLowerCase().includes(q) ||
+        o.company_name?.toLowerCase().includes(q) ||
+        o.contact_email?.toLowerCase().includes(q) ||
+        o.contact_phone?.includes(q)
+    )
+  }, [opportunities, searchTerm])
+
   const selectedOpportunity = opportunities?.find((o) => o.id === selectedId)
 
   const handleViewChange = (newView: string) => {
@@ -118,6 +133,17 @@ function OpportunitiesPage() {
         title="Oportunidades"
         description={subtitle}
       >
+        {/* Buscador por nombre de contacto */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Buscar contacto..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="h-8 pl-8 w-[180px] text-sm"
+          />
+        </div>
+
         {/* Selector de pipeline */}
         {pipelines && pipelines.length > 1 && (
           <Select
@@ -183,7 +209,7 @@ function OpportunitiesPage() {
         ) : view === 'kanban' ? (
           <div className="flex min-h-[280px] flex-1 flex-col">
             <KanbanBoard
-              opportunities={opportunities || []}
+              opportunities={filteredOpportunities}
               pipeline={activePipeline}
               onSelectOpportunity={handleSelectOpportunity}
             />
@@ -191,7 +217,7 @@ function OpportunitiesPage() {
         ) : (
           <div className="min-h-0 flex-1 overflow-auto p-4 lg:p-6">
             <OpportunitiesTable
-              opportunities={opportunities || []}
+              opportunities={filteredOpportunities}
               onSelectOpportunity={handleSelectOpportunity}
             />
           </div>

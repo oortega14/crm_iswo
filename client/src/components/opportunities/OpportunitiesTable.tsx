@@ -22,7 +22,6 @@ import {
   getInitials,
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -52,7 +51,6 @@ export function OpportunitiesTable({
     pipeline_id: false,
     owner_id: false,
   })
-  const [globalFilter, setGlobalFilter] = useState('')
 
   const columns = useMemo(
     () => [
@@ -207,16 +205,10 @@ export function OpportunitiesTable({
   const table = useReactTable({
     data: opportunities,
     columns,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      globalFilter,
-    },
+    state: { sorting, columnFilters, columnVisibility },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -227,12 +219,6 @@ export function OpportunitiesTable({
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-3 border-b lg:px-6">
-        <Input
-          placeholder="Buscar oportunidades..."
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          className="max-w-sm"
-        />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="ml-auto gap-1.5">
@@ -295,7 +281,11 @@ export function OpportunitiesTable({
                 <tr
                   key={row.id}
                   onClick={() => onSelectOpportunity(row.original.id)}
-                  className="border-b cursor-pointer hover:bg-muted/50 transition-colors"
+                  className={cn(
+                    'border-b cursor-pointer hover:bg-muted/50 transition-colors',
+                    row.original.status === 'lost' && 'opacity-50 bg-muted/20',
+                    row.original.status === 'won'  && 'bg-green-50/40 dark:bg-green-950/20'
+                  )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 align-middle">

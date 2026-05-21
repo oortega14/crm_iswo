@@ -302,22 +302,44 @@ def seed_demo_contacts(tenant, contacts_config, owner_user)
 end
 
 def seed_demo_opportunities(tenant, contacts, pipeline, owner_user)
-  statuses   = %w[new_lead contacted qualified proposal]
   stage_list = pipeline.pipeline_stages.order(:position).to_a
+  won_stage  = stage_list.find(&:closed_won)
+  open_stage = stage_list.reject { |s| s.closed_won || s.closed_lost }
+
+  configs = [
+    { status: "won",      stage: won_stage  || stage_list.last, value: 8_000_000,  bant: 82, closed: true,  days_ago: 5  },
+    { status: "proposal", stage: open_stage[2] || stage_list[2], value: 3_500_000, bant: 65, closed: false, days_ago: 2  },
+    { status: "new_lead", stage: open_stage[0] || stage_list[0], value: 1_200_000, bant: 40, closed: false, days_ago: 0  },
+  ]
 
   contacts.each_with_index do |contact, i|
-    stage = stage_list[i] || stage_list.first
+    cfg   = configs[i] || configs.last
+    stage = cfg[:stage] || stage_list.first
     opp   = Opportunity.find_or_initialize_by(tenant: tenant, contact: contact, title: "Oportunidad #{contact.first_name}")
     opp.assign_attributes(
       pipeline:          pipeline,
       pipeline_stage:    stage,
       owner_user:        owner_user,
-      status:            statuses[i] || "new_lead",
-      estimated_value:   [500_000, 2_500_000, 8_000_000][i] || 1_000_000,
-      bant_score:        [35, 58, 72][i] || 50,
-      last_activity_at:  (i + 1).days.ago
+      status:            cfg[:status],
+      estimated_value:   cfg[:value],
+      bant_score:        cfg[:bant],
+      last_activity_at:  cfg[:days_ago].days.ago,
+      closed_at:         cfg[:closed] ? cfg[:days_ago].days.ago : nil
     )
     opp.save!
+
+    # Log de creación para que aparezca en el activity feed de hoy
+    if cfg[:days_ago] == 0
+      OpportunityLog.find_or_create_by(
+        tenant:      tenant,
+        opportunity: opp,
+        action:      "create",
+        user:        owner_user
+      ) do |log|
+        log.changes_data = { title: opp.title, pipeline_stage_id: stage.id }
+        log.ip_address   = "127.0.0.1"
+      end
+    end
   end
 end
 
@@ -358,14 +380,16 @@ end
 # Resumen final
 # ---------------------------------------------------------------------------
 
-puts "\n=== Resumen ==="
-puts "Tenants:       #{Tenant.count}"
-puts "Usuarios:      #{User.count}"
-puts "Pipelines:     #{Pipeline.count}"
-puts "Etapas:        #{PipelineStage.count}"
-puts "Lead sources:  #{LeadSource.count}"
-puts "Contactos:     #{Contact.count}"
-puts "Oportunidades: #{Opportunity.count}"
+ActsAsTenant.without_tenant do
+  puts "\n=== Resumen ==="
+  puts "Tenants:       #{Tenant.count}"
+  puts "Usuarios:      #{User.count}"
+  puts "Pipelines:     #{Pipeline.count}"
+  puts "Etapas:        #{PipelineStage.count}"
+  puts "Lead sources:  #{LeadSource.count}"
+  puts "Contactos:     #{Contact.count}"
+  puts "Oportunidades: #{Opportunity.count}"
+end
 puts "\nCredenciales de prueba (password: Password123!):"
 puts "  admin@iswo.local       → ISWO"
 puts "  admin@micasita.local   → Mi Casita"

@@ -19,16 +19,6 @@ class UserSerializer < ApplicationSerializer
     u.respond_to?(:name) ? u.name : nil
   end
 
-  attribute :first_name do |u|
-    next nil unless u.respond_to?(:first_name)
-    u.first_name
-  end
-
-  attribute :last_name do |u|
-    next nil unless u.respond_to?(:last_name)
-    u.last_name
-  end
-
   attribute :phone do |u|
     u.respond_to?(:phone) ? u.phone : nil
   end
@@ -38,11 +28,7 @@ class UserSerializer < ApplicationSerializer
   end
 
   attribute :full_name do |u|
-    if u.respond_to?(:first_name) || u.respond_to?(:last_name)
-      [u.try(:first_name), u.try(:last_name)].compact.join(" ").presence || u.try(:name) || u.email
-    else
-      u.try(:name).presence || u.email
-    end
+    u.try(:name).presence || u.email
   end
 
   attribute :avatar_url do |u|

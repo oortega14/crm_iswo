@@ -101,9 +101,11 @@ class WebhookProcessorJob < ApplicationJob
         return
       end
 
-      contact = upsert_contact(tenant, from_number)
+      contact     = upsert_contact(tenant, from_number)
+      opportunity = find_opportunity_for_inbound(tenant, contact, from_number)
       tenant.whatsapp_messages.create!(
         contact:             contact,
+        opportunity:         opportunity,
         direction:           "in",
         provider:            "twilio",
         provider_message_id: sid || payload["MessageSid"],
@@ -114,6 +116,7 @@ class WebhookProcessorJob < ApplicationJob
         status:              "delivered",
         raw_payload:         payload
       )
+      opportunity&.touch_activity!
     end
   end
 
@@ -142,11 +145,13 @@ class WebhookProcessorJob < ApplicationJob
               next
             end
 
-            from = m["from"]
+            from         = m["from"]
             profile_name = profile_name_from_cloud_contacts(value["contacts"], from)
-            contact = upsert_contact(tenant, from, profile_name: profile_name)
+            contact      = upsert_contact(tenant, from, profile_name: profile_name)
+            opportunity  = find_opportunity_for_inbound(tenant, contact, from)
             tenant.whatsapp_messages.create!(
               contact:             contact,
+              opportunity:         opportunity,
               direction:           "in",
               provider:            "whatsapp_cloud",
               provider_message_id: sid,
@@ -157,6 +162,7 @@ class WebhookProcessorJob < ApplicationJob
               status:              "delivered",
               raw_payload:         m
             )
+            opportunity&.touch_activity!
           end
         end
       end
@@ -165,6 +171,31 @@ class WebhookProcessorJob < ApplicationJob
 
   def resolve_tenant_by_setting(path, value)
     Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+  end
+
+  # Encuentra la oportunidad más apropiada para enlazar un mensaje entrante.
+  # Prioridad: (1) oportunidad con el último saliente a ese número,
+  #            (2) oportunidad abierta más reciente del contacto.
+  def find_opportunity_for_inbound(tenant, contact, from_number)
+    normalized = Phonelib.parse(from_number).sanitized
+
+    # Buscar la oportunidad que tenga el saliente más reciente a este número
+    last_out = tenant.whatsapp_messages
+                     .where(direction: "out")
+                     .where("to_number LIKE ?", "%#{normalized.last(9)}%")
+                     .where.not(opportunity_id: nil)
+                     .order(created_at: :desc)
+                     .first
+    return last_out.opportunity if last_out&.opportunity
+
+    # Fallback: oportunidad abierta más activa del contacto
+    return nil unless contact
+
+    tenant.opportunities
+          .where(contact: contact)
+          .where.not(status: %w[won lost])
+          .order(last_activity_at: :desc)
+          .first
   end
 
   def upsert_contact(tenant, phone, profile_name: nil)

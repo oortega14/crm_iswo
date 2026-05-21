@@ -42,6 +42,8 @@ class LandingSubmissionProcessor
           opportunity:  opportunity,
           processed_at: Time.current
         )
+
+        @landing&.increment!(:lead_count)
       end
     end
     true

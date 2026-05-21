@@ -204,6 +204,18 @@ function IntegrationsSettingsPage() {
   const queryClient = useQueryClient()
   const canMutate = useAuthStore((s) => s.isAdmin())
   const canTest = useAuthStore((s) => s.isAdmin() || s.isManager())
+  const isAllowed = useAuthStore((s) => s.isAdmin() || s.isManager())
+
+  if (!isAllowed) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+        <p className="text-lg font-medium">Acceso restringido</p>
+        <p className="text-sm text-muted-foreground">
+          Solo administradores y managers pueden ver las integraciones.
+        </p>
+      </div>
+    )
+  }
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogCatalog, setDialogCatalog] = useState<ProviderCatalogEntry | null>(null)

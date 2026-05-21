@@ -18,6 +18,7 @@ import {
   Sun,
   LogOut,
   ChevronDown,
+  UserRound,
 } from 'lucide-react'
 import { useAuthStore, useTenant, useUser } from '@/stores/auth'
 import { useTheme } from '@/components/common/ThemeProvider'
@@ -39,6 +40,7 @@ import { Separator } from '@/components/ui/separator'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { NotificationDropdown } from '@/components/common/NotificationDropdown'
 import { PageAmbientBackground } from '@/components/layout/PageAmbientBackground'
+import { UserProfileDialog } from '@/components/common/UserProfileDialog'
 import type { UserRole } from '@/types'
 
 interface NavItem {
@@ -75,6 +77,7 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const location = useLocation()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const user = useUser()
@@ -260,6 +263,11 @@ export function AppLayout({ children }: AppLayoutProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => setProfileOpen(true)}>
+                <UserRound className="size-4 mr-2" />
+                Mi perfil
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}>
                 {resolvedTheme === 'dark' ? (
                   <>
@@ -322,6 +330,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Command palette */}
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+
+      {/* Perfil del usuario */}
+      <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
       {/* Mobile bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around border-t bg-background lg:hidden">

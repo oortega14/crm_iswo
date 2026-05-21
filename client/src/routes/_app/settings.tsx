@@ -3,41 +3,49 @@ import { GitBranch, Users, Puzzle, FileText, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { useAuthStore } from '@/stores/auth'
+import type { UserRole } from '@/types'
 
 export const Route = createFileRoute('/_app/settings')({
   component: SettingsLayout,
 })
 
-const settingsNav = [
+const settingsNav: { title: string; href: string; icon: React.ComponentType<{ className?: string }>; description: string; roles: UserRole[] }[] = [
   {
     title: 'Pipelines',
     href: '/settings/pipelines',
     icon: GitBranch,
-    description: 'Gestiona tus pipelines y etapas'
+    description: 'Gestiona tus pipelines y etapas',
+    roles: ['admin'],
   },
   {
     title: 'Usuarios',
     href: '/settings/users',
     icon: Users,
-    description: 'Administra usuarios y permisos'
+    description: 'Administra usuarios y permisos',
+    roles: ['admin', 'manager'],
   },
   {
     title: 'Integraciones',
     href: '/settings/integrations',
     icon: Puzzle,
-    description: 'Conecta servicios externos'
+    description: 'Conecta servicios externos',
+    roles: ['admin', 'manager'],
   },
   {
     title: 'Auditoria',
     href: '/settings/audit',
     icon: FileText,
-    description: 'Historial de actividad'
+    description: 'Historial de actividad',
+    roles: ['admin', 'manager'],
   },
 ]
 
 function SettingsLayout() {
   const location = useLocation()
   const isSettingsRoot = location.pathname === '/settings'
+  const userRole = useAuthStore((s) => s.user?.role)
+  const visibleNav = settingsNav.filter((item) => userRole && item.roles.includes(userRole))
 
   return (
     <AppPageShell contentClassName="gap-8">
@@ -47,9 +55,9 @@ function SettingsLayout() {
       />
 
       {isSettingsRoot ? (
-        // Settings Index - Show cards
+        // Settings Index - Show cards (filtered by role)
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {settingsNav.map((item) => (
+          {visibleNav.map((item) => (
             <Link
               key={item.href}
               to={item.href}
@@ -77,13 +85,13 @@ function SettingsLayout() {
         <div className="flex gap-6">
           {/* Sidebar */}
           <nav className="w-48 shrink-0 space-y-1">
-            {settingsNav.map((item) => (
+            {visibleNav.map((item) => (
               <Link
                 key={item.href}
                 to={item.href}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  location.pathname === item.href 
+                  location.pathname === item.href
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}

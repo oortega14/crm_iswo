@@ -17,10 +17,12 @@ import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Paintbrush } from 'lucide-react'
 import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import { jsonApiPrimaryOne } from '@/lib/opportunityApi'
+import { LandingVisualEditorModal } from './LandingVisualEditorModal'
 
 // ---------------------------------------------------------------------------
 // Tipos internos
@@ -141,6 +143,7 @@ export function LandingEditorSheet({
 
   const [content, setContent] = useState<LandingContent>({ ...DEFAULT_CONTENT, fields: [...DEFAULT_FIELDS] })
   const [styles,  setStyles]  = useState<LandingStyles>({ ...DEFAULT_STYLES })
+  const [visualEditorOpen, setVisualEditorOpen] = useState(false)
 
   // Fetch del landing con content + styles
   const { data: landingData, isLoading } = useQuery({
@@ -206,13 +209,29 @@ export function LandingEditorSheet({
   // ---------------------------------------------------------------------------
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 pt-6 pb-4 border-b">
-          <SheetTitle className="text-base">Editar landing page</SheetTitle>
-          {landingTitle && (
-            <SheetDescription className="text-xs truncate">{landingTitle}</SheetDescription>
-          )}
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <SheetTitle className="text-base">Editar landing page</SheetTitle>
+              {landingTitle && (
+                <SheetDescription className="text-xs truncate">{landingTitle}</SheetDescription>
+              )}
+            </div>
+            {landingId && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => setVisualEditorOpen(true)}
+              >
+                <Paintbrush className="h-3.5 w-3.5 mr-1.5" />
+                Diseño visual
+              </Button>
+            )}
+          </div>
         </SheetHeader>
 
         {isLoading ? (
@@ -419,5 +438,15 @@ export function LandingEditorSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+
+    {landingId && (
+      <LandingVisualEditorModal
+        open={visualEditorOpen}
+        onOpenChange={setVisualEditorOpen}
+        landingId={landingId}
+        landingTitle={landingTitle}
+      />
+    )}
+    </>
   )
 }

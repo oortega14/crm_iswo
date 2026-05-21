@@ -61,7 +61,9 @@ export function OpportunityCard({
       style={style}
       className={cn(
         'p-2 cursor-pointer hover:shadow-md transition-shadow',
-        (isDragging || isSortableDragging) && 'opacity-50 shadow-lg rotate-2'
+        (isDragging || isSortableDragging) && 'opacity-50 shadow-lg rotate-2',
+        opportunity.status === 'lost' && 'opacity-50 grayscale-[40%] border-destructive/30',
+        opportunity.status === 'won'  && 'border-green-500/40 bg-green-50/30 dark:bg-green-950/20'
       )}
       onClick={onClick}
     >

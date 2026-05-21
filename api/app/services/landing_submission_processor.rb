@@ -88,7 +88,7 @@ class LandingSubmissionProcessor
     pipeline = @tenant.pipelines.find_by(is_default: true) || @tenant.pipelines.first
     stage    = pipeline&.pipeline_stages&.order(:position)&.first
     source   = @tenant.lead_sources.find_by(kind: "web") || @tenant.lead_sources.first
-    owner    = @landing&.default_owner || next_round_robin_owner
+    owner    = next_round_robin_owner
 
     opp = @tenant.opportunities.create!(
       contact:          contact,
@@ -96,7 +96,7 @@ class LandingSubmissionProcessor
       pipeline_stage:   stage,
       owner_user:       owner,
       lead_source:      source,
-      status:           "open",
+      status:           "new_lead",
       title:            "Lead landing: #{@landing&.title || 'Formulario público'}",
       custom_fields:    utm_fields,
       last_activity_at: Time.current
@@ -105,7 +105,7 @@ class LandingSubmissionProcessor
     opp.opportunity_logs.create!(
       tenant:       @tenant,
       user:         nil,
-      action:       "created_from_landing",
+      action:       "create",
       changes_data: { landing_id: @landing&.id, utm: utm_fields }
     )
 
@@ -167,7 +167,7 @@ class LandingSubmissionProcessor
     @tenant.users
            .where(role: "consultant", active: true)
            .left_joins(:owned_opportunities)
-           .where(opportunities: { status: [nil, "open"] })
+           .where(opportunities: { status: "new_lead" })
            .group("users.id")
            .order(Arel.sql("COUNT(opportunities.id) ASC"))
            .first

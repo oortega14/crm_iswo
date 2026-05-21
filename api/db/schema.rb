@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_20_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -162,11 +162,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_20_000001) do
     t.bigint "landing_page_id", null: false
     t.bigint "opportunity_id"
     t.jsonb "payload", default: {}, null: false
+    t.string "process_error"
+    t.datetime "processed_at"
     t.bigint "tenant_id", null: false
     t.string "user_agent"
     t.string "utm_campaign"
+    t.string "utm_content"
     t.string "utm_medium"
     t.string "utm_source"
+    t.string "utm_term"
     t.index ["contact_id"], name: "index_landing_form_submissions_on_contact_id"
     t.index ["landing_page_id"], name: "index_landing_form_submissions_on_landing_page_id"
     t.index ["opportunity_id"], name: "index_landing_form_submissions_on_opportunity_id"

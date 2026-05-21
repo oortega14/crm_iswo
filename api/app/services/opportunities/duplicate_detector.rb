@@ -89,9 +89,10 @@ module Opportunities
     end
 
     def trigram_name_matches
+      quoted = ActiveRecord::Base.connection.quote(@full_name)
       base_scope
-        .where("similarity(full_name, ?) > ?", @full_name, @threshold)
-        .select("contacts.*, similarity(full_name, #{ActiveRecord::Base.connection.quote(@full_name)}) AS sim")
+        .where("similarity(first_name || ' ' || COALESCE(last_name, ''), ?) > ?", @full_name, @threshold)
+        .select("contacts.*, similarity(first_name || ' ' || COALESCE(last_name, ''), #{quoted}) AS sim")
         .limit(10)
         .map { |c| Match.new(contact: c, score: c[:sim].to_f * 0.9, matched_on: "name_trigram") }
     end

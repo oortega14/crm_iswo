@@ -301,6 +301,34 @@ def seed_demo_contacts(tenant, contacts_config, owner_user)
   end
 end
 
+def seed_referral_networks(tenant, users)
+  admin      = users.find { |u| u.role == "admin" }
+  manager    = users.find { |u| u.role == "manager" }
+  consultants = users.select { |u| u.role == "consultant" }
+
+  # Raíz del árbol: admin, o manager si no hay admin
+  root = admin || manager || users.first
+  return unless root
+
+  # Conectar manager debajo del admin (si existen ambos)
+  if admin && manager
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: admin, referred_user: manager) do |rn|
+      rn.depth = 1; rn.active = true
+    end
+  end
+
+  # Distribuir consultores: mitad referidos por manager/admin, mitad entre sí
+  parent = manager || admin
+  consultants.each_with_index do |c, i|
+    referrer = i.zero? ? parent : consultants[i - 1]
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: referrer, referred_user: c) do |rn|
+      rn.depth = 1; rn.active = true
+    end
+  end
+rescue ActiveRecord::RecordInvalid => e
+  puts "     [referral] skip: #{e.message}"
+end
+
 def seed_demo_opportunities(tenant, contacts, pipeline, owner_user)
   stage_list = pipeline.pipeline_stages.order(:position).to_a
   won_stage  = stage_list.find(&:closed_won)
@@ -373,6 +401,9 @@ VERTICALS.each do |config|
 
     seed_demo_opportunities(tenant, contacts, pipeline, demo_owner)
     puts "     #{contacts.size} oportunidades de demo"
+
+    seed_referral_networks(tenant, users)
+    puts "     Red de referidos sembrada (#{ReferralNetwork.where(tenant: tenant).count} relaciones)"
   end
 end
 

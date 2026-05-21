@@ -21,7 +21,7 @@ class WhatsappMessagePolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        scope.joins(:opportunities)
+        scope.joins(:opportunity)
              .where(opportunities: { owner_user_id: user.id })
              .distinct
       else

@@ -14,7 +14,9 @@ module Api
       # GET /api/v1/whatsapp_messages (standalone o anidado)
       def index
         scope = if params[:opportunity_id].present?
-                  current_tenant.opportunities.find(params[:opportunity_id]).whatsapp_messages
+                  opp = current_tenant.opportunities.find(params[:opportunity_id])
+                  authorize opp, :show?
+                  opp.whatsapp_messages
                 else
                   policy_scope(WhatsappMessage)
                 end

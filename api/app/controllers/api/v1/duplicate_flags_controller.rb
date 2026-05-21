@@ -40,9 +40,9 @@ module Api
         authorize @flag, :update?
         if defined?(Opportunities::Merger)
           Opportunities::Merger.new(
-            loser:  @flag.opportunity,
-            winner: @flag.duplicate_of_opportunity,
-            actor:  current_user
+            source:       @flag.opportunity,
+            target:       @flag.duplicate_of_opportunity,
+            performed_by: current_user
           ).call
         end
         @flag.resolve!(as: "merged", by: current_user, note: params[:note])

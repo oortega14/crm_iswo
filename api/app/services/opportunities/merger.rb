@@ -84,7 +84,7 @@ module Opportunities
 
     def resolve_duplicate_flags!
       flags = DuplicateFlag.where(
-        "(opportunity_a_id = :s AND opportunity_b_id = :t) OR (opportunity_a_id = :t AND opportunity_b_id = :s)",
+        "(opportunity_id = :s AND duplicate_of_opportunity_id = :t) OR (opportunity_id = :t AND duplicate_of_opportunity_id = :s)",
         s: @source.id, t: @target.id
       )
       count = flags.count

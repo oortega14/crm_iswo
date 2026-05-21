@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '@/stores/auth'
 import { Send, Phone, Video, Trash2, Check, CheckCheck, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -50,6 +51,7 @@ export function WhatsAppThread({
   messages,
 }: WhatsAppThreadProps) {
   const queryClient = useQueryClient()
+  const canManageIntegrations = useAuthStore((s) => s.isAdmin() || s.isManager())
   const [draft, setDraft] = useState('')
   /** Si el contacto no tiene teléfono en CRM, el usuario puede escribir el destino aquí. */
   const [manualTo, setManualTo] = useState('')
@@ -147,16 +149,20 @@ export function WhatsAppThread({
                 Twilio rechaza el envío: credenciales incorrectas (Account SID y Auth Token deben ser de la
                 misma cuenta).
               </p>
-              <p>
-                Edita la integración Twilio en{' '}
-                <Link
-                  to="/settings/integrations"
-                  className="font-medium underline underline-offset-2 text-primary"
-                >
-                  Ajustes → Integraciones
-                </Link>{' '}
-                y vuelve a pegar Account SID (empieza por AC) y Auth Token sin espacios.
-              </p>
+              {canManageIntegrations ? (
+                <p>
+                  Edita la integración Twilio en{' '}
+                  <Link
+                    to="/settings/integrations"
+                    className="font-medium underline underline-offset-2 text-primary"
+                  >
+                    Ajustes → Integraciones
+                  </Link>{' '}
+                  y vuelve a pegar Account SID (empieza por AC) y Auth Token sin espacios.
+                </p>
+              ) : (
+                <p>Contacta al administrador para corregir las credenciales de Twilio.</p>
+              )}
             </div>
           </div>
         </div>

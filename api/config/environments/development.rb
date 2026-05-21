@@ -76,4 +76,8 @@ Rails.application.configure do
 
   # Jobs sin Redis local (Sidekiq solo fuera de development; ver initializers/sidekiq.rb).
   config.active_job.queue_adapter = :async
+
+  # Permitir dominios ngrok/tunnel para callbacks de Twilio y Meta en desarrollo.
+  ngrok_host = ENV.fetch("API_PUBLIC_ORIGIN", "").gsub(%r{^https?://}, "").presence
+  config.hosts << ngrok_host if ngrok_host
 end

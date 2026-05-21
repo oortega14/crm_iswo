@@ -47,6 +47,8 @@ interface LandingContent {
   thank_you_title?: string
   thank_you_message?: string
   fields?: FieldConfig[]
+  gjs_html?: string
+  gjs_css?: string
 }
 
 interface LandingStyles {
@@ -128,6 +130,8 @@ function PublicLandingPage() {
   const ctaText       = content.cta_text      || 'Enviar solicitud'
   const tyTitle       = content.thank_you_title   || '¡Gracias!'
   const tyMessage     = content.thank_you_message || 'Un asesor te contactará pronto.'
+  const gjsHtml       = content.gjs_html || ''
+  const gjsCss        = content.gjs_css  || ''
 
   if (submitted) {
     return (
@@ -140,6 +144,35 @@ function PublicLandingPage() {
     )
   }
 
+  const form = (
+    <LandingForm
+      slug={slug}
+      fields={fields}
+      ctaText={ctaText}
+      primaryColor={primaryColor}
+      utmParams={utmParams}
+      onSuccess={() => setSubmitted(true)}
+    />
+  )
+
+  // Si hay diseño GrapeJS: hero visual a la izquierda, formulario a la derecha
+  if (gjsHtml) {
+    return (
+      <div className="min-h-screen flex flex-col lg:flex-row" style={{ backgroundColor: bgColor }}>
+        {/* Panel izquierdo — diseño GrapeJS */}
+        <div className="lg:w-1/2 overflow-auto">
+          <style>{gjsCss}</style>
+          <div dangerouslySetInnerHTML={{ __html: gjsHtml }} />
+        </div>
+
+        {/* Panel derecho — formulario React */}
+        <div className="lg:w-1/2 flex items-center justify-center px-6 py-12 lg:px-16">
+          <div className="w-full max-w-md">{form}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <LandingLayout
       headline={headline}
@@ -147,14 +180,7 @@ function PublicLandingPage() {
       primaryColor={primaryColor}
       bgColor={bgColor}
     >
-      <LandingForm
-        slug={slug}
-        fields={fields}
-        ctaText={ctaText}
-        primaryColor={primaryColor}
-        utmParams={utmParams}
-        onSuccess={() => setSubmitted(true)}
-      />
+      {form}
     </LandingLayout>
   )
 }

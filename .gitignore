@@ -31,3 +31,30 @@
 # Kamal secrets (never commit)
 /api/.kamal/secrets
 
+# Secrets / credenciales (nunca commitear)
+/api/rails
+/api/credentials
+
+# Cobertura de tests
+/api/coverage/
+
+# Exportaciones generadas en runtime
+/api/public/exports/
+
+# CLIENT IGNORES
+
+# Build output
+/client/dist/
+/client/.tanstack/
+
+# TypeScript build info
+/client/tsconfig.tsbuildinfo
+/client/tsconfig.node.tsbuildinfo
+
+# Vite build artifacts
+/client/vite.config.js
+/client/vite.config.d.ts
+
+# Lock file (generado automáticamente)
+/client/package-lock.json
+

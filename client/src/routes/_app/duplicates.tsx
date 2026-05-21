@@ -9,6 +9,7 @@ import {
   User,
   Briefcase,
   RefreshCw,
+  ScanSearch,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,7 +26,6 @@ import {
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList } from '@/lib/opportunityApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
@@ -241,6 +241,24 @@ function DuplicatesPage() {
     },
   })
 
+  const scanMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/duplicate_flags/scan', {})
+      return res.data as { scanned: number; created: number }
+    },
+    onSuccess: (data) => {
+      invalidate()
+      if (data.created > 0) {
+        toast.success(`Escaneo completado: ${data.created} duplicado(s) nuevo(s) detectado(s)`)
+      } else {
+        toast.info(`Escaneo completado: no se encontraron duplicados nuevos (${data.scanned} contacto(s) revisados)`)
+      }
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'Error durante el escaneo'))
+    },
+  })
+
   const pendingCount = resolutionFilter === 'pending' ? flags.length : flags.filter((f) => f.pending).length
   const resolvedInView =
     resolutionFilter === 'all' ? flags.filter((f) => !f.pending).length : 0
@@ -269,6 +287,17 @@ function DuplicatesPage() {
             <SelectItem value="all">Todos los estados</SelectItem>
           </SelectContent>
         </Select>
+        {canResolve && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending ? <Spinner className="mr-2" /> : <ScanSearch className="mr-2 h-4 w-4" />}
+            Escanear duplicados
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Actualizar

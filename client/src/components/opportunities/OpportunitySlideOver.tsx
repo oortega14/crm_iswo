@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History } from 'lucide-react'
+import { X, Building, MessageSquare, FileText, Bell, History, Pencil } from 'lucide-react'
 import api from '@/lib/api'
 import {
   jsonApiIncluded,
@@ -34,6 +34,7 @@ import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
+import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
 import type { Opportunity } from '@/types'
 
 interface OpportunitySlideOverProps {
@@ -49,6 +50,7 @@ export function OpportunitySlideOver({
 }: OpportunitySlideOverProps) {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('overview')
+  const [editContactOpen, setEditContactOpen] = useState(false)
 
   // Fetch activity logs
   const { data: logs, isLoading: logsLoading } = useQuery({
@@ -160,6 +162,7 @@ export function OpportunitySlideOver({
   if (!opportunity) return null
 
   return (
+    <>
     <AnimatePresence>
       {open && (
         <>
@@ -190,6 +193,17 @@ export function OpportunitySlideOver({
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
+                  {opportunity.contact_id && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => setEditContactOpen(true)}
+                      title="Editar contacto"
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  )}
                 </div>
                 {opportunity.company_name && (
                   <p className="text-sm text-muted-foreground flex items-center gap-1">
@@ -409,5 +423,19 @@ export function OpportunitySlideOver({
         </>
       )}
     </AnimatePresence>
+
+    <ContactEditDialog
+      contactId={opportunity?.contact_id ?? null}
+      initialData={{
+        firstName: opportunity?.contact_name?.split(' ')[0] ?? '',
+        lastName:  opportunity?.contact_name?.split(' ').slice(1).join(' ') ?? '',
+        email:     opportunity?.contact_email,
+        phone:     opportunity?.contact_phone,
+        company:   opportunity?.company_name,
+      }}
+      open={editContactOpen}
+      onOpenChange={setEditContactOpen}
+    />
+    </>
   )
 }

@@ -34,10 +34,11 @@ class WebhookProcessorJob < ApplicationJob
     audit_received(kind, payload)
 
     case kind
-    when "meta", "meta_ads" then Ads::MetaLeadProcessor.new(payload).call
+    when "meta", "meta_ads"    then Ads::MetaLeadProcessor.new(payload).call
     when "google", "google_ads" then Ads::GoogleLeadProcessor.new(payload).call
-    when "whatsapp_twilio" then process_whatsapp_twilio(payload)
-    when "whatsapp_cloud"  then process_whatsapp_cloud(payload)
+    when "whatsapp_twilio"     then process_whatsapp_twilio(payload)
+    when "whatsapp_cloud"      then process_whatsapp_cloud(payload)
+    when "whatsapp_openwa"     then process_whatsapp_openwa(payload)
     else
       Rails.logger.warn("[WebhookProcessorJob] kind desconocido: #{kind}")
     end
@@ -167,6 +168,97 @@ class WebhookProcessorJob < ApplicationJob
         end
       end
     end
+  end
+
+  # --- WhatsApp inbound (OpenWA) ----------------------------------------
+
+  def process_whatsapp_openwa(payload)
+    event      = payload["event"].to_s
+    session_id = payload["sessionId"].to_s
+    data       = payload["data"].is_a?(Hash) ? payload["data"] : {}
+
+    msg_id = openwa_extract_message_id(data)
+
+    case event
+    when "message.received"
+      process_openwa_inbound(session_id, data, msg_id)
+    when "message.delivered"
+      openwa_update_status(msg_id, "delivered", delivered_at: true)
+    when "message.read"
+      openwa_update_status(msg_id, "read", read_at: true)
+    when "message.failed"
+      openwa_update_status(msg_id, "failed")
+    else
+      Rails.logger.info("[WhatsApp OpenWA] evento ignorado: #{event}")
+    end
+  end
+
+  def process_openwa_inbound(session_id, data, msg_id)
+    from_wa = data["from"].to_s
+    to_wa   = data["to"].to_s
+
+    from_number = openwa_wa_id_to_e164(from_wa)
+    to_number   = openwa_wa_id_to_e164(to_wa)
+
+    tenant = AdIntegration.unscoped
+                          .where(provider: "openwa", account_identifier: session_id)
+                          .first&.tenant
+    tenant ||= resolve_tenant_by_setting("whatsapp.openwa_session_id", session_id)
+
+    return Rails.logger.warn("[WhatsApp OpenWA] sin tenant para sessionId=#{session_id}") unless tenant
+
+    ActsAsTenant.with_tenant(tenant) do
+      if msg_id.present? &&
+         tenant.whatsapp_messages.exists?(provider: "openwa", provider_message_id: msg_id)
+        Rails.logger.info("[WhatsApp OpenWA] duplicado msg_id=#{msg_id}")
+        return
+      end
+
+      contact     = upsert_contact(tenant, from_number)
+      opportunity = find_opportunity_for_inbound(tenant, contact, from_number)
+      tenant.whatsapp_messages.create!(
+        contact:             contact,
+        opportunity:         opportunity,
+        direction:           "in",
+        provider:            "openwa",
+        provider_message_id: msg_id,
+        from_number:         from_number,
+        to_number:           to_number,
+        body:                data["body"].to_s,
+        status:              "delivered",
+        raw_payload:         data
+      )
+      opportunity&.touch_activity!
+    end
+  end
+
+  def openwa_extract_message_id(data)
+    id_field = data["id"]
+    if id_field.is_a?(Hash)
+      id_field["_serialized"].to_s.presence
+    else
+      id_field.to_s.presence
+    end
+  end
+
+  # Convierte chatId de whatsapp-web.js (628123456789@c.us) a E.164 (+628123456789)
+  def openwa_wa_id_to_e164(wa_id)
+    digits = wa_id.to_s.split("@").first.to_s.gsub(/\D/, "")
+    digits.blank? ? wa_id : "+#{digits}"
+  end
+
+  def openwa_update_status(msg_id, new_status, delivered_at: false, read_at: false)
+    return if msg_id.blank?
+
+    msg = WhatsappMessage.unscoped.find_by(provider: "openwa", provider_message_id: msg_id)
+    return unless msg
+
+    attrs = { status: new_status }
+    attrs[:delivered_at] = Time.current if delivered_at && msg.delivered_at.blank?
+    attrs[:read_at]      = Time.current if read_at      && msg.read_at.blank?
+    ActsAsTenant.with_tenant(msg.tenant) { msg.update!(attrs) }
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.warn("[WhatsApp OpenWA] no se pudo actualizar estado: #{e.message}")
   end
 
   def resolve_tenant_by_setting(path, value)

@@ -62,6 +62,12 @@ class Tenant < ApplicationRecord
       base.order(updated_at: :desc).first
   end
 
+  def preferred_openwa_integration
+    base = AdIntegration.unscoped.where(tenant_id: id, provider: :openwa)
+    base.where(status: "active").order(updated_at: :desc).first ||
+      base.order(updated_at: :desc).first
+  end
+
   # Número/línea usado como remitente en mensajes WhatsApp salientes (Twilio API).
   # Orden: settings del tenant → ENV → integración Twilio (`account_identifier`).
   def whatsapp_outbound_from_number
@@ -76,24 +82,26 @@ class Tenant < ApplicationRecord
       preferred_whatsapp_cloud_integration&.account_identifier.presence
   end
 
-  # Twilio vs WhatsApp Cloud API para mensajes salientes.
+  # Twilio vs WhatsApp Cloud API vs OpenWA para mensajes salientes.
   # Prioridad: ENV["WHATSAPP_PROVIDER"] → settings["whatsapp"]["provider"] →
-  # si Cloud y Twilio tienen credenciales, preferimos Cloud; si solo uno, ese.
+  # si hay credenciales, preferimos Cloud > Twilio > OpenWA.
   def whatsapp_outbound_provider
     exp = ENV["WHATSAPP_PROVIDER"].to_s.strip
-    return exp if %w[twilio whatsapp_cloud].include?(exp)
+    return exp if %w[twilio whatsapp_cloud openwa].include?(exp)
 
     override = settings.dig("whatsapp", "provider").to_s.strip
-    return override if %w[twilio whatsapp_cloud].include?(override)
+    return override if %w[twilio whatsapp_cloud openwa].include?(override)
 
-    cloud_i  = preferred_whatsapp_cloud_integration
-    twilio_i = preferred_twilio_integration
-    cloud_ok = ad_integration_has_credentials?(cloud_i)
+    cloud_i   = preferred_whatsapp_cloud_integration
+    twilio_i  = preferred_twilio_integration
+    openwa_i  = preferred_openwa_integration
+    cloud_ok  = ad_integration_has_credentials?(cloud_i)
     twilio_ok = ad_integration_has_credentials?(twilio_i)
+    openwa_ok = ad_integration_has_credentials?(openwa_i)
 
-    return "whatsapp_cloud" if cloud_ok && twilio_ok
     return "whatsapp_cloud" if cloud_ok
-    return "twilio" if twilio_ok
+    return "twilio"         if twilio_ok
+    return "openwa"         if openwa_ok
 
     "twilio"
   end
@@ -104,6 +112,10 @@ class Tenant < ApplicationRecord
       whatsapp_cloud_sender_label.presence ||
         whatsapp_outbound_from_number.presence ||
         "whatsapp-cloud"
+    when "openwa"
+      settings.dig("whatsapp", "openwa_number").presence ||
+        preferred_openwa_integration&.account_identifier.presence ||
+        "openwa"
     else
       whatsapp_outbound_from_number
     end

@@ -8,7 +8,7 @@ class WhatsappMessage < ApplicationRecord
   include DataClassifiable
 
   DIRECTIONS = %w[in out].freeze
-  PROVIDERS  = %w[twilio whatsapp_cloud].freeze
+  PROVIDERS  = %w[twilio whatsapp_cloud openwa].freeze
   STATUSES   = %w[pending queued sent delivered read failed].freeze
 
   enum :direction, DIRECTIONS.zip(DIRECTIONS).to_h, prefix: true

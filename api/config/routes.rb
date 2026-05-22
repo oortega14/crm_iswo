@@ -195,9 +195,12 @@ Rails.application.routes.draw do
         post "/google",          to: "google_ads#create"
 
         # WhatsApp — Twilio y Cloud API
-        post "/whatsapp/twilio", to: "whatsapp#twilio"
-        post "/whatsapp/cloud",  to: "whatsapp#cloud"
-        get  "/whatsapp/cloud",  to: "whatsapp#verify_cloud"
+        post "/whatsapp/twilio",  to: "whatsapp#twilio"
+        post "/whatsapp/cloud",   to: "whatsapp#cloud"
+        get  "/whatsapp/cloud",   to: "whatsapp#verify_cloud"
+
+        # WhatsApp — OpenWA (auto-hospedado)
+        post "/whatsapp/openwa",  to: "open_wa#create"
       end
 
       # ========================================================================

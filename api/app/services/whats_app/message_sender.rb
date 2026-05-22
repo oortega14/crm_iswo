@@ -20,7 +20,8 @@ module WhatsApp
     ADAPTERS = {
       "twilio"         => "WhatsApp::Adapters::Twilio",
       "whatsapp_cloud" => "WhatsApp::Adapters::Cloud",
-      "cloud"          => "WhatsApp::Adapters::Cloud"
+      "cloud"          => "WhatsApp::Adapters::Cloud",
+      "openwa"         => "WhatsApp::Adapters::OpenWa"
     }.freeze
 
     def initialize(message)

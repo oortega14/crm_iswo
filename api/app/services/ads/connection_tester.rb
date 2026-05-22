@@ -39,6 +39,8 @@ module Ads
       when "twilio"          then test_twilio
       when "whatsapp_cloud"
         test_whatsapp_cloud
+      when "openwa"
+        test_openwa
       else
         Rails.logger.warn("ConnectionTester: provider '#{@integration.provider}' sin implementar, stub OK")
         Result.new(ok: true, message: nil)
@@ -216,6 +218,112 @@ module Ads
           end
         fail_result(hint)
       end
+    end
+
+    # GET {url}/api/sessions/{session_id} — verifica URL, API key y que la sesión existe.
+    # OpenWA devuelve 200 + JSON con el estado de la sesión cuando las credenciales son válidas.
+    # Test en dos pasos:
+    #   1. GET /api/sessions  → valida URL + API key y detecta la sesión en la lista
+    #   2. Si ese endpoint no existe (404), intenta GET / como health-check mínimo
+    # Ambos pasos se hacen con el header X-API-Key.
+    def test_openwa
+      creds      = @creds.stringify_keys
+      url        = creds["url"].to_s.strip.chomp("/")
+      api_key    = creds["api_key"].to_s.strip
+      session_id = (@integration.account_identifier.to_s.strip.presence ||
+                    creds["session_id"].to_s.strip).presence
+
+      return fail_result("Falta la URL del servidor OpenWA en las credenciales.") if url.blank?
+      return fail_result("Falta la API Key de OpenWA en las credenciales.")       if api_key.blank?
+      return fail_result("Falta el Session ID de OpenWA. Escríbelo en el campo «Session ID» de la integración.") if session_id.blank?
+
+      conn = Faraday.new(url: url) do |f|
+        f.response :json, content_type: /\bjson$/
+        f.options.timeout      = TIMEOUT_SECONDS
+        f.options.open_timeout = TIMEOUT_SECONDS
+      end
+
+      res = conn.get("/api/sessions") { |req| req.headers["X-API-Key"] = api_key }
+
+      case res.status
+      when 200
+        openwa_check_session_in_list(res.body, session_id)
+      when 401, 403
+        fail_result("OpenWA rechazó la API Key. Verifica la clave en el panel de OpenWA.")
+      when 404
+        # El endpoint /api/sessions no existe en esta versión; intentamos un health-check mínimo.
+        openwa_fallback_health(conn, api_key, url)
+      else
+        detail = openwa_error_detail(res.body)
+        Rails.logger.warn("ConnectionTester openwa: GET /api/sessions → HTTP #{res.status} — #{detail}")
+        fail_result("OpenWA respondió HTTP #{res.status}. Comprueba la URL y que el servidor esté en línea.")
+      end
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError => e
+      Rails.logger.warn("ConnectionTester openwa: #{e.class} #{e.message}")
+      fail_result("No se pudo conectar al servidor OpenWA (#{url}). Verifica que el servidor esté en línea y la URL sea correcta.")
+    end
+
+    # Busca session_id en la lista que devuelve GET /api/sessions.
+    # Acepta Array de strings, Array de hashes con campo id/sessionId/name, o Hash indexado.
+    def openwa_check_session_in_list(body, session_id)
+      ids =
+        case body
+        when Array
+          body.filter_map do |item|
+            case item
+            when String then item
+            when Hash   then item["id"] || item["sessionId"] || item["name"] || item["session"]
+            end
+          end
+        when Hash
+          # Algunas versiones devuelven { sessions: [...] } o { data: [...] }
+          inner = body["sessions"] || body["data"] || body.values.first
+          return openwa_check_session_in_list(inner, session_id) if inner.is_a?(Array)
+          body.keys
+        else
+          []
+        end
+
+      if ids.map(&:to_s).include?(session_id.to_s)
+        Result.new(ok: true, message: nil)
+      else
+        Rails.logger.info("ConnectionTester openwa: sesiones disponibles: #{ids.inspect}")
+        if ids.empty?
+          fail_result(
+            "El servidor OpenWA no tiene sesiones activas. " \
+            "Inicia la sesión «#{session_id}» escaneando el código QR en el panel de OpenWA."
+          )
+        else
+          fail_result(
+            "Session «#{session_id}» no encontrada. " \
+            "Sesiones disponibles: #{ids.map(&:to_s).join(', ')}. " \
+            "Verifica el Session ID en la integración."
+          )
+        end
+      end
+    end
+
+    # Health-check mínimo cuando /api/sessions devuelve 404 (versión de OpenWA sin ese endpoint).
+    # Si el servidor responde cualquier HTTP (incluso 404 en /) con la API key correcta, damos OK.
+    def openwa_fallback_health(conn, api_key, url)
+      res = conn.get("/") { |req| req.headers["X-API-Key"] = api_key }
+      case res.status
+      when 401, 403
+        fail_result("OpenWA rechazó la API Key. Verifica la clave en el panel de OpenWA.")
+      else
+        # El servidor responde → URL y API key parecen correctas.
+        # No podemos verificar la sesión con esta versión de OpenWA.
+        Rails.logger.info("ConnectionTester openwa: fallback health OK (HTTP #{res.status}) — #{url}")
+        Result.new(ok: true, message: nil)
+      end
+    rescue Faraday::ConnectionFailed, Faraday::TimeoutError
+      fail_result("No se pudo conectar al servidor OpenWA (#{url}).")
+    end
+
+    def openwa_error_detail(body)
+      return "respuesta no JSON" unless body.is_a?(Hash)
+
+      (body["message"] || body["error"] || body.to_s).to_s.truncate(200)
     end
 
     def fail_result(message)

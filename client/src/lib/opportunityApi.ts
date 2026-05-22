@@ -173,8 +173,9 @@ function resolveOpportunityOwner(
 
 export function mapOpportunityResource(resource: JsonApiResource, included: JsonApiResource[] = []): Opportunity {
   const a = resource.attributes ?? {}
-  const relStage = resource.relationships?.pipeline_stage?.data as { id?: string } | null
-  const relPipe = resource.relationships?.pipeline?.data as { id?: string } | null
+  const relStage   = resource.relationships?.pipeline_stage?.data as { id?: string } | null
+  const relPipe    = resource.relationships?.pipeline?.data    as { id?: string } | null
+  const relContact = resource.relationships?.contact?.data     as { id?: string } | null
 
   const stageId = String(a.pipeline_stage_id ?? relStage?.id ?? '')
   const pipelineId = String(a.pipeline_id ?? relPipe?.id ?? '')
@@ -217,6 +218,7 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
 
   return {
     id: String(resource.id ?? ''),
+    contact_id: relContact?.id ? String(relContact.id) : undefined,
     contact_name: String(a.contact_name ?? a.title ?? 'Sin nombre'),
     contact_email: a.contact_email != null ? String(a.contact_email) : undefined,
     contact_phone: a.contact_phone != null ? String(a.contact_phone) : undefined,

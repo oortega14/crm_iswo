@@ -125,6 +125,7 @@ class Tenant < ApplicationRecord
 
   def ad_integration_has_credentials?(integ)
     integ.present? &&
+      integ.status == "active" &&
       integ.respond_to?(:credentials_ciphertext) &&
       integ.credentials_ciphertext.present?
   end

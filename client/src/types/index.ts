@@ -44,6 +44,7 @@ export type OpportunityStatus = 'new_lead' | 'contacted' | 'qualified' | 'propos
 
 export interface Opportunity {
   id: string
+  contact_id?: string
   contact_name: string
   contact_email?: string
   contact_phone?: string

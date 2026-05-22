@@ -43,6 +43,7 @@ import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
 import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
+import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -50,14 +51,6 @@ import { useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, jsonApiPrimaryOne } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
 
 const contactsSearchSchema = z.object({
   selected: z.string().optional(),
@@ -165,14 +158,6 @@ function ContactsPage() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [editFormData, setEditFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    company: '',
-    position: '',
-  })
   const [currentPage, setCurrentPage] = useState(1)
   const [companyPage, setCompanyPage] = useState(1)
   const pageSize = 10
@@ -311,41 +296,8 @@ function ContactsPage() {
 
   const openEditDialog = (contact: ContactRow) => {
     setEditingContact(contact)
-    setEditFormData({
-      firstName: contact.firstName,
-      lastName: contact.lastName,
-      email: contact.email === '-' ? '' : contact.email,
-      phone: contact.phone === '-' ? '' : contact.phone,
-      company: getCompanyLabel(contact.company) === '-' ? '' : getCompanyLabel(contact.company),
-      position: contact.position === '-' ? '' : contact.position,
-    })
     setIsEditDialogOpen(true)
   }
-
-  const updateContactMutation = useMutation({
-    mutationFn: async () => {
-      if (!editingContact) throw new Error('No hay contacto seleccionado')
-      return api.patch(`/contacts/${editingContact.id}`, {
-        contact: {
-          first_name: editFormData.firstName || undefined,
-          last_name: editFormData.lastName || undefined,
-          email: editFormData.email || undefined,
-          phone_e164: editFormData.phone || undefined,
-          company: editFormData.company || undefined,
-          position: editFormData.position || undefined,
-        },
-      })
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
-      toast.success('Contacto actualizado')
-      setIsEditDialogOpen(false)
-      setEditingContact(null)
-    },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'No se pudo actualizar el contacto'))
-    },
-  })
 
   const deleteContactMutation = useMutation({
     mutationFn: async (contact: ContactRow) => api.delete(`/contacts/${contact.id}`),
@@ -370,9 +322,6 @@ function ContactsPage() {
     deleteContactMutation.mutate(contact)
   }
 
-  const handleEditInputChange = (field: keyof typeof editFormData, value: string) => {
-    setEditFormData((prev) => ({ ...prev, [field]: value }))
-  }
 
   const exportContactsMutation = useMutation({
     mutationFn: async () => {
@@ -808,81 +757,22 @@ function ContactsPage() {
 
       <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar contacto</DialogTitle>
-          </DialogHeader>
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault()
-              updateContactMutation.mutate()
-            }}
-          >
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-first-name">Nombre</Label>
-                <Input
-                  id="edit-first-name"
-                  value={editFormData.firstName}
-                  onChange={(e) => handleEditInputChange('firstName', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-last-name">Apellido</Label>
-                <Input
-                  id="edit-last-name"
-                  value={editFormData.lastName}
-                  onChange={(e) => handleEditInputChange('lastName', e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={editFormData.email}
-                onChange={(e) => handleEditInputChange('email', e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-phone">Telefono</Label>
-              <Input
-                id="edit-phone"
-                value={editFormData.phone}
-                onChange={(e) => handleEditInputChange('phone', e.target.value)}
-                placeholder="+57..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-company">Empresa</Label>
-              <Input
-                id="edit-company"
-                value={editFormData.company}
-                onChange={(e) => handleEditInputChange('company', e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-position">Cargo</Label>
-              <Input
-                id="edit-position"
-                value={editFormData.position}
-                onChange={(e) => handleEditInputChange('position', e.target.value)}
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={updateContactMutation.isPending}>
-                Guardar cambios
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ContactEditDialog
+        contactId={editingContact?.id ?? null}
+        initialData={editingContact ? {
+          firstName: editingContact.firstName,
+          lastName:  editingContact.lastName,
+          email:     editingContact.email === '-' ? '' : editingContact.email,
+          phone:     editingContact.phone === '-' ? '' : editingContact.phone,
+          company:   getCompanyLabel(editingContact.company) === '-' ? '' : getCompanyLabel(editingContact.company),
+          position:  editingContact.position === '-' ? '' : editingContact.position,
+        } : undefined}
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open)
+          if (!open) setEditingContact(null)
+        }}
+      />
     </AppPageShell>
   )
 }

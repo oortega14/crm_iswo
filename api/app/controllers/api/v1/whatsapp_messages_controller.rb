@@ -50,9 +50,10 @@ module Api
         if from_number.blank?
           return render json: {
             error:   "whatsapp_not_configured",
-            message: "Configura el envío saliente: Ajustes → Integraciones (WhatsApp Cloud API o Twilio) " \
-                     "con credenciales y Phone number ID / número E.164; o variables " \
-                     "WHATSAPP_CLOUD_* / TWILIO_WHATSAPP_NUMBER y settings whatsapp.number."
+            message: "Configura el envío saliente en Ajustes → Integraciones: " \
+                     "WhatsApp Cloud API (Phone number ID + access token), " \
+                     "Twilio (Account SID + Auth Token + número E.164) " \
+                     "u OpenWA (URL + API Key + Session ID)."
           }, status: :unprocessable_entity
         end
 

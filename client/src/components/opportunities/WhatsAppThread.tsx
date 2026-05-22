@@ -30,8 +30,9 @@ export type ThreadMessage = {
   content: string
   timestamp: string
   isOutgoing: boolean
+  /** Proveedor: twilio | whatsapp_cloud | openwa */
+  provider?: string
   status: 'pending' | 'queued' | 'sent' | 'delivered' | 'read' | 'failed'
-  /** Texto de Twilio/Meta si `status` es `failed` */
   errorMessage?: string
 }
 
@@ -63,13 +64,23 @@ export function WhatsAppThread({
 
   const canSend = toNumber.replace(/\D/g, '').length >= 10
 
-  const twilioAuthIssue = messages.some(
-    (m) =>
-      m.status === 'failed' &&
-      (m.errorMessage?.includes('Authenticate') ||
-        m.errorMessage?.includes('Authentication Error') ||
-        m.errorMessage?.includes('invalid username'))
-  )
+  const authIssueMessage = messages
+    .filter((m) => m.status === 'failed' && m.isOutgoing)
+    .reduce<string | null>((found, m) => {
+      if (found) return found
+      const err = m.errorMessage ?? ''
+      if (
+        err.includes('Authenticate') ||
+        err.includes('Authentication Error') ||
+        err.includes('invalid username') ||
+        err.includes('rechazó la API Key') ||
+        err.includes('Credenciales') ||
+        err.includes('credentials')
+      ) {
+        return err
+      }
+      return null
+    }, null)
 
   const clearMutation = useMutation({
     mutationFn: async () => {
@@ -100,7 +111,7 @@ export function WhatsAppThread({
         toast.error(
           err && String(err).trim()
             ? String(err)
-            : 'Twilio/Meta rechazó el envío. En sandbox de Twilio el contacto debe unirse primero; revisa logs del API.'
+            : 'El proveedor rechazó el envío. Revisa las credenciales en Ajustes → Integraciones y los logs del API.'
         )
       } else {
         toast.success('Mensaje enviado')
@@ -140,28 +151,28 @@ export function WhatsAppThread({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
-      {twilioAuthIssue && (
+      {authIssueMessage && (
         <div className="shrink-0 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           <div className="flex gap-2">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <div className="space-y-1">
               <p className="font-medium text-foreground">
-                Twilio rechaza el envío: credenciales incorrectas (Account SID y Auth Token deben ser de la
-                misma cuenta).
+                Error de credenciales al enviar mensajes.
               </p>
               {canManageIntegrations ? (
                 <p>
-                  Edita la integración Twilio en{' '}
+                  Revisa las credenciales en{' '}
                   <Link
                     to="/settings/integrations"
                     className="font-medium underline underline-offset-2 text-primary"
                   >
                     Ajustes → Integraciones
-                  </Link>{' '}
-                  y vuelve a pegar Account SID (empieza por AC) y Auth Token sin espacios.
+                  </Link>
+                  {': '}
+                  {authIssueMessage.trim().slice(0, 160)}
                 </p>
               ) : (
-                <p>Contacta al administrador para corregir las credenciales de Twilio.</p>
+                <p>Contacta al administrador para corregir las credenciales del proveedor de mensajería.</p>
               )}
             </div>
           </div>

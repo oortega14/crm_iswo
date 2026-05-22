@@ -95,6 +95,7 @@ export function OpportunitySlideOver({
             content: String(a.body ?? ''),
             timestamp: String(a.created_at ?? ''),
             isOutgoing: dir === 'out' || dir.endsWith('_out'),
+            provider: String(a.provider ?? ''),
             status: (allowed.includes(st as ThreadMessage['status'])
               ? st
               : 'sent') as ThreadMessage['status'],

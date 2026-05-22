@@ -150,13 +150,14 @@ module Api
         base = "#{root}/api/v1/webhooks"
         {
           integration_webhooks: {
-            base_url:                   base,
-            meta_verify_get:            "#{base}/meta",
-            meta_leads_post:            "#{base}/meta",
-            google_leads_post:          "#{base}/google",
-            whatsapp_twilio_post:       "#{base}/whatsapp/twilio",
+            base_url:                  base,
+            meta_verify_get:           "#{base}/meta",
+            meta_leads_post:           "#{base}/meta",
+            google_leads_post:         "#{base}/google",
+            whatsapp_twilio_post:      "#{base}/whatsapp/twilio",
             whatsapp_cloud_verify_get: "#{base}/whatsapp/cloud",
-            whatsapp_cloud_post:        "#{base}/whatsapp/cloud"
+            whatsapp_cloud_post:       "#{base}/whatsapp/cloud",
+            whatsapp_openwa_post:      "#{base}/whatsapp/openwa"
           }
         }
       end

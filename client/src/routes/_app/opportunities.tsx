@@ -89,6 +89,7 @@ function OpportunitiesPage() {
         .filter((o) => o.id.length > 0)
     },
     enabled: !pipelinesLoading && (!!activePipelineId || !!search.contact),
+    refetchInterval: 15000,
   })
 
   const filteredOpportunities = useMemo(() => {

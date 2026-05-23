@@ -106,9 +106,11 @@ export const queryKeys = {
   dashboard: {
     kpis: ['dashboard', 'kpis'] as const,
     pipeline: ['dashboard', 'pipeline'] as const,
+    pipelineFor: (id: string) => ['dashboard', 'pipeline', id] as const,
     activity: ['dashboard', 'activity'] as const,
     bantDistribution: ['dashboard', 'bantDistribution'] as const,
     topConsultants: ['dashboard', 'topConsultants'] as const,
+    leadSources: ['dashboard', 'leadSources'] as const,
   },
   
   // Search

@@ -48,7 +48,7 @@ module Api
       end
 
       def permitted
-        params.require(:lead_source).permit(:name, :kind, :active, metadata: {})
+        params.require(:lead_source).permit(:name, :kind, :active)
       end
     end
   end

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History, Pencil } from 'lucide-react'
+import { X, Building, MessageSquare, FileText, Bell, History, Pencil, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
+import { useUserRole } from '@/stores/auth'
 import {
   jsonApiIncluded,
   jsonApiPrimaryList,
@@ -51,6 +52,19 @@ export function OpportunitySlideOver({
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('overview')
   const [editContactOpen, setEditContactOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesValue, setNotesValue] = useState(opportunity?.notes ?? '')
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+  const role = useUserRole()
+
+  useEffect(() => {
+    setNotesValue(opportunity?.notes ?? '')
+  }, [opportunity?.id, opportunity?.notes])
+
+  useEffect(() => {
+    if (editingNotes) notesRef.current?.focus()
+  }, [editingNotes])
 
   // Fetch activity logs
   const { data: logs, isLoading: logsLoading } = useQuery({
@@ -143,6 +157,20 @@ export function OpportunitySlideOver({
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/opportunities/${opportunity?.id}`)
+    },
+    onSuccess: () => {
+      toast.success('Oportunidad eliminada')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      onOpenChange(false)
+    },
+    onError: () => {
+      toast.error('No se pudo eliminar la oportunidad')
+    },
+  })
+
   const handleBantUpdate = (field: string, value: number) => {
     const dim =
       field === 'bant_budget'
@@ -172,7 +200,7 @@ export function OpportunitySlideOver({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/50"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); setConfirmDelete(false) }}
           />
 
           {/* Panel */}
@@ -219,6 +247,38 @@ export function OpportunitySlideOver({
                     {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
                   </AvatarFallback>
                 </Avatar>
+                {(role === 'admin') && (
+                  confirmDelete ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-destructive">¿Eliminar?</span>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        onClick={() => deleteMutation.mutate()}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(true)}
+                      title="Eliminar oportunidad"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -299,7 +359,14 @@ export function OpportunitySlideOver({
                         Puntuación BANT
                       </label>
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm">Total</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">Total</span>
+                          {opportunity.qualified != null && (
+                            <Badge variant={opportunity.qualified ? 'success' : 'secondary'} className="text-[10px]">
+                              {opportunity.qualified ? 'Calificada' : 'Sin calificar'}
+                            </Badge>
+                          )}
+                        </div>
                         <Badge
                           className={cn(
                             'text-lg font-mono',
@@ -341,22 +408,82 @@ export function OpportunitySlideOver({
                             : '-'}
                         </p>
                       </div>
+                      {opportunity.expected_close_on && (
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Fecha de cierre estimada
+                          </label>
+                          <p className="text-sm mt-1">
+                            {formatDate(opportunity.expected_close_on, 'dd MMM yyyy')}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Notes */}
-                    {opportunity.notes && (
+                    {/* Origen */}
+                    {(opportunity.source || opportunity.source_id) && (
                       <>
                         <Separator />
                         <div>
                           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Notas
+                            Origen
                           </label>
-                          <p className="text-sm mt-1 whitespace-pre-wrap">
-                            {opportunity.notes}
+                          <p className="text-sm mt-1">
+                            {opportunity.source?.name ?? '—'}
                           </p>
                         </div>
                       </>
                     )}
+
+                    {/* Notes — editable inline */}
+                    <Separator />
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Notas
+                        </label>
+                        {!editingNotes && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                            onClick={() => setEditingNotes(true)}
+                            title="Editar notas"
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {editingNotes ? (
+                        <textarea
+                          ref={notesRef}
+                          value={notesValue}
+                          onChange={(e) => setNotesValue(e.target.value)}
+                          onBlur={() => {
+                            setEditingNotes(false)
+                            if (notesValue !== (opportunity.notes ?? '')) {
+                              updateMutation.mutate({ notes: notesValue })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setNotesValue(opportunity.notes ?? '')
+                              setEditingNotes(false)
+                            }
+                          }}
+                          rows={4}
+                          placeholder="Añadir notas..."
+                          className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                        />
+                      ) : (
+                        <p
+                          className="text-sm mt-0.5 whitespace-pre-wrap min-h-[1.5rem] cursor-text text-muted-foreground hover:text-foreground"
+                          onClick={() => setEditingNotes(true)}
+                        >
+                          {notesValue || <span className="italic opacity-50">Sin notas</span>}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </ScrollArea>
               </TabsContent>

@@ -3,7 +3,7 @@
 class ReferralNetworkSerializer < ApplicationSerializer
   set_type :referral_network
 
-  attributes :depth, :commission_rate, :notes
+  attributes :depth, :active, :commission_rate, :notes
 
   attribute :referrer do |r|
     next nil unless r.referrer_user

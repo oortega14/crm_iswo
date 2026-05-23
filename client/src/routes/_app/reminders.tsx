@@ -11,6 +11,7 @@ import {
   AlertCircle,
   MoreHorizontal,
   Filter,
+  Briefcase,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -46,6 +47,8 @@ type ReminderItem = {
   channel: string
   status: string
   completed: boolean
+  opportunityName?: string
+  opportunityId?: string
 }
 
 type JsonApiReminder = {
@@ -59,10 +62,36 @@ type JsonApiReminder = {
     channel: string
     status: string
   }
+  relationships?: {
+    opportunity?: { data?: { id?: string; type?: string } | null }
+  }
 }
 
-const mapReminder = (resource: JsonApiReminder): ReminderItem => {
+type JsonApiIncluded = {
+  id: string
+  type: string
+  attributes: {
+    contact_name?: string
+    title?: string
+  }
+}
+
+const CHANNEL_LABEL: Record<string, string> = {
+  in_app: 'En app',
+  email: 'Email',
+  whatsapp: 'WhatsApp',
+}
+
+const mapReminder = (resource: JsonApiReminder, included: JsonApiIncluded[]): ReminderItem => {
   const attrs = resource.attributes
+  const oppRel = resource.relationships?.opportunity?.data
+  const oppId = oppRel?.id != null ? String(oppRel.id) : undefined
+  const oppInc = oppId
+    ? included.find((r) => String(r.id) === oppId && r.type === 'opportunity')
+    : undefined
+  const opportunityName = oppInc
+    ? (oppInc.attributes.contact_name || oppInc.attributes.title || undefined)
+    : undefined
   return {
     id: resource.id,
     title: attrs.subject || attrs.title || 'Recordatorio',
@@ -71,6 +100,8 @@ const mapReminder = (resource: JsonApiReminder): ReminderItem => {
     channel: attrs.channel,
     status: attrs.status,
     completed: attrs.status === 'done',
+    opportunityName,
+    opportunityId: oppId,
   }
 }
 
@@ -102,7 +133,8 @@ function RemindersPage() {
     queryFn: async () => {
       const response = await api.get('/reminders', { params: { items: 200 } })
       const resources = (response.data?.data || []) as JsonApiReminder[]
-      return resources.map(mapReminder)
+      const included = (response.data?.included || []) as JsonApiIncluded[]
+      return resources.map((r) => mapReminder(r, included))
     },
   })
 
@@ -408,8 +440,15 @@ function RemindersPage() {
 
                               <div className="flex items-center gap-1 text-muted-foreground">
                                 <Filter className="h-3 w-3" />
-                                {reminder.channel}
+                                {CHANNEL_LABEL[reminder.channel] ?? reminder.channel}
                               </div>
+
+                              {reminder.opportunityName && (
+                                <div className="flex items-center gap-1 text-muted-foreground">
+                                  <Briefcase className="h-3 w-3" />
+                                  <span className="truncate max-w-[200px]">{reminder.opportunityName}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

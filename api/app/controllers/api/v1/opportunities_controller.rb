@@ -10,7 +10,7 @@ module Api
 
       # GET /api/v1/opportunities
       def index
-        scope = policy_scope(Opportunity).kept.includes(:contact, :pipeline_stage, :owner_user, :reminders)
+        scope = policy_scope(Opportunity).kept.includes(:contact, :pipeline_stage, :owner_user, :reminders, :lead_source)
 
         scope = scope.where(status: params[:status])                       if params[:status].present?
         scope = scope.where(pipeline_id: params[:pipeline_id])             if params[:pipeline_id].present?
@@ -27,13 +27,13 @@ module Api
         render_collection(
           scope.order(last_activity_at: :desc),
           with:  OpportunitySerializer,
-          include: [:owner_user]
+          include: [:owner_user, :lead_source]
         )
       end
 
       def show
         authorize @opportunity
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
 
       def create
@@ -63,6 +63,7 @@ module Api
           estimated_value:   h[:estimated_value],
           pipeline_id:       stage.pipeline_id,
           pipeline_stage_id: stage.id,
+          lead_source_id:    h[:lead_source_id].presence,
           contact:           contact,
           owner_user:        current_user,
           currency:          current_tenant.currency
@@ -70,7 +71,7 @@ module Api
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
           flag_duplicates_for!(@opportunity, contact)
-          render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+          render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
         else
           render_unprocessable(@opportunity)
         end
@@ -93,7 +94,7 @@ module Api
           end
           @opportunity.touch_activity!
           log_action!("update", diff(before, @opportunity.attributes))
-          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
         else
           render_unprocessable(@opportunity)
         end
@@ -118,7 +119,7 @@ module Api
         @opportunity.touch_activity!
         log_action!("stage_change", { from_stage_id: from, to_stage_id: new_stage.id })
 
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
 
       # POST /api/v1/opportunities/:id/assign  { owner_user_id }
@@ -128,7 +129,7 @@ module Api
         from = @opportunity.owner_user_id
         @opportunity.update!(owner_user_id: new_owner.id)
         log_action!("assign", { from: from, to: new_owner.id })
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
 
       # POST /api/v1/opportunities/:id/merge  { target_id }
@@ -138,14 +139,14 @@ module Api
         if defined?(Opportunities::Merger)
           Opportunities::Merger.new(source: @opportunity, target: target, performed_by: current_user).call
         end
-        render_resource(target.reload, with: OpportunitySerializer, include: [:owner_user])
+        render_resource(target.reload, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
 
       # POST /api/v1/opportunities/:id/recalculate_bant
       def recalculate_bant
         authorize @opportunity, :recalculate_bant?
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
 
       # GET /api/v1/opportunities/kanban?pipeline_id=...
@@ -183,7 +184,7 @@ module Api
       private
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.kept.find(params[:id])
+        @opportunity = current_tenant.opportunities.kept.includes(:lead_source, :owner_user).find(params[:id])
       end
 
       def opportunity_create_attributes

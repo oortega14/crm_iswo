@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import {
   ArrowRight,
   CalendarDays,
@@ -13,14 +13,21 @@ import {
   fetchDashboardActivity,
   fetchDashboardBantDistribution,
   fetchDashboardKpis,
-  fetchDashboardPipeline,
+  fetchDashboardLeadSources,
+  fetchDashboardPipelineForId,
   fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
+import {
+  jsonApiPrimaryList,
+  mapPipelineResource,
+} from '@/lib/opportunityApi'
+import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { BantDistribution } from '@/components/dashboard/BantDistribution'
 import { TopConsultants } from '@/components/dashboard/TopConsultants'
+import { LeadSourcesChart } from '@/components/dashboard/LeadSourcesChart'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
@@ -35,15 +42,35 @@ export const Route = createFileRoute('/_app/')({
 function DashboardPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
 
-  const [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ] = useQueries({
+  // Fetch pipelines to populate the selector
+  const { data: pipelines = [] } = useQuery({
+    queryKey: queryKeys.pipelines.all,
+    queryFn: async () => {
+      const response = await api.get('/pipelines')
+      return jsonApiPrimaryList(response.data).filter((r) => r.id).map(mapPipelineResource)
+    },
+    staleTime: 60 * 1000,
+  })
+
+  const defaultPipeline = pipelines.find((p) => p.is_default) ?? pipelines[0]
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | undefined>(undefined)
+  const activePipelineId = selectedPipelineId ?? defaultPipeline?.id
+
+  const [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ, leadSourcesQ] = useQueries({
     queries: [
       {
         queryKey: queryKeys.dashboard.kpis,
         queryFn: fetchDashboardKpis,
       },
       {
-        queryKey: queryKeys.dashboard.pipeline,
-        queryFn: fetchDashboardPipeline,
+        queryKey: activePipelineId
+          ? queryKeys.dashboard.pipelineFor(activePipelineId)
+          : queryKeys.dashboard.pipeline,
+        queryFn: () =>
+          activePipelineId
+            ? fetchDashboardPipelineForId(activePipelineId)
+            : fetchDashboardPipelineForId(''),
+        enabled: !!activePipelineId,
       },
       {
         queryKey: queryKeys.dashboard.activity,
@@ -58,19 +85,32 @@ function DashboardPage() {
         queryKey: queryKeys.dashboard.topConsultants,
         queryFn: fetchDashboardTopConsultants,
       },
+      {
+        queryKey: queryKeys.dashboard.leadSources,
+        queryFn: fetchDashboardLeadSources,
+      },
     ],
   })
 
   const allPending = [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ].every((q) => q.isPending)
 
-  const totalInPipeline = kpisQ.data?.total_in_pipeline ?? 0
-  const pipelineValue   = kpisQ.data?.pipeline_value    ?? 0
-  const monthClosedValue = kpisQ.data?.month_closed_value ?? 0
-  const bantAverage      = kpisQ.data?.bant_average      ?? null
+  const totalInPipeline  = kpisQ.data?.total_in_pipeline  ?? 0
+  const pipelineValue    = kpisQ.data?.pipeline_value      ?? 0
+  const monthClosedValue = kpisQ.data?.month_closed_value  ?? 0
+  const bantAverage      = kpisQ.data?.bant_average        ?? null
+  const winRate          = kpisQ.data?.win_rate            ?? null
+  const wonCount         = kpisQ.data?.won_count           ?? 0
+  const lostCount        = kpisQ.data?.lost_count          ?? 0
 
   if (allPending) {
     return <DashboardSkeleton />
   }
+
+  const pipelineOptions = pipelines.map((p) => ({
+    id: p.id,
+    name: p.name,
+    is_default: p.is_default,
+  }))
 
   return (
     <AppPageShell contentClassName="space-y-10">
@@ -104,6 +144,9 @@ function DashboardPage() {
           pipelineValue={pipelineValue}
           bantAverage={bantAverage}
           monthClosedValue={monthClosedValue}
+          winRate={winRate}
+          wonCount={wonCount}
+          lostCount={lostCount}
           loadingPipeline={kpisQ.isPending}
           loadingBant={kpisQ.isPending}
           loadingConsultants={kpisQ.isPending}
@@ -115,6 +158,14 @@ function DashboardPage() {
               data={pipelineQ.data}
               isLoading={pipelineQ.isPending}
               isError={pipelineQ.isError}
+              pipelines={pipelineOptions}
+              selectedPipelineId={activePipelineId}
+              onPipelineChange={setSelectedPipelineId}
+            />
+            <LeadSourcesChart
+              data={leadSourcesQ.data}
+              isLoading={leadSourcesQ.isPending}
+              isError={leadSourcesQ.isError}
             />
           </div>
 

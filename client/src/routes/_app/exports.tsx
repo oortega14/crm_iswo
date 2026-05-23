@@ -163,6 +163,7 @@ function buildFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
 
 const INITIAL_CONFIG = {
   resource:  'opportunities' as ExportResource,
+  format:    'xlsx' as ExportFormat,
   dateRange: 'all',
   stageId:   '',
   ownerId:   '',
@@ -246,7 +247,7 @@ function ExportsPage() {
       const filters = buildFilters(config)
       const response = await api.post('/exports', {
         resource: config.resource,
-        export_format: 'xlsx' satisfies ExportFormat,
+        export_format: config.format,
         filters,
       })
       return response.data
@@ -569,6 +570,7 @@ function ExportsPage() {
                   setExportConfig((c) => ({
                     ...INITIAL_CONFIG,
                     dateRange: c.dateRange,
+                    format: c.format,
                     resource: v as ExportResource,
                   }))
                 }
@@ -579,6 +581,22 @@ function ExportsPage() {
                 <SelectContent>
                   <SelectItem value="opportunities">Oportunidades</SelectItem>
                   <SelectItem value="contacts">Contactos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Formato</Label>
+              <Select
+                value={exportConfig.format}
+                onValueChange={(v) => setExportConfig((c) => ({ ...c, format: v as ExportFormat }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">CSV (.csv)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

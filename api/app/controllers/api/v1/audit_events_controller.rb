@@ -29,6 +29,14 @@ module Api
           )
         end
 
+        if params[:date_from].present?
+          scope = scope.where("audit_events.created_at >= ?", params[:date_from].to_date.beginning_of_day)
+        end
+
+        if params[:date_to].present?
+          scope = scope.where("audit_events.created_at <= ?", params[:date_to].to_date.end_of_day)
+        end
+
         render_collection(scope.order(created_at: :desc), with: AuditEventSerializer)
       end
     end

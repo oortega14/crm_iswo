@@ -25,6 +25,7 @@ import { Route as AppDuplicatesRouteImport } from './routes/_app/duplicates'
 import { Route as AppContactsRouteImport } from './routes/_app/contacts'
 import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/users'
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
+import { Route as AppSettingsLeadSourcesRouteImport } from './routes/_app/settings/lead-sources'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
 import { Route as AppSettingsAuditRouteImport } from './routes/_app/settings/audit'
 
@@ -107,6 +108,11 @@ const AppSettingsPipelinesRoute = AppSettingsPipelinesRouteImport.update({
   path: '/pipelines',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsLeadSourcesRoute = AppSettingsLeadSourcesRouteImport.update({
+  id: '/lead-sources',
+  path: '/lead-sources',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/l/$slug': typeof LSlugRoute
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/users': typeof AppSettingsUsersRoute
 }
@@ -153,6 +160,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/users': typeof AppSettingsUsersRoute
 }
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/settings/audit': typeof AppSettingsAuditRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/_app/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/_app/settings/users': typeof AppSettingsUsersRoute
 }
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/settings/audit'
     | '/settings/integrations'
+    | '/settings/lead-sources'
     | '/settings/pipelines'
     | '/settings/users'
   fileRoutesByTo: FileRoutesByTo
@@ -214,6 +224,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings/audit'
     | '/settings/integrations'
+    | '/settings/lead-sources'
     | '/settings/pipelines'
     | '/settings/users'
   id:
@@ -234,6 +245,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/settings/audit'
     | '/_app/settings/integrations'
+    | '/_app/settings/lead-sources'
     | '/_app/settings/pipelines'
     | '/_app/settings/users'
   fileRoutesById: FileRoutesById
@@ -360,6 +372,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsPipelinesRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/lead-sources': {
+      id: '/_app/settings/lead-sources'
+      path: '/lead-sources'
+      fullPath: '/settings/lead-sources'
+      preLoaderRoute: typeof AppSettingsLeadSourcesRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/integrations': {
       id: '/_app/settings/integrations'
       path: '/integrations'
@@ -380,6 +399,7 @@ declare module '@tanstack/react-router' {
 interface AppSettingsRouteChildren {
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute
   AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute
+  AppSettingsLeadSourcesRoute: typeof AppSettingsLeadSourcesRoute
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
   AppSettingsUsersRoute: typeof AppSettingsUsersRoute
 }
@@ -387,6 +407,7 @@ interface AppSettingsRouteChildren {
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAuditRoute: AppSettingsAuditRoute,
   AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
+  AppSettingsLeadSourcesRoute: AppSettingsLeadSourcesRoute,
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,
   AppSettingsUsersRoute: AppSettingsUsersRoute,
 }

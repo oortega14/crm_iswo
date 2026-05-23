@@ -24,7 +24,7 @@ module Api
           )
         end
 
-        render_collection(scope.includes(:opportunities).order(updated_at: :desc), with: ContactSerializer)
+        render_collection(scope.includes(:opportunities, :owner_user).order(updated_at: :desc), with: ContactSerializer)
       end
 
       def show
@@ -201,7 +201,7 @@ module Api
       def contact_params
         permitted = params.require(:contact).permit(
           :kind, :first_name, :last_name, :company, :position,
-          :email, :phone_e164, :city, :country, :notes,
+          :email, :phone_e164, :city, :country, :notes, :document_id,
           :owner_user_id, :source_kind, :source_label,
           custom_fields: {}
         )

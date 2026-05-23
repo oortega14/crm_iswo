@@ -19,8 +19,8 @@ export function DashboardSkeleton() {
 
         <div className="space-y-5">
           <Skeleton className="h-28 w-full rounded-2xl" />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+            {[1, 2, 3, 4, 5].map((i) => (
               <Card key={i} className="border-border/60 py-0 shadow-sm">
                 <CardContent className="p-4">
                   <Skeleton className="h-[88px] w-full rounded-xl" />
@@ -38,6 +38,15 @@ export function DashboardSkeleton() {
                 </CardHeader>
                 <CardContent>
                   <Skeleton className="h-64 w-full rounded-lg" />
+                </CardContent>
+              </Card>
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <Skeleton className="h-6 w-40" />
+                  <Skeleton className="h-4 w-full max-w-sm" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-48 w-full rounded-lg" />
                 </CardContent>
               </Card>
             </div>

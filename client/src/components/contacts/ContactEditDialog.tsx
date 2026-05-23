@@ -22,6 +22,7 @@ export interface ContactEditInitialData {
   phone?: string
   company?: string
   position?: string
+  documentId?: string
 }
 
 interface ContactEditDialogProps {
@@ -49,17 +50,19 @@ export function ContactEditDialog({
     phone: '',
     company: '',
     position: '',
+    documentId: '',
   })
 
   useEffect(() => {
     if (open && initialData) {
       setForm({
-        firstName: initialData.firstName ?? '',
-        lastName:  initialData.lastName  ?? '',
-        email:     initialData.email     ?? '',
-        phone:     initialData.phone     ?? '',
-        company:   initialData.company   ?? '',
-        position:  initialData.position  ?? '',
+        firstName:  initialData.firstName  ?? '',
+        lastName:   initialData.lastName   ?? '',
+        email:      initialData.email      ?? '',
+        phone:      initialData.phone      ?? '',
+        company:    initialData.company    ?? '',
+        position:   initialData.position   ?? '',
+        documentId: initialData.documentId ?? '',
       })
     }
   }, [open, initialData])
@@ -72,12 +75,13 @@ export function ContactEditDialog({
       if (!contactId) throw new Error('Sin contacto seleccionado')
       return api.patch(`/contacts/${contactId}`, {
         contact: {
-          first_name: form.firstName || undefined,
-          last_name:  form.lastName  || undefined,
-          email:      form.email     || undefined,
-          phone_e164: form.phone     || undefined,
-          company:    form.company   || undefined,
-          position:   form.position  || undefined,
+          first_name:  form.firstName  || undefined,
+          last_name:   form.lastName   || undefined,
+          email:       form.email      || undefined,
+          phone_e164:  form.phone      || undefined,
+          company:     form.company    || undefined,
+          position:    form.position   || undefined,
+          document_id: form.documentId || undefined,
         },
       })
     },
@@ -159,6 +163,15 @@ export function ContactEditDialog({
               id="ce-position"
               value={form.position}
               onChange={(e) => set('position', e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ce-document-id">Cédula / NIT</Label>
+            <Input
+              id="ce-document-id"
+              value={form.documentId}
+              onChange={(e) => set('documentId', e.target.value)}
+              placeholder="Número de documento"
             />
           </div>
           <DialogFooter>

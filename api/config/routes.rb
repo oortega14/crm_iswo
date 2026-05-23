@@ -131,11 +131,12 @@ Rails.application.routes.draw do
       get "/search", to: "searches#index"
 
       # ---- Dashboard home (SPA) ----------------------------------------------
-      get "/dashboard/kpis",             to: "dashboard#kpis"
-      get "/dashboard/pipeline",         to: "dashboard#pipeline"
-      get "/dashboard/activity",         to: "dashboard#activity"
-      get "/dashboard/bant_distribution", to: "dashboard#bant_distribution"
-      get "/dashboard/top_consultants",  to: "dashboard#top_consultants"
+      get "/dashboard/kpis",                 to: "dashboard#kpis"
+      get "/dashboard/pipeline",             to: "dashboard#pipeline"
+      get "/dashboard/activity",             to: "dashboard#activity"
+      get "/dashboard/bant_distribution",    to: "dashboard#bant_distribution"
+      get "/dashboard/top_consultants",      to: "dashboard#top_consultants"
+      get "/dashboard/lead_sources_breakdown", to: "dashboard#lead_sources_breakdown"
 
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
@@ -150,7 +151,7 @@ Rails.application.routes.draw do
       end
 
       # ---- Red de consultores ------------------------------------------------
-      resources :referral_networks, only: %i[index create destroy] do
+      resources :referral_networks, only: %i[index create update destroy] do
         collection do
           get :tree                 # ?root_user_id=…&depth=…
           get :my_network

@@ -11,7 +11,11 @@ class ContactSerializer < ApplicationSerializer
 
   attributes :kind, :first_name, :last_name, :email, :phone_e164,
              :company, :position, :city, :country,
-             :notes, :custom_fields, :discarded_at
+             :notes, :document_id, :custom_fields, :discarded_at
+
+  attribute :owner_name do |c|
+    c.owner_user&.name
+  end
 
   attribute :data_classification do |c|
     c.class.data_classification

@@ -1,7 +1,7 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { LayoutGrid, Table as TableIcon, Plus, Search, Flame, Sun, Snowflake } from 'lucide-react'
+import { LayoutGrid, Table as TableIcon, Plus, Search, Flame, Sun, Snowflake, RefreshCw } from 'lucide-react'
 import { z } from 'zod'
 import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
@@ -46,8 +46,10 @@ export const Route = createFileRoute('/_app/opportunities')({
 function OpportunitiesPage() {
   const search = useSearch({ from: '/_app/opportunities' })
   const navigate = Route.useNavigate()
+  const queryClient = useQueryClient()
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
 
   const view = search.view || 'kanban'
   const selectedId = search.selected
@@ -121,6 +123,12 @@ function OpportunitiesPage() {
 
   const handleSelectOpportunity = (id: string | null) => {
     navigate({ search: (prev) => ({ ...prev, selected: id || undefined }) })
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+    setRefreshing(false)
   }
 
   const isLoading = pipelinesLoading || (!!activePipelineId && opportunitiesLoading)
@@ -210,6 +218,18 @@ function OpportunitiesPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Actualizar leads"
+        >
+          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Actualizar</span>
+        </Button>
 
         <Button size="sm" className="gap-2 shadow-sm" onClick={() => setQuickAddOpen(true)}>
           <Plus className="size-4" />

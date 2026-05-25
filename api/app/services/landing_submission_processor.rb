@@ -15,9 +15,10 @@
 # Se llama desde el controller público o vía job (#call_later).
 # ============================================================================
 class LandingSubmissionProcessor
-  NAME_KEYS  = %w[full_name name nombre nombre_completo].freeze
-  EMAIL_KEYS = %w[email correo e_mail].freeze
-  PHONE_KEYS = %w[phone telefono celular whatsapp mobile].freeze
+  NAME_KEYS    = %w[full_name name nombre nombre_completo].freeze
+  EMAIL_KEYS   = %w[email correo e_mail].freeze
+  PHONE_KEYS   = %w[phone telefono celular whatsapp mobile].freeze
+  COMPANY_KEYS = %w[company empresa compania organization].freeze
   DUP_THRESHOLD = 0.85
 
   def initialize(submission)
@@ -77,6 +78,7 @@ class LandingSubmissionProcessor
         email:            email,
         phone_e164:       phone,
         phone_normalized: Phonelib.parse(phone).sanitized,
+        company_name:     extract(COMPANY_KEYS),
         custom_fields:    extra_fields,
         source_kind:      "web",
         source_label:     @landing&.slug
@@ -149,7 +151,7 @@ class LandingSubmissionProcessor
   end
 
   def extra_fields
-    @payload.except(*(NAME_KEYS + EMAIL_KEYS + PHONE_KEYS + %w[first_name last_name])).to_h
+    @payload.except(*(NAME_KEYS + EMAIL_KEYS + PHONE_KEYS + COMPANY_KEYS + %w[first_name last_name])).to_h
   end
 
   def utm_fields

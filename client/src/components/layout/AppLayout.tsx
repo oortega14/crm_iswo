@@ -67,6 +67,7 @@ const settingsNavItems: NavItem[] = [
   { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin', 'manager'] },
   { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin', 'manager'] },
   { label: 'Fuentes de Lead', href: '/settings/lead-sources', icon: Target, roles: ['admin'] },
+  { label: 'BANT', href: '/settings/bant', icon: Target, roles: ['admin'] },
   { label: 'Registro de Auditoría', href: '/settings/audit', icon: FileText, roles: ['admin', 'manager'] },
 ]
 
@@ -79,7 +80,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const location = useLocation()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { setTheme, resolvedTheme } = useTheme()
   const user = useUser()
   const tenant = useTenant()
   const logout = useAuthStore((s) => s.logout)

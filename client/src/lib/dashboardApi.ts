@@ -46,6 +46,18 @@ export interface DashboardKpis {
   pipeline_value: number
   month_closed_value: number
   bant_average: number
+  win_rate: number | null
+  won_count: number
+  lost_count: number
+}
+
+/** Ítem de GET /api/v1/dashboard/lead_sources_breakdown */
+export interface DashboardLeadSourceRow {
+  id: string | null
+  name: string
+  kind: string | null
+  count: number
+  value: number
 }
 
 export async function fetchDashboardKpis(): Promise<DashboardKpis> {
@@ -74,5 +86,17 @@ export async function fetchDashboardBantDistribution(): Promise<DashboardBantDis
 
 export async function fetchDashboardTopConsultants(): Promise<DashboardTopConsultant[]> {
   const res = await api.get<{ data: DashboardTopConsultant[] }>('/dashboard/top_consultants')
+  return Array.isArray(res.data.data) ? res.data.data : []
+}
+
+export async function fetchDashboardLeadSources(): Promise<DashboardLeadSourceRow[]> {
+  const res = await api.get<{ data: DashboardLeadSourceRow[] }>('/dashboard/lead_sources_breakdown')
+  return Array.isArray(res.data.data) ? res.data.data : []
+}
+
+export async function fetchDashboardPipelineForId(pipelineId: string): Promise<DashboardPipelineStage[]> {
+  const res = await api.get<{ data: DashboardPipelineStage[] }>('/dashboard/pipeline', {
+    params: { pipeline_id: pipelineId },
+  })
   return Array.isArray(res.data.data) ? res.data.data : []
 }

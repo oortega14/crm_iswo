@@ -197,3 +197,31 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2)
 }
+
+// Temperature helpers (cold / warm / hot)
+export type TemperatureLevel = 'cold' | 'warm' | 'hot'
+
+export function getTemperatureColor(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':  return 'bg-red-100 text-red-700 border-red-200'
+    case 'warm': return 'bg-amber-100 text-amber-700 border-amber-200'
+    case 'cold': return 'bg-sky-100 text-sky-700 border-sky-200'
+  }
+}
+
+export function getTemperatureIcon(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':  return '🔥'
+    case 'warm': return '☀️'
+    case 'cold': return '🧊'
+  }
+}
+
+export function formatTemperatureLabel(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':  return 'Caliente'
+    case 'warm': return 'Tibio'
+    case 'cold': return 'Frío'
+  }
+}
+

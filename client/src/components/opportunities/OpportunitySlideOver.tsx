@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History, Pencil } from 'lucide-react'
+import { X, Building, MessageSquare, FileText, Bell, History, Pencil, Trash2, Sparkles, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
+import { useUserRole } from '@/stores/auth'
 import {
   jsonApiIncluded,
   jsonApiPrimaryList,
@@ -30,12 +31,13 @@ import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BantSliders } from './BantSliders'
+import { TemperatureSelector } from './TemperatureSelector'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
 import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import type { Opportunity } from '@/types'
+import type { Opportunity, OpportunityTemperature } from '@/types'
 
 interface OpportunitySlideOverProps {
   opportunity?: Opportunity
@@ -51,6 +53,21 @@ export function OpportunitySlideOver({
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('overview')
   const [editContactOpen, setEditContactOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [aiResult, setAiResult] = useState<{ reasoning: string; next_action: string; ai_used: boolean } | null>(null)
+  const [notesValue, setNotesValue] = useState(opportunity?.notes ?? '')
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+  const role = useUserRole()
+
+  useEffect(() => {
+    setNotesValue(opportunity?.notes ?? '')
+    setAiResult(null)
+  }, [opportunity?.id, opportunity?.notes])
+
+  useEffect(() => {
+    if (editingNotes) notesRef.current?.focus()
+  }, [editingNotes])
 
   // Fetch activity logs
   const { data: logs, isLoading: logsLoading } = useQuery({
@@ -143,6 +160,38 @@ export function OpportunitySlideOver({
     },
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/opportunities/${opportunity?.id}`)
+    },
+    onSuccess: () => {
+      toast.success('Oportunidad eliminada')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      onOpenChange(false)
+    },
+    onError: () => {
+      toast.error('No se pudo eliminar la oportunidad')
+    },
+  })
+
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/opportunities/${opportunity?.id}/classify`)
+      return response.data as {
+        data: unknown
+        ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
+      }
+    },
+    onSuccess: (data) => {
+      setAiResult(data.ai_result)
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      toast.success(data.ai_result.ai_used ? 'Clasificado con IA ✨' : 'Clasificado con reglas')
+    },
+    onError: () => {
+      toast.error('No se pudo clasificar la oportunidad')
+    },
+  })
+
   const handleBantUpdate = (field: string, value: number) => {
     const dim =
       field === 'bant_budget'
@@ -172,7 +221,7 @@ export function OpportunitySlideOver({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/50"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); setConfirmDelete(false) }}
           />
 
           {/* Panel */}
@@ -219,6 +268,38 @@ export function OpportunitySlideOver({
                     {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
                   </AvatarFallback>
                 </Avatar>
+                {(role === 'admin') && (
+                  confirmDelete ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-destructive">¿Eliminar?</span>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        onClick={() => deleteMutation.mutate()}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(true)}
+                      title="Eliminar oportunidad"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -293,13 +374,65 @@ export function OpportunitySlideOver({
 
                     <Separator />
 
+                    {/* Temperatura */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Temperatura del lead
+                        </label>
+                        {role !== 'viewer' && (
+                          <button
+                            type="button"
+                            onClick={() => { setAiResult(null); classifyMutation.mutate() }}
+                            disabled={classifyMutation.isPending}
+                            className="flex items-center gap-1 text-[11px] font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                          >
+                            {classifyMutation.isPending
+                              ? <Loader2 className="size-3 animate-spin" />
+                              : <Sparkles className="size-3" />
+                            }
+                            {classifyMutation.isPending ? 'Clasificando...' : 'Clasificar con IA'}
+                          </button>
+                        )}
+                      </div>
+                      <TemperatureSelector
+                        value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
+                        disabled={updateMutation.isPending || classifyMutation.isPending || role === 'viewer'}
+                        onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
+                      />
+                      {aiResult && (
+                        <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 dark:bg-violet-950/20 dark:border-violet-800 p-2.5 text-xs space-y-1.5">
+                          <p className="text-foreground/80 leading-relaxed">{aiResult.reasoning}</p>
+                          {aiResult.next_action && (
+                            <p className="font-medium text-violet-700 dark:text-violet-400">
+                              → {aiResult.next_action}
+                            </p>
+                          )}
+                          {!aiResult.ai_used && (
+                            <p className="text-muted-foreground italic text-[10px]">
+                              Clasificado con reglas (configura ANTHROPIC_API_KEY para usar IA)
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
                     {/* BANT Sliders */}
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
                         Puntuación BANT
                       </label>
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm">Total</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">Total</span>
+                          {opportunity.qualified != null && (
+                            <Badge variant={opportunity.qualified ? 'success' : 'secondary'} className="text-[10px]">
+                              {opportunity.qualified ? 'Calificada' : 'Sin calificar'}
+                            </Badge>
+                          )}
+                        </div>
                         <Badge
                           className={cn(
                             'text-lg font-mono',
@@ -341,22 +474,82 @@ export function OpportunitySlideOver({
                             : '-'}
                         </p>
                       </div>
+                      {opportunity.expected_close_on && (
+                        <div className="col-span-2">
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Fecha de cierre estimada
+                          </label>
+                          <p className="text-sm mt-1">
+                            {formatDate(opportunity.expected_close_on, 'dd MMM yyyy')}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Notes */}
-                    {opportunity.notes && (
+                    {/* Origen */}
+                    {(opportunity.source || opportunity.source_id) && (
                       <>
                         <Separator />
                         <div>
                           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Notas
+                            Origen
                           </label>
-                          <p className="text-sm mt-1 whitespace-pre-wrap">
-                            {opportunity.notes}
+                          <p className="text-sm mt-1">
+                            {opportunity.source?.name ?? '—'}
                           </p>
                         </div>
                       </>
                     )}
+
+                    {/* Notes — editable inline */}
+                    <Separator />
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Notas
+                        </label>
+                        {!editingNotes && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                            onClick={() => setEditingNotes(true)}
+                            title="Editar notas"
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {editingNotes ? (
+                        <textarea
+                          ref={notesRef}
+                          value={notesValue}
+                          onChange={(e) => setNotesValue(e.target.value)}
+                          onBlur={() => {
+                            setEditingNotes(false)
+                            if (notesValue !== (opportunity.notes ?? '')) {
+                              updateMutation.mutate({ notes: notesValue })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setNotesValue(opportunity.notes ?? '')
+                              setEditingNotes(false)
+                            }
+                          }}
+                          rows={4}
+                          placeholder="Añadir notas..."
+                          className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                        />
+                      ) : (
+                        <p
+                          className="text-sm mt-0.5 whitespace-pre-wrap min-h-[1.5rem] cursor-text text-muted-foreground hover:text-foreground"
+                          onClick={() => setEditingNotes(true)}
+                        >
+                          {notesValue || <span className="italic opacity-50">Sin notas</span>}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </ScrollArea>
               </TabsContent>

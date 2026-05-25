@@ -6,7 +6,7 @@ module Api
     # ReferralNetworksController — red de consultores
     # ========================================================================
     class ReferralNetworksController < BaseController
-      before_action :set_edge, only: :destroy
+      before_action :set_edge, only: %i[update destroy]
 
       # GET /api/v1/referral_networks
       def index
@@ -22,6 +22,15 @@ module Api
           render_created(edge, with: ReferralNetworkSerializer)
         else
           render_unprocessable(edge)
+        end
+      end
+
+      def update
+        authorize @edge
+        if @edge.update(edge_params)
+          render_resource(@edge, with: ReferralNetworkSerializer)
+        else
+          render_unprocessable(@edge)
         end
       end
 

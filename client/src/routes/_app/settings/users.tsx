@@ -32,6 +32,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -78,7 +88,9 @@ function UsersSettingsPage() {
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
   const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
+  const [invitePhone, setInvitePhone] = useState('')
   const [inviteRole, setInviteRole] = useState<UserRole>('consultant')
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; name: string } | null>(null)
 
   const {
     data: users = [],
@@ -106,11 +118,12 @@ function UsersSettingsPage() {
   }
 
   const inviteUserMutation = useMutation({
-    mutationFn: async (payload: { name: string; email: string; role: UserRole }) => {
+    mutationFn: async (payload: { name: string; email: string; phone: string; role: UserRole }) => {
       await api.post('/users', {
         user: {
           name: payload.name.trim(),
           email: payload.email.trim().toLowerCase(),
+          phone: payload.phone.trim() || undefined,
           role: payload.role,
         },
       })
@@ -121,6 +134,7 @@ function UsersSettingsPage() {
       setIsInviteDialogOpen(false)
       setInviteName('')
       setInviteEmail('')
+      setInvitePhone('')
       setInviteRole('consultant')
     },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'Error al crear el usuario')),
@@ -144,6 +158,7 @@ function UsersSettingsPage() {
     onSuccess: () => {
       invalidateUsers()
       toast.success('Usuario eliminado')
+      setConfirmDeleteUser(null)
     },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'Error al eliminar el usuario')),
   })
@@ -392,7 +407,7 @@ function UsersSettingsPage() {
                             {isAdmin && currentUser?.id !== user.id && (
                               <DropdownMenuItem
                                 className="text-destructive"
-                                onClick={() => removeUserMutation.mutate(user.id)}
+                                onClick={() => setConfirmDeleteUser({ id: user.id, name: user.name })}
                               >
                                 Eliminar usuario
                               </DropdownMenuItem>
@@ -467,6 +482,27 @@ function UsersSettingsPage() {
         </CardContent>
       </Card>
 
+      {/* AlertDialog: eliminar usuario */}
+      <AlertDialog open={!!confirmDeleteUser} onOpenChange={(open) => { if (!open) setConfirmDeleteUser(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará permanentemente a «{confirmDeleteUser?.name}» del tenant. Sus oportunidades asignadas quedarán sin responsable. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => confirmDeleteUser && removeUserMutation.mutate(confirmDeleteUser.id)}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -499,6 +535,17 @@ function UsersSettingsPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="invite-phone">Teléfono (opcional)</Label>
+              <Input
+                id="invite-phone"
+                type="tel"
+                value={invitePhone}
+                onChange={(e) => setInvitePhone(e.target.value)}
+                placeholder="+57 300 123 4567"
+                autoComplete="tel"
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="invite-role">Rol</Label>
               <Select
                 value={inviteRole}
@@ -526,6 +573,7 @@ function UsersSettingsPage() {
                 inviteUserMutation.mutate({
                   name: inviteName,
                   email: inviteEmail,
+                  phone: invitePhone,
                   role: inviteRole,
                 })
               }

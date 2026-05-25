@@ -145,7 +145,7 @@ class LandingSubmissionProcessor
 
     country = @tenant.locale.to_s.split("-").last.presence || "CO"
     parsed = Phonelib.parse(raw, country)
-    parsed.valid? ? parsed.e164 : raw
+    parsed.valid? ? parsed.e164 : nil
   end
 
   def extra_fields
@@ -162,14 +162,15 @@ class LandingSubmissionProcessor
     }.compact
   end
 
-  # Round-robin simple: el consultant con menos opportunities abiertas.
+  # Round-robin simple: el consultant con menos oportunidades new_lead abiertas.
   def next_round_robin_owner
     @tenant.users
            .where(role: "consultant", active: true)
            .left_joins(:owned_opportunities)
-           .where(opportunities: { status: "new_lead" })
+           .where("opportunities.status = ? OR opportunities.id IS NULL", "new_lead")
            .group("users.id")
            .order(Arel.sql("COUNT(opportunities.id) ASC"))
-           .first
+           .first ||
+      @tenant.users.where(active: true).order(:id).first
   end
 end

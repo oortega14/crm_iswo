@@ -11,6 +11,8 @@ import {
   Plus,
   Trash2,
   ArrowRight,
+  PowerOff,
+  Power,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -76,6 +78,7 @@ type ReferralTreePayload = {
 type ReferralEdgeRecord = {
   id: string
   depth: number
+  active: boolean
   referrer: { id: number; name: string; email: string } | null
   referred: { id: number; name: string; email: string } | null
 }
@@ -308,6 +311,7 @@ function NetworkPage() {
         return {
           id: r.id,
           depth: attrs?.depth ?? 1,
+          active: (attrs as { active?: boolean } | undefined)?.active ?? true,
           referrer: attrs?.referrer ?? null,
           referred: attrs?.referred ?? null,
         }
@@ -364,6 +368,17 @@ function NetworkPage() {
       setSelectedNode(null)
     },
     onError: (err) => toast.error(formatRailsError(err, 'No se pudo eliminar la relación')),
+  })
+
+  // Activar / desactivar relación
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ edgeId, active }: { edgeId: string; active: boolean }) =>
+      api.patch(`/referral_networks/${edgeId}`, { referral_network: { active } }),
+    onSuccess: (_, { active }) => {
+      toast.success(active ? 'Conexión activada' : 'Conexión desactivada')
+      void qc.invalidateQueries({ queryKey: ['referralNetworks'] })
+    },
+    onError: (err) => toast.error(formatRailsError(err, 'No se pudo actualizar la conexión')),
   })
 
   const graphNodes = useMemo(() => {
@@ -716,6 +731,8 @@ function NetworkPage() {
                       if (!other) return null
                       const edgeId = edgeIdByPair.get(`${selectedNode.id}_${connId}`)
                         || edgeIdByPair.get(`${connId}_${selectedNode.id}`)
+                      const edge = edgeId ? edgeList?.find((e) => e.id === edgeId) : undefined
+                      const isActive = edge?.active ?? true
                       return (
                         <div
                           key={connId}
@@ -727,16 +744,34 @@ function NetworkPage() {
                             onClick={() => setSelectedNode(other)}
                           >
                             <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                            <span className="text-sm truncate">{other.name || `Usuario ${other.id}`}</span>
+                            <span className={cn('text-sm truncate', !isActive && 'text-muted-foreground line-through')}>
+                              {other.name || `Usuario ${other.id}`}
+                            </span>
+                            {!isActive && (
+                              <span className="text-[10px] text-muted-foreground shrink-0">(inactiva)</span>
+                            )}
                           </button>
                           {canDelete && edgeId && (
-                            <button
-                              type="button"
-                              className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
-                              onClick={() => setDeleteEdge({ id: edgeId, name: other.name || other.id })}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                title={isActive ? 'Desactivar conexión' : 'Activar conexión'}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                                onClick={() => toggleActiveMutation.mutate({ edgeId, active: !isActive })}
+                              >
+                                {isActive
+                                  ? <PowerOff className="h-3.5 w-3.5" />
+                                  : <Power className="h-3.5 w-3.5 text-emerald-600" />
+                                }
+                              </button>
+                              <button
+                                type="button"
+                                className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
+                                onClick={() => setDeleteEdge({ id: edgeId, name: other.name || other.id })}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                       )

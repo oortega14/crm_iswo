@@ -1,6 +1,8 @@
 import type {
   Opportunity,
   OpportunityStatus,
+  LeadSource,
+  LeadSourceKind,
   Pipeline,
   PipelineStage,
   User,
@@ -90,6 +92,7 @@ export function mapPipelineResource(resource: JsonApiResource): Pipeline {
     name: String(a.name ?? ''),
     description: a.description != null ? String(a.description) : undefined,
     is_default: Boolean(a.is_default),
+    active: a.active !== false,
     stages,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
@@ -216,6 +219,22 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
 
   const bantBars = mapBantSlidersFromApi(a)
 
+  const relSource = resource.relationships?.lead_source?.data as { id?: string } | null
+  const sourceId = relSource?.id != null ? String(relSource.id) : undefined
+  const sourceInc = sourceId
+    ? included.find((r) => String(r.id) === sourceId && String(r.type ?? '').toLowerCase() === 'lead_source')
+    : undefined
+  const source: LeadSource | undefined = sourceInc
+    ? {
+        id: String(sourceInc.id),
+        name: String(sourceInc.attributes?.name ?? ''),
+        kind: String(sourceInc.attributes?.kind ?? 'manual') as LeadSourceKind,
+        active: Boolean(sourceInc.attributes?.active ?? true),
+        opportunities_count: Number(sourceInc.attributes?.opportunities_count ?? 0),
+        created_at: String(sourceInc.attributes?.created_at ?? ''),
+      }
+    : undefined
+
   return {
     id: String(resource.id ?? ''),
     contact_id: relContact?.id ? String(relContact.id) : undefined,
@@ -235,9 +254,14 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     bant_need: bantBars.bant_need,
     bant_timeline: bantBars.bant_timeline,
     bant_score: bantScore,
+    source_id: sourceId,
+    source,
     status: (a.status as OpportunityStatus) ?? 'new_lead',
+    temperature: (a.temperature as import('@/types').OpportunityTemperature) || 'cold',
+    qualified: a.qualified != null ? Boolean(a.qualified) : undefined,
     notes: a.notes != null ? String(a.notes) : undefined,
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
+    expected_close_on: a.expected_close_on != null ? String(a.expected_close_on) : undefined,
     reminder_due_at: a.reminder_due_at != null ? String(a.reminder_due_at) : undefined,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
@@ -317,7 +341,11 @@ export function toOpportunityUpdatePayload(
   if (patch.notes !== undefined) out.notes = patch.notes
   if (patch.estimated_value !== undefined) out.estimated_value = patch.estimated_value
   if (patch.status !== undefined) out.status = patch.status
+  if (patch.temperature !== undefined) out.temperature = patch.temperature
+  if (patch.qualified !== undefined) out.qualified = patch.qualified
   if (patch.stage_id !== undefined) out.pipeline_stage_id = patch.stage_id
+  if (patch.source_id !== undefined) out.lead_source_id = patch.source_id || null
+  if (patch.expected_close_on !== undefined) out.expected_close_on = patch.expected_close_on || null
   if (patch.bant_score !== undefined) out.bant_score = patch.bant_score
   if (patch.bant_data !== undefined) out.bant_data = patch.bant_data
   return out

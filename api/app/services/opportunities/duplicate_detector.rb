@@ -57,7 +57,7 @@ module Opportunities
     private
 
     def base_scope
-      scope = Contact.all
+      scope = Contact.kept
       scope = scope.where.not(id: @exclude_id) if @exclude_id
       scope
     end

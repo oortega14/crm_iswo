@@ -97,12 +97,14 @@ function AuditSettingsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [actionFilter, setActionFilter] = useState<string>('all')
   const [entityFilter, setEntityFilter] = useState<string>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 15
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, actionFilter, entityFilter])
+  }, [searchTerm, actionFilter, entityFilter, dateFrom, dateTo])
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.auditLogs.list({
@@ -111,6 +113,8 @@ function AuditSettingsPage() {
       q: searchTerm,
       action: actionFilter,
       entity: entityFilter,
+      dateFrom,
+      dateTo,
     }),
     queryFn: async () => {
       const params: Record<string, string | number> = {
@@ -121,6 +125,8 @@ function AuditSettingsPage() {
       if (q) params.q = q
       if (actionFilter !== 'all') params.event_action = actionFilter
       if (entityFilter !== 'all') params.entity_type = entitySlugToApiType(entityFilter)
+      if (dateFrom) params.date_from = dateFrom
+      if (dateTo) params.date_to = dateTo
 
       const response = await api.get('/audit_events', { params })
       const logs = jsonApiPrimaryList(response.data).map(mapAuditEvent)
@@ -237,6 +243,33 @@ function AuditSettingsPage() {
             <SelectItem value="reminder">Recordatorio</SelectItem>
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-36 text-sm"
+            title="Desde"
+          />
+          <span className="text-muted-foreground text-sm">—</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-36 text-sm"
+            title="Hasta"
+          />
+          {(dateFrom || dateTo) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 px-2 text-muted-foreground"
+              onClick={() => { setDateFrom(''); setDateTo('') }}
+            >
+              ✕
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>

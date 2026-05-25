@@ -10,7 +10,7 @@
 class OpportunitySerializer < ApplicationSerializer
   set_type :opportunity
 
-  attributes :title, :status, :estimated_value, :bant_score,
+  attributes :title, :status, :temperature, :estimated_value, :bant_score,
              :expected_close_date, :closed_at, :lost_reason, :notes,
              :last_activity_at, :custom_fields, :discarded_at, :currency
 

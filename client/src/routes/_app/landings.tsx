@@ -104,7 +104,7 @@ function LandingsPage() {
     slug: '',
     description: '',
   })
-  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [editorLanding, setEditorLanding] = useState<{ id: string; title: string } | null>(null)
   const [metricsLanding, setMetricsLanding] = useState<{ id: string; title: string } | null>(null)
   const [qrLanding, setQrLanding] = useState<LandingPage | null>(null)
@@ -181,18 +181,26 @@ function LandingsPage() {
 
   const deleteLandingMutation = useMutation({
     mutationFn: async (id: string) => {
-      setIsDeleting(id)
       await api.delete(`/landing_pages/${id}`)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
       toast.success('Landing page eliminada')
+      setConfirmDeleteId(null)
     },
     onError: (err: unknown) => {
       toast.error(formatRailsError(err, 'No se pudo eliminar la landing'))
     },
-    onSettled: () => setIsDeleting(null),
   })
+
+  const titleToSlug = (title: string) =>
+    title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80)
 
   const getPublicUrl = (landing: LandingPage) =>
     `${window.location.origin}/l/${landing.slug}`
@@ -351,10 +359,9 @@ function LandingsPage() {
                         {landing.status === 'published' ? 'Despublicar' : 'Publicar'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => deleteLandingMutation.mutate(landing.id)}
-                        disabled={isDeleting === landing.id}
+                        onClick={() => setConfirmDeleteId(landing.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Eliminar
@@ -441,6 +448,35 @@ function LandingsPage() {
           </Card>
         </div>
       )}
+
+      {/* Confirm Delete Dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar landing page</DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Se eliminarán también las métricas y submissions asociados.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteId(null)}
+              disabled={deleteLandingMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { if (confirmDeleteId) deleteLandingMutation.mutate(confirmDeleteId) }}
+              disabled={deleteLandingMutation.isPending}
+            >
+              {deleteLandingMutation.isPending ? <Spinner className="mr-2" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* QR Dialog */}
       <Dialog open={!!qrLanding} onOpenChange={(o) => { if (!o) setQrLanding(null) }}>
@@ -530,7 +566,16 @@ function LandingsPage() {
               <Input
                 id="name"
                 value={newLanding.title}
-                onChange={(e) => setNewLanding(l => ({ ...l, title: e.target.value }))}
+                onChange={(e) => {
+                  const title = e.target.value
+                  setNewLanding(l => ({
+                    ...l,
+                    title,
+                    slug: l.slug === '' || l.slug === titleToSlug(l.title)
+                      ? titleToSlug(title)
+                      : l.slug,
+                  }))
+                }}
                 placeholder="Ej: Demo Producto Q2"
               />
             </div>
@@ -542,13 +587,16 @@ function LandingsPage() {
                 <Input
                   id="slug"
                   value={newLanding.slug}
-                  onChange={(e) => setNewLanding(l => ({ 
-                    ...l, 
-                    slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') 
+                  onChange={(e) => setNewLanding(l => ({
+                    ...l,
+                    slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
                   }))}
                   placeholder="demo-producto"
                 />
               </div>
+              {newLanding.slug !== '' && newLanding.slug === titleToSlug(newLanding.title) && (
+                <p className="text-xs text-muted-foreground">Auto-generado · edita el campo para personalizar</p>
+              )}
             </div>
 
             <div className="space-y-2">

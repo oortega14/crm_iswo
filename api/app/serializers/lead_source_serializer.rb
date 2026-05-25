@@ -3,7 +3,7 @@
 class LeadSourceSerializer < ApplicationSerializer
   set_type :lead_source
 
-  attributes :name, :kind, :active, :metadata
+  attributes :name, :kind, :active
 
   attribute :opportunities_count do |ls|
     ls.opportunities.size

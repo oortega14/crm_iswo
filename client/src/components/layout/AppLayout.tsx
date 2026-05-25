@@ -67,6 +67,7 @@ const settingsNavItems: NavItem[] = [
   { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin', 'manager'] },
   { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin', 'manager'] },
   { label: 'Fuentes de Lead', href: '/settings/lead-sources', icon: Target, roles: ['admin'] },
+  { label: 'BANT', href: '/settings/bant', icon: Target, roles: ['admin'] },
   { label: 'Registro de Auditoría', href: '/settings/audit', icon: FileText, roles: ['admin', 'manager'] },
 ]
 

@@ -27,6 +27,7 @@ import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/use
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
 import { Route as AppSettingsLeadSourcesRouteImport } from './routes/_app/settings/lead-sources'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
+import { Route as AppSettingsBantRouteImport } from './routes/_app/settings/bant'
 import { Route as AppSettingsAuditRouteImport } from './routes/_app/settings/audit'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -118,6 +119,11 @@ const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsBantRoute = AppSettingsBantRouteImport.update({
+  id: '/bant',
+  path: '/bant',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteWithChildren
   '/l/$slug': typeof LSlugRoute
   '/settings/audit': typeof AppSettingsAuditRoute
+  '/settings/bant': typeof AppSettingsBantRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByTo {
   '/l/$slug': typeof LSlugRoute
   '/': typeof AppIndexRoute
   '/settings/audit': typeof AppSettingsAuditRoute
+  '/settings/bant': typeof AppSettingsBantRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/l/$slug': typeof LSlugRoute
   '/_app/': typeof AppIndexRoute
   '/_app/settings/audit': typeof AppSettingsAuditRoute
+  '/_app/settings/bant': typeof AppSettingsBantRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/_app/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -203,6 +212,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/l/$slug'
     | '/settings/audit'
+    | '/settings/bant'
     | '/settings/integrations'
     | '/settings/lead-sources'
     | '/settings/pipelines'
@@ -223,6 +233,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/'
     | '/settings/audit'
+    | '/settings/bant'
     | '/settings/integrations'
     | '/settings/lead-sources'
     | '/settings/pipelines'
@@ -244,6 +255,7 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/_app/'
     | '/_app/settings/audit'
+    | '/_app/settings/bant'
     | '/_app/settings/integrations'
     | '/_app/settings/lead-sources'
     | '/_app/settings/pipelines'
@@ -386,6 +398,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsIntegrationsRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/bant': {
+      id: '/_app/settings/bant'
+      path: '/bant'
+      fullPath: '/settings/bant'
+      preLoaderRoute: typeof AppSettingsBantRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/audit': {
       id: '/_app/settings/audit'
       path: '/audit'
@@ -398,6 +417,7 @@ declare module '@tanstack/react-router' {
 
 interface AppSettingsRouteChildren {
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute
+  AppSettingsBantRoute: typeof AppSettingsBantRoute
   AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute
   AppSettingsLeadSourcesRoute: typeof AppSettingsLeadSourcesRoute
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
@@ -406,6 +426,7 @@ interface AppSettingsRouteChildren {
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAuditRoute: AppSettingsAuditRoute,
+  AppSettingsBantRoute: AppSettingsBantRoute,
   AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
   AppSettingsLeadSourcesRoute: AppSettingsLeadSourcesRoute,
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,

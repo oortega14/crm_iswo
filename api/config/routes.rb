@@ -92,6 +92,7 @@ Rails.application.routes.draw do
           post :assign               # { owner_user_id }
           post :merge                # { target_id }
           post :recalculate_bant
+          post :classify             # IA → actualiza temperature
         end
         collection do
           get  :kanban               # vista agrupada por etapa

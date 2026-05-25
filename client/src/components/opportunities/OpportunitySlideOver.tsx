@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History, Pencil, Trash2 } from 'lucide-react'
+import { X, Building, MessageSquare, FileText, Bell, History, Pencil, Trash2, Sparkles, Loader2 } from 'lucide-react'
 import api from '@/lib/api'
 import { useUserRole } from '@/stores/auth'
 import {
@@ -55,12 +55,14 @@ export function OpportunitySlideOver({
   const [editContactOpen, setEditContactOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
+  const [aiResult, setAiResult] = useState<{ reasoning: string; next_action: string; ai_used: boolean } | null>(null)
   const [notesValue, setNotesValue] = useState(opportunity?.notes ?? '')
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const role = useUserRole()
 
   useEffect(() => {
     setNotesValue(opportunity?.notes ?? '')
+    setAiResult(null)
   }, [opportunity?.id, opportunity?.notes])
 
   useEffect(() => {
@@ -169,6 +171,24 @@ export function OpportunitySlideOver({
     },
     onError: () => {
       toast.error('No se pudo eliminar la oportunidad')
+    },
+  })
+
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/opportunities/${opportunity?.id}/classify`)
+      return response.data as {
+        data: unknown
+        ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
+      }
+    },
+    onSuccess: (data) => {
+      setAiResult(data.ai_result)
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      toast.success(data.ai_result.ai_used ? 'Clasificado con IA ✨' : 'Clasificado con reglas')
+    },
+    onError: () => {
+      toast.error('No se pudo clasificar la oportunidad')
     },
   })
 
@@ -356,14 +376,45 @@ export function OpportunitySlideOver({
 
                     {/* Temperatura */}
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                        Temperatura del lead
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Temperatura del lead
+                        </label>
+                        {role !== 'viewer' && (
+                          <button
+                            type="button"
+                            onClick={() => { setAiResult(null); classifyMutation.mutate() }}
+                            disabled={classifyMutation.isPending}
+                            className="flex items-center gap-1 text-[11px] font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                          >
+                            {classifyMutation.isPending
+                              ? <Loader2 className="size-3 animate-spin" />
+                              : <Sparkles className="size-3" />
+                            }
+                            {classifyMutation.isPending ? 'Clasificando...' : 'Clasificar con IA'}
+                          </button>
+                        )}
+                      </div>
                       <TemperatureSelector
                         value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
-                        disabled={updateMutation.isPending || role === 'viewer'}
-                        onChange={(temp) => updateMutation.mutate({ temperature: temp })}
+                        disabled={updateMutation.isPending || classifyMutation.isPending || role === 'viewer'}
+                        onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
                       />
+                      {aiResult && (
+                        <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 dark:bg-violet-950/20 dark:border-violet-800 p-2.5 text-xs space-y-1.5">
+                          <p className="text-foreground/80 leading-relaxed">{aiResult.reasoning}</p>
+                          {aiResult.next_action && (
+                            <p className="font-medium text-violet-700 dark:text-violet-400">
+                              → {aiResult.next_action}
+                            </p>
+                          )}
+                          {!aiResult.ai_used && (
+                            <p className="text-muted-foreground italic text-[10px]">
+                              Clasificado con reglas (configura ANTHROPIC_API_KEY para usar IA)
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <Separator />

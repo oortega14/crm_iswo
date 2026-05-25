@@ -6,7 +6,7 @@ module Api
     # OpportunitiesController — CRUD + acciones de dominio + Kanban + export
     # ========================================================================
     class OpportunitiesController < BaseController
-      before_action :set_opportunity, only: %i[show update destroy move_stage assign merge recalculate_bant]
+      before_action :set_opportunity, only: %i[show update destroy move_stage assign merge recalculate_bant classify]
 
       # GET /api/v1/opportunities
       def index
@@ -147,6 +147,25 @@ module Api
         authorize @opportunity, :recalculate_bant?
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
         render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+      end
+
+      # POST /api/v1/opportunities/:id/classify
+      def classify
+        authorize @opportunity, :update?
+        result = Opportunities::AiClassifier.new(@opportunity).call
+        @opportunity.update!(temperature: result.temperature)
+        @opportunity.touch_activity!
+        log_action!("classify", { temperature: result.temperature, ai_used: result.ai_used? })
+
+        render json: {
+          data:       OpportunitySerializer.new(@opportunity, include: [:owner_user, :lead_source]).serializable_hash[:data],
+          ai_result:  {
+            temperature: result.temperature,
+            reasoning:   result.reasoning,
+            next_action: result.next_action,
+            ai_used:     result.ai_used?
+          }
+        }, status: :ok
       end
 
       # GET /api/v1/opportunities/kanban?pipeline_id=...

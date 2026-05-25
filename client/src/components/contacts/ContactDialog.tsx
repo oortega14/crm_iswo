@@ -33,6 +33,7 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
     phone: '',
     company: '',
     position: '',
+    documentId: '',
   })
 
   const createContactMutation = useMutation({
@@ -40,12 +41,13 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
       return api.post('/contacts', {
         contact: {
           kind,
-          first_name:  kind === 'person' ? (data.firstName || undefined) : undefined,
-          last_name:   kind === 'person' ? (data.lastName  || undefined) : undefined,
-          email:       data.email    || undefined,
-          phone_e164:  data.phone    || undefined,
-          company:     data.company  || undefined,
-          position:    kind === 'person' ? (data.position || undefined) : undefined,
+          first_name:   kind === 'person' ? (data.firstName || undefined) : undefined,
+          last_name:    kind === 'person' ? (data.lastName  || undefined) : undefined,
+          email:        data.email      || undefined,
+          phone_e164:   data.phone      || undefined,
+          company:      data.company    || undefined,
+          position:     kind === 'person' ? (data.position  || undefined) : undefined,
+          document_id:  data.documentId || undefined,
         },
       })
     },
@@ -55,7 +57,7 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
       onCreated?.()
       toast.success(kind === 'company' ? 'Empresa creada exitosamente' : 'Contacto creado exitosamente')
       onOpenChange(false)
-      setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+      setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '', documentId: '' })
       setKind('person')
     },
     onError: (err: unknown) => {
@@ -78,7 +80,7 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
 
   const handleKindChange = (newKind: 'person' | 'company') => {
     setKind(newKind)
-    setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+    setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '', documentId: '' })
   }
 
   return (
@@ -187,6 +189,16 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
                   placeholder="Director de Ventas"
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="documentId">Cédula</Label>
+                <Input
+                  id="documentId"
+                  value={formData.documentId}
+                  onChange={(e) => handleChange('documentId', e.target.value)}
+                  placeholder="1234567890"
+                />
+              </div>
             </>
           ) : (
             <>
@@ -220,6 +232,16 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
                   placeholder="+57 300 123 4567"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="documentIdCompany">NIT</Label>
+                <Input
+                  id="documentIdCompany"
+                  value={formData.documentId}
+                  onChange={(e) => handleChange('documentId', e.target.value)}
+                  placeholder="900123456-7"
                 />
               </div>
             </>

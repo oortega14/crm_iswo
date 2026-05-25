@@ -17,7 +17,12 @@ module Api
         pipe_value   = open_scope.sum(:estimated_value).to_f
 
         start_month  = Time.current.beginning_of_month
-        closed_value = scope.won.where("closed_at >= ?", start_month).sum(:estimated_value).to_f
+        month_scope  = scope.where("closed_at >= ?", start_month)
+        closed_value = month_scope.won.sum(:estimated_value).to_f
+        won_count    = month_scope.won.count
+        lost_count   = month_scope.lost.count
+        decided      = won_count + lost_count
+        win_rate     = decided.positive? ? (won_count.to_f / decided * 100).round(1) : nil
 
         avg          = scope.average(:bant_score)
         bant_avg     = avg ? avg.round.to_i : 0
@@ -27,7 +32,10 @@ module Api
             total_in_pipeline:  total,
             pipeline_value:     pipe_value,
             month_closed_value: closed_value,
-            bant_average:       bant_avg
+            bant_average:       bant_avg,
+            win_rate:           win_rate,
+            won_count:          won_count,
+            lost_count:         lost_count
           }
         }, status: :ok
       end
@@ -121,6 +129,50 @@ module Api
         average      = avg ? avg.round.to_i : 0
 
         render json: { data: { low: low, medium: medium, high: high, average: average } }, status: :ok
+      end
+
+      def lead_sources_breakdown
+        authorize Opportunity, :index?
+
+        scope = policy_scope(Opportunity).kept
+
+        # Agrupa oportunidades activas (open) por lead_source
+        rows = scope.open
+                    .joins("LEFT JOIN lead_sources ON lead_sources.id = opportunities.lead_source_id")
+                    .group("lead_sources.id, lead_sources.name, lead_sources.kind")
+                    .pluck(
+                      "lead_sources.id",
+                      "lead_sources.name",
+                      "lead_sources.kind",
+                      Arel.sql("COUNT(opportunities.id)"),
+                      Arel.sql("COALESCE(SUM(opportunities.estimated_value), 0)")
+                    )
+
+        # Agrupa los sin fuente asignada
+        no_source_count = scope.open.where(lead_source_id: nil).count
+        no_source_value = scope.open.where(lead_source_id: nil).sum(:estimated_value).to_f
+
+        payload = rows.map do |id, name, kind, count, value|
+          {
+            id: id&.to_s,
+            name: name.presence || "Sin fuente",
+            kind: kind,
+            count: count.to_i,
+            value: value.to_f
+          }
+        end.sort_by { |r| -r[:count] }
+
+        if no_source_count.positive?
+          payload << {
+            id: nil,
+            name: "Sin fuente",
+            kind: nil,
+            count: no_source_count,
+            value: no_source_value
+          }
+        end
+
+        render json: { data: payload }, status: :ok
       end
 
       def top_consultants

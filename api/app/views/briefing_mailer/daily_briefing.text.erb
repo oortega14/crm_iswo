@@ -1,0 +1,47 @@
+Hola <%= @user.name.presence || @user.email %>,
+
+Tu briefing del <%= @generated_at.strftime('%d de %B de %Y') rescue 'día' %>:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KPIs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Oportunidades abiertas : <%= @kpis[:total_open] %>
+Leads calientes (🔥)   : <%= @kpis[:hot_count] %>
+Recordatorios vencidos : <%= @kpis[:overdue_count] %>
+Nuevas esta semana     : <%= @kpis[:new_this_week] %>
+<% if @kpis[:pipeline_value].to_f > 0 %>
+Valor del pipeline     : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:pipeline_value].to_i, delimiter: '.') %>
+<% end %>
+
+<% if @overdue.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⏰ RECORDATORIOS VENCIDOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @overdue.each do |r| %>
+• <%= r.subject %> (vencía <%= r.remind_at.strftime('%d/%m %H:%M') %>)<% if r.opportunity %> — <%= r.opportunity.title.truncate(50) %><% end %>
+<% end %>
+<% end %>
+
+<% if @hot_leads.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔥 LEADS CALIENTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @hot_leads.each do |opp| %>
+• <%= opp.contact&.display_name || opp.title %> · BANT <%= opp.bant_score %><% if opp.pipeline_stage %> · <%= opp.pipeline_stage.name %><% end %>
+<% end %>
+<% end %>
+
+<% if @stale_leads.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧊 SIN ACTIVIDAD RECIENTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @stale_leads.each do |opp| %>
+• <%= opp.contact&.display_name || opp.title %> · última actividad: <%= opp.last_activity_at&.strftime('%d/%m/%Y') || '—' %>
+<% end %>
+<% end %>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Abre el CRM: <%= ENV.fetch('APP_URL', 'https://app.iswo.com.co') %>/opportunities
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este correo fue generado automáticamente por CRM ISWO.

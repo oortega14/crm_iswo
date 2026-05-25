@@ -8,6 +8,10 @@ import {
   Trash2,
   Link as LinkIcon,
   PlusCircle,
+  CreditCard,
+  User,
+  StickyNote,
+  Radio,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
@@ -34,6 +38,9 @@ interface ContactDetails {
   city?: string
   country?: string
   notes?: string
+  documentId?: string
+  ownerName?: string
+  sourceLabel?: string
 }
 
 const getInitialsSafe = (value: string | undefined): string => {
@@ -104,7 +111,7 @@ export function ContactSlideOver({
                 <p className="text-sm text-muted-foreground">{contact.position}</p>
                 <div className="flex gap-1 mt-2">
                   <Badge variant="secondary" className="text-xs">
-                    {contact.kind}
+                    {contact.kind === 'company' ? 'Empresa' : 'Persona'}
                   </Badge>
                 </div>
               </div>
@@ -197,6 +204,56 @@ export function ContactSlideOver({
                     <p className="text-sm">{[contact.city, contact.country].filter(Boolean).join(', ') || 'Sin datos'}</p>
                   </div>
                 </div>
+
+                {contact.documentId && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+                      <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">
+                        {contact.kind === 'company' ? 'NIT' : 'Cédula'}
+                      </p>
+                      <p className="text-sm font-mono">{contact.documentId}</p>
+                    </div>
+                  </div>
+                )}
+
+                {contact.ownerName && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+                      <User className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Responsable</p>
+                      <p className="text-sm">{contact.ownerName}</p>
+                    </div>
+                  </div>
+                )}
+
+                {contact.sourceLabel && (
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
+                      <Radio className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Origen</p>
+                      <p className="text-sm">{contact.sourceLabel}</p>
+                    </div>
+                  </div>
+                )}
+
+                {contact.notes && (
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted mt-0.5">
+                      <StickyNote className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Notas</p>
+                      <p className="text-sm whitespace-pre-wrap">{contact.notes}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

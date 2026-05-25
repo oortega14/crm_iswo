@@ -41,6 +41,7 @@ export interface Tenant {
 
 // Opportunity Types
 export type OpportunityStatus = 'new_lead' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'
+export type OpportunityTemperature = 'cold' | 'warm' | 'hot'
 
 export interface Opportunity {
   id: string
@@ -64,8 +65,11 @@ export interface Opportunity {
   source_id?: string
   source?: LeadSource
   status: OpportunityStatus
+  temperature: OpportunityTemperature
+  qualified?: boolean
   notes?: string
   last_activity_at?: string
+  expected_close_on?: string
   reminder_due_at?: string
   created_at: string
   updated_at: string
@@ -87,6 +91,7 @@ export interface Pipeline {
   name: string
   description?: string
   is_default: boolean
+  active: boolean
   stages: PipelineStage[]
   created_at: string
   updated_at: string
@@ -203,12 +208,13 @@ export interface Integration {
 }
 
 // Lead Source Types
-export type LeadSourceKind = 'organic' | 'paid' | 'referral' | 'direct' | 'integration'
+export type LeadSourceKind = 'web' | 'whatsapp' | 'meta' | 'google' | 'manual' | 'referral'
 
 export interface LeadSource {
   id: string
   name: string
   kind: LeadSourceKind
+  active: boolean
   opportunities_count: number
   created_at: string
 }

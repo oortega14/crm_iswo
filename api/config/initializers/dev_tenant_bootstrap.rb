@@ -14,7 +14,6 @@ DEFAULT_PIPELINE_STAGES = [
 ].freeze
 
 DEV_TENANTS = [
-  { slug: "toyamakeup", name: "Toya Makeup",   email: "admin@toyamakeup.local",  username: "Admin Toya Makeup" },
   { slug: "empresa-demo", name: "Empresa Demo", email: "admin@empresa-demo.local", username: "Admin Demo" }
 ].freeze
 

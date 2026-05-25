@@ -23,6 +23,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -252,6 +262,7 @@ function IntegrationsSettingsPage() {
   const [accountIdentifier, setAccountIdentifier] = useState('')
   const [credentialValues, setCredentialValues] = useState<Record<string, string>>({})
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({})
+  const [confirmDeleteIntegration, setConfirmDeleteIntegration] = useState(false)
 
   const {
     data: integrationsIndex,
@@ -368,6 +379,7 @@ function IntegrationsSettingsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.integrations.all })
       toast.success('Integración eliminada')
+      setConfirmDeleteIntegration(false)
       setDialogOpen(false)
     },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo eliminar')),
@@ -675,12 +687,8 @@ function IntegrationsSettingsPage() {
                   variant="destructive"
                   disabled={busy || destroyMutation.isPending}
                   onClick={() => {
-                    if (
-                      dialogIntegration &&
-                      window.confirm('¿Eliminar esta integración del tenant?')
-                    ) {
-                      destroyMutation.mutate(dialogIntegration.id)
-                    }
+                    setDialogOpen(false)
+                    setConfirmDeleteIntegration(true)
                   }}
                 >
                   Eliminar
@@ -705,6 +713,36 @@ function IntegrationsSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AlertDialog: confirmar eliminación de integración */}
+      <AlertDialog
+        open={confirmDeleteIntegration}
+        onOpenChange={(open) => {
+          setConfirmDeleteIntegration(open)
+          if (!open && !destroyMutation.isSuccess) {
+            setDialogOpen(true)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar integración?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminarán las credenciales de «{dialogCatalog?.title}» del tenant. Los webhooks existentes dejarán de funcionar. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => dialogIntegration && destroyMutation.mutate(dialogIntegration.id)}
+            >
+              {destroyMutation.isPending ? <Spinner className="mr-2 size-4" /> : null}
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

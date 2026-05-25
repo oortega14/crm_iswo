@@ -18,10 +18,12 @@ import {
 } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
+import { TemperatureSelector } from './TemperatureSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
+import type { LeadSource } from '@/types'
 
 const opportunitySchema = z.object({
   contact_name: z.string().optional().default(''),
@@ -35,6 +37,9 @@ const opportunitySchema = z.object({
   pipeline_id: z.string().min(1, 'Selecciona un pipeline'),
   stage_id: z.string().min(1, 'Selecciona una etapa'),
   notes: z.string().optional(),
+  lead_source_id: z.string().optional(),
+  expected_close_on: z.string().optional(),
+  temperature: z.enum(['cold', 'warm', 'hot']).default('cold'),
 })
 
 type OpportunityForm = z.infer<typeof opportunitySchema>
@@ -82,6 +87,23 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
     staleTime: 60 * 1000,
   })
 
+  const { data: leadSources } = useQuery({
+    queryKey: ['leadSources', 'active'] as const,
+    queryFn: async (): Promise<LeadSource[]> => {
+      const response = await api.get('/lead_sources', { params: { active: true } })
+      return jsonApiPrimaryList(response.data).map((r) => ({
+        id: String(r.id),
+        name: String(r.attributes?.name ?? ''),
+        kind: String(r.attributes?.kind ?? 'manual') as LeadSource['kind'],
+        active: Boolean(r.attributes?.active ?? true),
+        opportunities_count: Number(r.attributes?.opportunities_count ?? 0),
+        created_at: String(r.attributes?.created_at ?? ''),
+      }))
+    },
+    enabled: open,
+    staleTime: 60 * 1000,
+  })
+
   const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
 
   const {
@@ -103,6 +125,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       pipeline_id: defaultPipeline?.id || '',
       stage_id: defaultPipeline?.stages?.[0]?.id || '',
       notes: '',
+      temperature: 'cold',
     },
   })
 
@@ -181,6 +204,9 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             pipeline_id: data.pipeline_id,
             pipeline_stage_id: data.stage_id,
             notes: data.notes || undefined,
+            lead_source_id: data.lead_source_id || undefined,
+            expected_close_on: data.expected_close_on || undefined,
+            temperature: data.temperature,
           }
         : {
             contact_name: data.contact_name,
@@ -191,6 +217,9 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             pipeline_id: data.pipeline_id,
             pipeline_stage_id: data.stage_id,
             notes: data.notes || undefined,
+            lead_source_id: data.lead_source_id || undefined,
+            expected_close_on: data.expected_close_on || undefined,
+            temperature: data.temperature,
           }
       const response = await api.post('/opportunities', { opportunity: body })
       const raw = jsonApiPrimaryOne(response.data)
@@ -372,6 +401,25 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                     )}
                   </div>
 
+                  {/* Fecha de cierre estimada */}
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="expected_close_on">Fecha de cierre estimada</Label>
+                    <Input
+                      id="expected_close_on"
+                      type="date"
+                      {...register('expected_close_on')}
+                    />
+                  </div>
+
+                  {/* Temperatura */}
+                  <div className="flex flex-col gap-2">
+                    <Label>Temperatura del lead</Label>
+                    <TemperatureSelector
+                      value={watch('temperature') ?? 'cold'}
+                      onChange={(temp) => setValue('temperature', temp)}
+                    />
+                  </div>
+
                   {/* Pipeline / etapa */}
                   {(pipelinesLoading || pipelinesFetching) && (
                     <p className="text-sm text-muted-foreground">Cargando pipelines y etapas…</p>
@@ -462,6 +510,25 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                       className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                     />
                   </div>
+
+                  {/* Origen */}
+                  {(leadSources ?? []).length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="lead_source_id">Origen</Label>
+                      <select
+                        id="lead_source_id"
+                        {...register('lead_source_id')}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <option value="">— Sin origen —</option>
+                        {(leadSources ?? []).map((ls) => (
+                          <option key={ls.id} value={ls.id}>
+                            {ls.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </form>
 

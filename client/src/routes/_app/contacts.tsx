@@ -1,14 +1,13 @@
-import { createFileRoute, useSearch } from '@tanstack/react-router'
+import { createFileRoute, useSearch, useRouter } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, 
-  Search, 
-  Upload, 
-  Download, 
-  Filter, 
-  Building2, 
+import {
+  Plus,
+  Search,
+  Upload,
+  Download,
+  Building2,
   User,
   Mail,
   Phone,
@@ -38,6 +37,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
@@ -75,6 +84,8 @@ interface ContactRow {
   city?: string
   country?: string
   notes?: string
+  documentId?: string
+  ownerName?: string
   /** Etiqueta de origen / fuente (API: source_label) */
   sourceLabel?: string
 }
@@ -114,6 +125,8 @@ type ContactAttributes = {
   city?: string
   country?: string
   notes?: string
+  document_id?: string
+  owner_name?: string
   opportunities_count?: number
   source_label?: string
 }
@@ -140,6 +153,8 @@ const mapContact = (resource: JsonApiContact): ContactRow => {
     city: attrs.city,
     country: attrs.country,
     notes: attrs.notes,
+    documentId: attrs.document_id?.trim() || undefined,
+    ownerName: attrs.owner_name?.trim() || undefined,
     sourceLabel: attrs.source_label?.trim() || undefined,
   }
 }
@@ -149,6 +164,7 @@ function ContactsPage() {
   const userRole = useUserRole()
   const searchFromUrl = useSearch({ from: '/_app/contacts' })
   const navigate = Route.useNavigate()
+  const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [activeTab, setActiveTab] = useState<'contacts' | 'companies'>('contacts')
   const [selectedContact, setSelectedContact] = useState<ContactRow | null>(null)
@@ -162,6 +178,7 @@ function ContactsPage() {
   const [companyPage, setCompanyPage] = useState(1)
   const pageSize = 10
   const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactRow | null>(null)
 
   const canExportContacts = userRole === 'admin' || userRole === 'manager'
   const canImportContacts =
@@ -306,6 +323,7 @@ function ContactsPage() {
       toast.success('Contacto eliminado')
       setIsSlideOverOpen(false)
       setSelectedContact(null)
+      setConfirmDeleteContact(null)
       void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
     },
     onError: (err: unknown) => {
@@ -318,8 +336,7 @@ function ContactsPage() {
       toast.error('Solo un administrador puede eliminar contactos')
       return
     }
-    if (!window.confirm(`Eliminar contacto "${contact.fullName}"?`)) return
-    deleteContactMutation.mutate(contact)
+    setConfirmDeleteContact(contact)
   }
 
 
@@ -397,19 +414,14 @@ function ContactsPage() {
             </TabsTrigger>
           </TabsList>
           
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 w-64"
-              />
-            </div>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 w-64"
+            />
           </div>
         </div>
 
@@ -438,7 +450,7 @@ function ContactsPage() {
                         <TableHead>Empresa</TableHead>
                         <TableHead>Cargo</TableHead>
                         <TableHead>Oportunidades</TableHead>
-                        <TableHead>Tags</TableHead>
+                        <TableHead>Origen</TableHead>
                         <TableHead className="w-10"></TableHead>
                       </TableRow>
                     </TableHeader>
@@ -491,9 +503,13 @@ function ContactsPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {contact.kind}
-                            </Badge>
+                            {contact.sourceLabel ? (
+                              <Badge variant="outline" className="text-xs">
+                                {contact.sourceLabel}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
@@ -511,7 +527,14 @@ function ContactsPage() {
                                 >
                                   Editar
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>Ver Oportunidades</DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    void router.navigate({ to: '/opportunities', search: { contact: contact.id } })
+                                  }}
+                                >
+                                  Ver Oportunidades
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="text-destructive"
                                   onClick={(e) => {
@@ -725,8 +748,8 @@ function ContactsPage() {
             void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
           }
         }}
-        onEdit={openEditDialog}
-        onDelete={handleDeleteContact}
+        onEdit={(c) => openEditDialog(c as unknown as ContactRow)}
+        onDelete={(c) => handleDeleteContact(c as unknown as ContactRow)}
         onAddOpportunity={(contact) => {
           setIsSlideOverOpen(false)
           setQuickAddContact({ id: contact.id, name: contact.fullName })
@@ -757,15 +780,39 @@ function ContactsPage() {
 
       <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
+      <AlertDialog
+        open={!!confirmDeleteContact}
+        onOpenChange={(o) => { if (!o) setConfirmDeleteContact(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar contacto</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Eliminar a <strong>{confirmDeleteContact?.fullName}</strong>? Esta acción no se puede deshacer y eliminará también sus oportunidades vinculadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => { if (confirmDeleteContact) deleteContactMutation.mutate(confirmDeleteContact) }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <ContactEditDialog
         contactId={editingContact?.id ?? null}
         initialData={editingContact ? {
-          firstName: editingContact.firstName,
-          lastName:  editingContact.lastName,
-          email:     editingContact.email === '-' ? '' : editingContact.email,
-          phone:     editingContact.phone === '-' ? '' : editingContact.phone,
-          company:   getCompanyLabel(editingContact.company) === '-' ? '' : getCompanyLabel(editingContact.company),
-          position:  editingContact.position === '-' ? '' : editingContact.position,
+          firstName:  editingContact.firstName,
+          lastName:   editingContact.lastName,
+          email:      editingContact.email === '-' ? '' : editingContact.email,
+          phone:      editingContact.phone === '-' ? '' : editingContact.phone,
+          company:    getCompanyLabel(editingContact.company) === '-' ? '' : getCompanyLabel(editingContact.company),
+          position:   editingContact.position === '-' ? '' : editingContact.position,
+          documentId: editingContact.documentId ?? '',
         } : undefined}
         open={isEditDialogOpen}
         onOpenChange={(open) => {

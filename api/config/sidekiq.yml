@@ -35,5 +35,11 @@
       queue: low
       description: Reconstruye índices de phone_normalized
 
+    daily_briefing_job:
+      cron: "0 7 * * 1-5"            # 07:00 AM lunes–viernes
+      class: DailyBriefingJob
+      queue: low
+      description: Envía resumen diario (leads calientes, recordatorios, KPIs) a cada usuario
+
 production:
   :concurrency: 25

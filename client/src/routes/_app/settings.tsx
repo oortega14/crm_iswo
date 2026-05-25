@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Link, useLocation } from '@tanstack/react-router'
-import { GitBranch, Users, Puzzle, FileText, ChevronRight } from 'lucide-react'
+import { GitBranch, Users, Puzzle, FileText, ChevronRight, Radio, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -19,6 +19,13 @@ const settingsNav: { title: string; href: string; icon: React.ComponentType<{ cl
     roles: ['admin'],
   },
   {
+    title: 'Fuentes de Lead',
+    href: '/settings/lead-sources',
+    icon: Radio,
+    description: 'Canales de origen de tus leads',
+    roles: ['admin'],
+  },
+  {
     title: 'Usuarios',
     href: '/settings/users',
     icon: Users,
@@ -31,6 +38,13 @@ const settingsNav: { title: string; href: string; icon: React.ComponentType<{ cl
     icon: Puzzle,
     description: 'Conecta servicios externos',
     roles: ['admin', 'manager'],
+  },
+  {
+    title: 'BANT',
+    href: '/settings/bant',
+    icon: Target,
+    description: 'Pesos y umbral de calificación',
+    roles: ['admin'],
   },
   {
     title: 'Auditoria',

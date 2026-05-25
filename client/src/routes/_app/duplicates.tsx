@@ -27,7 +27,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList } from '@/lib/opportunityApi'
+import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
@@ -38,6 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 
@@ -178,6 +179,8 @@ function DuplicatesPage() {
   const [resolutionFilter, setResolutionFilter] = useState<'pending' | 'all'>('pending')
   const [mergeConfirmFlag, setMergeConfirmFlag] = useState<DuplicateFlagRow | null>(null)
   const [ignoreConfirmFlag, setIgnoreConfirmFlag] = useState<DuplicateFlagRow | null>(null)
+  const [reassignFlag, setReassignFlag] = useState<DuplicateFlagRow | null>(null)
+  const [reassignUserId, setReassignUserId] = useState('')
 
   const {
     data: flags = [],
@@ -211,6 +214,28 @@ function DuplicatesPage() {
     mutationFn: (flagId: string) => api.post(`/duplicate_flags/${flagId}/ignore`, {}),
     onSuccess: () => { invalidate(); toast.success('Marcado como no duplicado'); setIgnoreConfirmFlag(null) },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo descartar')),
+  })
+
+  const { data: users = [] } = useQuery({
+    enabled: canResolve,
+    queryKey: ['users', 'reassign-picker'],
+    queryFn: async () => {
+      const response = await api.get('/users', { params: { items: 200 } })
+      return jsonApiPrimaryList(response.data).filter((r) => r.id).map(mapUserResource)
+    },
+    staleTime: 60_000,
+  })
+
+  const reassignMutation = useMutation({
+    mutationFn: ({ flagId, userId }: { flagId: string; userId: string }) =>
+      api.post(`/duplicate_flags/${flagId}/reassign`, { new_owner_user_id: userId }),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Oportunidad reasignada correctamente')
+      setReassignFlag(null)
+      setReassignUserId('')
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo reasignar')),
   })
 
   const scanMutation = useMutation({
@@ -396,6 +421,15 @@ function DuplicatesPage() {
                         Ignorar
                       </Button>
                       <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setReassignFlag(flag); setReassignUserId('') }}
+                        disabled={reassignMutation.isPending}
+                      >
+                        <User className="mr-2 h-4 w-4" />
+                        Reasignar
+                      </Button>
+                      <Button
                         size="sm"
                         onClick={() => setMergeConfirmFlag(flag)}
                         disabled={mergeMutation.isPending}
@@ -446,6 +480,49 @@ function DuplicatesPage() {
             >
               {mergeMutation.isPending && <Spinner className="mr-2" />}
               Confirmar fusión
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!reassignFlag}
+        onOpenChange={(o) => { if (!o) { setReassignFlag(null); setReassignUserId('') } }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reasignar oportunidad</DialogTitle>
+            <DialogDescription>
+              La oportunidad existente (#{reassignFlag?.opportunityExistingId}) se asignará al consultor seleccionado y el duplicado quedará marcado como reasignado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Nuevo responsable</Label>
+            <Select value={reassignUserId} onValueChange={setReassignUserId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar consultor..." />
+              </SelectTrigger>
+              <SelectContent>
+                {users
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email} · {u.role}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReassignFlag(null); setReassignUserId('') }}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!reassignUserId || reassignMutation.isPending}
+              onClick={() => reassignFlag && reassignMutation.mutate({ flagId: reassignFlag.id, userId: reassignUserId })}
+            >
+              {reassignMutation.isPending && <Spinner className="mr-2" />}
+              Reasignar
             </Button>
           </DialogFooter>
         </DialogContent>

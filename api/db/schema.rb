@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_25_204548) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -53,9 +53,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
   end
 
   create_table "bant_criteria", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
     t.integer "authority_weight", default: 25, null: false
     t.integer "budget_weight", default: 25, null: false
     t.datetime "created_at", null: false
+    t.text "description"
     t.datetime "discarded_at", comment: "Soft-delete"
     t.integer "need_weight", default: 25, null: false
     t.bigint "tenant_id", null: false
@@ -249,6 +251,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.bigint "pipeline_stage_id", null: false
     t.boolean "qualified", default: false, null: false
     t.string "status", default: "new_lead", null: false, comment: "new_lead | contacted | qualified | proposal | won | lost"
+    t.string "temperature", default: "cold", null: false, comment: "cold | warm | hot — indicador rápido de interés del lead"
     t.bigint "tenant_id", null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
@@ -258,6 +261,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.index ["owner_user_id"], name: "index_opportunities_on_owner_user_id"
     t.index ["pipeline_id"], name: "index_opportunities_on_pipeline_id"
     t.index ["pipeline_stage_id"], name: "index_opportunities_on_pipeline_stage_id"
+    t.index ["temperature"], name: "index_opportunities_on_temperature"
     t.index ["tenant_id", "last_activity_at"], name: "index_opportunities_on_tenant_id_and_last_activity_at"
     t.index ["tenant_id", "owner_user_id"], name: "index_opportunities_on_tenant_id_and_owner_user_id"
     t.index ["tenant_id", "pipeline_stage_id"], name: "index_opportunities_on_tenant_id_and_pipeline_stage_id"

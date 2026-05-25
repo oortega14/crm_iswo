@@ -31,7 +31,7 @@ module Api
       def permitted
         params.require(:bant_criterion).permit(
           :budget_weight, :authority_weight, :need_weight, :timeline_weight,
-          :description, :active
+          :threshold_qualified, :description, :active
         )
       end
     end

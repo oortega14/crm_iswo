@@ -31,12 +31,13 @@ import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { BantSliders } from './BantSliders'
+import { TemperatureSelector } from './TemperatureSelector'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
 import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import type { Opportunity } from '@/types'
+import type { Opportunity, OpportunityTemperature } from '@/types'
 
 interface OpportunitySlideOverProps {
   opportunity?: Opportunity
@@ -349,6 +350,20 @@ export function OpportunitySlideOver({
                       <p className="text-2xl font-semibold font-mono mt-1">
                         {formatCurrency(opportunity.estimated_value, opportunity.currency)}
                       </p>
+                    </div>
+
+                    <Separator />
+
+                    {/* Temperatura */}
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
+                        Temperatura del lead
+                      </label>
+                      <TemperatureSelector
+                        value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
+                        disabled={updateMutation.isPending || role === 'viewer'}
+                        onChange={(temp) => updateMutation.mutate({ temperature: temp })}
+                      />
                     </div>
 
                     <Separator />

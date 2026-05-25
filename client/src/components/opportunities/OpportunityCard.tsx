@@ -3,6 +3,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { Bell, Clock, GripVertical, Network } from 'lucide-react'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { cn, formatCurrency, formatRelativeTime, getBantScoreColor, getInitials } from '@/lib/utils'
+import { TemperatureBadge } from './TemperatureBadge'
 import { Card } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -93,7 +94,7 @@ export function OpportunityCard({
             </p>
           )}
 
-          {/* Value and BANT */}
+          {/* Value, BANT y Temperatura */}
           <div className="flex items-center justify-between gap-1 mb-1">
             <span className="text-xs font-mono font-medium">
               {formatCurrency(
@@ -103,20 +104,23 @@ export function OpportunityCard({
                 opportunity.currency
               )}
             </span>
-            <Badge
-              className={cn(
-                'text-[10px] font-mono px-1 py-0 h-4',
-                getBantScoreColor(
-                  Number.isFinite(Number(opportunity.bant_score))
-                    ? Number(opportunity.bant_score)
-                    : 0
-                )
-              )}
-            >
-              {Number.isFinite(Number(opportunity.bant_score))
-                ? Number(opportunity.bant_score)
-                : 0}
-            </Badge>
+            <div className="flex items-center gap-1">
+              <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} showLabel={false} />
+              <Badge
+                className={cn(
+                  'text-[10px] font-mono px-1 py-0 h-4',
+                  getBantScoreColor(
+                    Number.isFinite(Number(opportunity.bant_score))
+                      ? Number(opportunity.bant_score)
+                      : 0
+                  )
+                )}
+              >
+                {Number.isFinite(Number(opportunity.bant_score))
+                  ? Number(opportunity.bant_score)
+                  : 0}
+              </Badge>
+            </div>
           </div>
 
           {(opportunity.contact_phone || opportunity.contact_email) && (

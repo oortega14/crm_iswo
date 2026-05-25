@@ -17,6 +17,9 @@ class Opportunity < ApplicationRecord
   include Discard::Model
   include DataClassifiable
 
+  TEMPERATURES = %w[cold warm hot].freeze
+  enum :temperature, TEMPERATURES.zip(TEMPERATURES).to_h, prefix: :temp, default: "cold"
+
   STATUSES = {
     "new_lead"  => "new_lead",
     "contacted" => "contacted",
@@ -72,6 +75,9 @@ class Opportunity < ApplicationRecord
   scope :lost,        -> { where(status: "lost") }
   scope :by_owner,    ->(user_id) { where(owner_user_id: user_id) }
   scope :stale,       ->(days = 7) { where(last_activity_at: ..days.days.ago) }
+  scope :hot,         -> { where(temperature: "hot") }
+  scope :warm,        -> { where(temperature: "warm") }
+  scope :cold,        -> { where(temperature: "cold") }
 
   # ---- Helpers --------------------------------------------------------------
   def terminal?

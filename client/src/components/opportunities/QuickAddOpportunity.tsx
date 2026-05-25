@@ -18,6 +18,7 @@ import {
 } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
+import { TemperatureSelector } from './TemperatureSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -38,6 +39,7 @@ const opportunitySchema = z.object({
   notes: z.string().optional(),
   lead_source_id: z.string().optional(),
   expected_close_on: z.string().optional(),
+  temperature: z.enum(['cold', 'warm', 'hot']).default('cold'),
 })
 
 type OpportunityForm = z.infer<typeof opportunitySchema>
@@ -123,6 +125,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       pipeline_id: defaultPipeline?.id || '',
       stage_id: defaultPipeline?.stages?.[0]?.id || '',
       notes: '',
+      temperature: 'cold',
     },
   })
 
@@ -203,6 +206,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             notes: data.notes || undefined,
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
+            temperature: data.temperature,
           }
         : {
             contact_name: data.contact_name,
@@ -215,6 +219,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             notes: data.notes || undefined,
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
+            temperature: data.temperature,
           }
       const response = await api.post('/opportunities', { opportunity: body })
       const raw = jsonApiPrimaryOne(response.data)
@@ -403,6 +408,15 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                       id="expected_close_on"
                       type="date"
                       {...register('expected_close_on')}
+                    />
+                  </div>
+
+                  {/* Temperatura */}
+                  <div className="flex flex-col gap-2">
+                    <Label>Temperatura del lead</Label>
+                    <TemperatureSelector
+                      value={watch('temperature') ?? 'cold'}
+                      onChange={(temp) => setValue('temperature', temp)}
                     />
                   </div>
 

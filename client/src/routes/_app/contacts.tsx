@@ -748,8 +748,8 @@ function ContactsPage() {
             void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
           }
         }}
-        onEdit={openEditDialog}
-        onDelete={handleDeleteContact}
+        onEdit={(c) => openEditDialog(c as unknown as ContactRow)}
+        onDelete={(c) => handleDeleteContact(c as unknown as ContactRow)}
         onAddOpportunity={(contact) => {
           setIsSlideOverOpen(false)
           setQuickAddContact({ id: contact.id, name: contact.fullName })

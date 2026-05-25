@@ -111,7 +111,7 @@ function PublicLandingPage() {
 
   // En producción el tenant se resuelve por subdominio.
   // En local se puede pasar ?tenant=micasita como fallback.
-  const tenantHeaders = tenantParam ? { 'X-Tenant-Slug': tenantParam } : {}
+  const tenantHeaders: Record<string, string> = tenantParam ? { 'X-Tenant-Slug': tenantParam } : {}
 
   // Fetch de la landing pública (sin autenticación)
   const { data: landing, isLoading, isError } = useQuery<PublicLanding>({

@@ -252,7 +252,7 @@ module Api
 
       def update_params
         params.require(:opportunity).permit(
-          :title, :notes, :estimated_value, :status,
+          :title, :notes, :estimated_value, :status, :temperature,
           :expected_close_date, :bant_score, :lost_reason, :lead_source_id,
           :pipeline_stage_id,
           custom_fields: {},

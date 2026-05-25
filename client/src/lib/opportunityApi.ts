@@ -257,6 +257,7 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     source_id: sourceId,
     source,
     status: (a.status as OpportunityStatus) ?? 'new_lead',
+    temperature: (a.temperature as import('@/types').OpportunityTemperature) || 'cold',
     qualified: a.qualified != null ? Boolean(a.qualified) : undefined,
     notes: a.notes != null ? String(a.notes) : undefined,
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
@@ -340,6 +341,7 @@ export function toOpportunityUpdatePayload(
   if (patch.notes !== undefined) out.notes = patch.notes
   if (patch.estimated_value !== undefined) out.estimated_value = patch.estimated_value
   if (patch.status !== undefined) out.status = patch.status
+  if (patch.temperature !== undefined) out.temperature = patch.temperature
   if (patch.qualified !== undefined) out.qualified = patch.qualified
   if (patch.stage_id !== undefined) out.pipeline_stage_id = patch.stage_id
   if (patch.source_id !== undefined) out.lead_source_id = patch.source_id || null

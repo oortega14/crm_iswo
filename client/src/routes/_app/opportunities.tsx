@@ -1,7 +1,7 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { LayoutGrid, Table as TableIcon, Plus, Search } from 'lucide-react'
+import { LayoutGrid, Table as TableIcon, Plus, Search, Flame, Sun, Snowflake } from 'lucide-react'
 import { z } from 'zod'
 import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
@@ -35,6 +35,7 @@ const opportunitiesSearchSchema = z.object({
   stage: z.string().optional(),
   selected: z.string().optional(),
   contact: z.string().optional(),
+  temperature: z.enum(['cold', 'warm', 'hot']).optional(),
 })
 
 export const Route = createFileRoute('/_app/opportunities')({
@@ -93,7 +94,10 @@ function OpportunitiesPage() {
   })
 
   const filteredOpportunities = useMemo(() => {
-    const all = opportunities ?? []
+    let all = opportunities ?? []
+    if (search.temperature) {
+      all = all.filter((o) => o.temperature === search.temperature)
+    }
     if (!searchTerm.trim()) return all
     const q = searchTerm.trim().toLowerCase()
     return all.filter(
@@ -103,7 +107,7 @@ function OpportunitiesPage() {
         o.contact_email?.toLowerCase().includes(q) ||
         o.contact_phone?.includes(q)
     )
-  }, [opportunities, searchTerm])
+  }, [opportunities, searchTerm, search.temperature])
 
   const selectedOpportunity = opportunities?.find((o) => o.id === selectedId)
 
@@ -143,6 +147,34 @@ function OpportunitiesPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-8 pl-8 w-[180px] text-sm"
           />
+        </div>
+
+        {/* Filtro de temperatura */}
+        <div className="flex items-center gap-1">
+          {(
+            [
+              { value: 'hot',  icon: Flame,     cls: 'text-red-600 hover:bg-red-50 data-[active=true]:bg-red-100 data-[active=true]:text-red-700' },
+              { value: 'warm', icon: Sun,       cls: 'text-amber-600 hover:bg-amber-50 data-[active=true]:bg-amber-100 data-[active=true]:text-amber-700' },
+              { value: 'cold', icon: Snowflake, cls: 'text-sky-600 hover:bg-sky-50 data-[active=true]:bg-sky-100 data-[active=true]:text-sky-700' },
+            ] as const
+          ).map(({ value, icon: Icon, cls }) => (
+            <button
+              key={value}
+              data-active={search.temperature === value}
+              onClick={() =>
+                navigate({
+                  search: (prev) => ({
+                    ...prev,
+                    temperature: prev.temperature === value ? undefined : value,
+                  }),
+                })
+              }
+              className={`h-8 w-8 flex items-center justify-center rounded-md border border-transparent transition-colors ${cls}`}
+              title={value === 'hot' ? 'Caliente' : value === 'warm' ? 'Tibio' : 'Frío'}
+            >
+              <Icon className="size-4" />
+            </button>
+          ))}
         </div>
 
         {/* Selector de pipeline */}

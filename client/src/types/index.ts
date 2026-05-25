@@ -41,6 +41,7 @@ export interface Tenant {
 
 // Opportunity Types
 export type OpportunityStatus = 'new_lead' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'
+export type OpportunityTemperature = 'cold' | 'warm' | 'hot'
 
 export interface Opportunity {
   id: string
@@ -64,6 +65,7 @@ export interface Opportunity {
   source_id?: string
   source?: LeadSource
   status: OpportunityStatus
+  temperature: OpportunityTemperature
   qualified?: boolean
   notes?: string
   last_activity_at?: string

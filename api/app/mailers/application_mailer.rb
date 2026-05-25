@@ -29,6 +29,7 @@ class ApplicationMailer < ActionMailer::Base
   # para resolver branding y reply-to. Se expone @tenant a las plantillas.
   def set_tenant_from_params
     @tenant = params&.dig(:tenant) ||
+              params&.dig(:briefing)&.dig(:tenant) ||
               params&.dig(:user)&.tenant ||
               params&.dig(:reminder)&.tenant ||
               params&.dig(:integration)&.tenant ||

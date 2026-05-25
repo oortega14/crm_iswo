@@ -80,7 +80,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const location = useLocation()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { setTheme, resolvedTheme } = useTheme()
   const user = useUser()
   const tenant = useTenant()
   const logout = useAuthStore((s) => s.logout)

@@ -189,7 +189,7 @@ export function PipelineFunnel({
 
         {chartData.length > 0 && (
           <div className="flex flex-wrap gap-2 pt-2">
-            {chartData.map((row, i) => (
+            {chartData.map((row) => (
               <span
                 key={row.stage_id}
                 className="inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1 text-[11px] text-foreground backdrop-blur-sm"
@@ -313,7 +313,7 @@ export function PipelineFunnel({
                   }}
                   maxBarSize={36}
                 >
-                  {chartData.map((entry, index) => (
+                  {chartData.map((entry) => (
                     <Cell key={`cell-${entry.stage_id}`} fill={entry.fill} />
                   ))}
                   <LabelList

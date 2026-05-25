@@ -49,7 +49,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 
 // Listen for session expired events
-window.addEventListener('auth:session-expired', (async (event: CustomEvent) => {
+window.addEventListener('auth:session-expired', (async (event: Event) => {
   const { toast } = await import('sonner')
-  toast.error(event.detail.message)
+  toast.error((event as CustomEvent).detail.message)
 }) as EventListener)

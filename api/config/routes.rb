@@ -18,6 +18,9 @@ Rails.application.routes.draw do
   end
   mount Sidekiq::Web => "/sidekiq"
 
+  # Bandeja de correos en desarrollo: http://localhost:3000/letter_opener
+  mount LetterOpenerWeb::Engine, at: "/letter_opener" if Rails.env.development?
+
   # ==========================================================================
   # Health check
   # ==========================================================================

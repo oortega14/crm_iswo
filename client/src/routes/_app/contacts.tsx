@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Target,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -179,6 +180,13 @@ function ContactsPage() {
   const pageSize = 10
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactRow | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+    setRefreshing(false)
+  }
 
   const canExportContacts = userRole === 'admin' || userRole === 'manager'
   const canImportContacts =
@@ -366,6 +374,17 @@ function ContactsPage() {
         title="Contactos"
         description="Gestiona tu base de contactos y empresas"
       >
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Actualizar contactos"
+        >
+          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Actualizar</span>
+        </Button>
         <Button
           variant="outline"
           size="sm"

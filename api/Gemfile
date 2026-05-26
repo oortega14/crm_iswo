@@ -99,7 +99,7 @@ group :development do
   gem "annotaterb", "~> 4.13"
 #  gem "bullet", "~> 7.2"
   gem "brakeman", require: false
-  gem "letter_opener"
+  gem "letter_opener_web", "~> 3.0"
 end
 
 group :test do

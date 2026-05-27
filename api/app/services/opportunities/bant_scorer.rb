@@ -47,8 +47,10 @@ module Opportunities
     # Conveniencia: persiste el score en la opp y devuelve el número.
     def call_and_persist!
       result = call
+      threshold = @criteria.threshold_qualified.to_i
       @opportunity.update!(
         bant_score: result[:score],
+        qualified:  result[:score] >= threshold,
         bant_data: (@opportunity.bant_data || {}).merge("breakdown" => result[:breakdown])
       )
       result[:score]
@@ -59,9 +61,9 @@ module Opportunities
     private
 
     def default_criteria
-      # Fallback por si el tenant aún no configuró pesos: 25/25/25/25.
-      Struct.new(:budget_weight, :authority_weight, :need_weight, :timeline_weight)
-            .new(25, 25, 25, 25)
+      # Fallback por si el tenant aún no configuró pesos: 25/25/25/25, umbral 60.
+      Struct.new(:budget_weight, :authority_weight, :need_weight, :timeline_weight, :threshold_qualified)
+            .new(25, 25, 25, 25, 60)
     end
 
     def bant_data

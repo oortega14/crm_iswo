@@ -78,10 +78,25 @@ RSpec.describe Opportunities::BantScorer do
       expect(opportunity.bant_score).to be_between(0, 100)
       expect(opportunity.bant_data["breakdown"]).to include("budget" => 100)
     end
+
+    it "marca qualified=true cuando score >= threshold_qualified" do
+      # score resultante: 100*40 + 50*20*3 = 7000 → 70, threshold=60 → qualified
+      described_class.new(opportunity).call_and_persist!
+      expect(opportunity.reload.qualified).to be true
+    end
+
+    it "marca qualified=false cuando score < threshold_qualified" do
+      criterion.update!(threshold_qualified: 80)
+      described_class.new(opportunity).call_and_persist!
+      expect(opportunity.reload.qualified).to be false
+    end
   end
 
   describe "fallback sin BantCriterion" do
-    before { criterion.destroy }
+    before do
+      criterion.destroy
+      tenant.association(:bant_criterion).reset
+    end
 
     let(:bant_data) { {} }
 

@@ -50,6 +50,36 @@ Los admins pueden gestionar campos desde **Settings → Campos** sin deploy.
 
 ---
 
+### Audit log 100% CRUD (RFC §9)
+
+`app/controllers/concerns/auditable.rb` incluido en `BaseController`. Registra
+`create`, `update` y `destroy` automáticamente en `AuditEvent` para todas las
+entidades, sin tocar cada controlador individualmente.
+
+**Cómo funciona:**
+- `after_action` solo dispara en respuestas 2xx — los errores no se auditan.
+- Detecta el record por convención (`controller_name.singularize` → `@contact`,
+  `@user`, `@lead_source`, etc.).
+- Controladores con ivar no convencional declaran `auditable_resource :nombre`:
+  `PipelineStages→:stage`, `LandingPages→:landing`, `BantCriteria→:criterion`,
+  `ReferralNetworks→:edge`, `TenantFieldDefinitions→:definition`.
+- Campos sensibles (`email`, `phone`, `credentials`, etc.) se redactan como
+  `[REDACTED]` en el diff de updates.
+- Falla silenciosamente (`rescue StandardError` + `logger.warn`) — nunca tumba
+  la petición HTTP.
+
+**Controladores excluidos** (tienen auditoría propia o son de solo lectura):
+`opportunities` (usa `opportunity_logs`), `sessions`, `ad_integrations`,
+`exports`, `dashboard`, `searches`, `notifications`, `audit_events`.
+
+**Sistema de auditoría dual:**
+- `opportunity_logs` — trazabilidad comercial detallada de oportunidades
+  (stage_change, assign, merge, BANT, classify, notas).
+- `audit_events` — CRUD de todas las demás entidades + eventos de sistema
+  (login, import, integraciones).
+
+---
+
 ### Multi-tenancy (RFC D3)
 
 Se resolvió usando **ambas** estrategias:

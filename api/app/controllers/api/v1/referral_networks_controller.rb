@@ -6,6 +6,7 @@ module Api
     # ReferralNetworksController — red de consultores
     # ========================================================================
     class ReferralNetworksController < BaseController
+      auditable_resource :edge
       before_action :set_edge, only: %i[update destroy]
 
       # GET /api/v1/referral_networks

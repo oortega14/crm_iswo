@@ -8,6 +8,7 @@ module Api
     # El endpoint público (sin auth) vive en Api::V1::Public::LandingPages.
     # ========================================================================
     class LandingPagesController < BaseController
+      auditable_resource :landing
       before_action :set_landing, only: %i[show update destroy publish unpublish duplicate metrics]
 
       def index

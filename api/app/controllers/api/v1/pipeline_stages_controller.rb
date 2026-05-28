@@ -6,6 +6,7 @@ module Api
     # PipelineStagesController — anidado bajo /pipelines/:pipeline_id/stages
     # ========================================================================
     class PipelineStagesController < BaseController
+      auditable_resource :stage
       before_action :set_pipeline
       before_action :set_stage, only: %i[update destroy]
 

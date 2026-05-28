@@ -12,6 +12,7 @@ module Api
     # PATCH  /api/v1/tenant_field_definitions/reorder  { ids: [...] }
     # ========================================================================
     class TenantFieldDefinitionsController < BaseController
+      auditable_resource :definition
       before_action :set_definition, only: %i[show update destroy]
 
       def index

@@ -92,6 +92,68 @@ RSpec.describe Opportunities::BantScorer do
     end
   end
 
+  describe "#call_and_persist! — auto-avance a etapa Calificada" do
+    let(:pipeline) { create(:pipeline, tenant: tenant) }
+    let!(:stage_nueva)      { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, name: "Nueva",      position: 0, probability: 10) }
+    let!(:stage_calificada) { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, name: "Calificada", position: 2, probability: 50) }
+    let!(:stage_propuesta)  { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, name: "Propuesta",  position: 3, probability: 75) }
+    let!(:stage_ganada)     { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, name: "Ganada",     position: 4, probability: 100, closed_won: true) }
+
+    let(:opp) do
+      create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
+             bant_data: { "budget" => { "score" => 100 }, "authority" => { "score" => 100 },
+                          "need" => { "score" => 100 }, "timeline" => { "score" => 100 } })
+    end
+
+    before { criterion.update!(threshold_qualified: 60) }
+
+    it "avanza a Calificada cuando supera el umbral por primera vez" do
+      expect { described_class.new(opp).call_and_persist! }
+        .to change { opp.reload.pipeline_stage_id }.to(stage_calificada.id)
+    end
+
+    it "registra un opportunity_log de stage_change con nota automática" do
+      expect { described_class.new(opp).call_and_persist! }
+        .to change { opp.opportunity_logs.where(action: "stage_change").count }.by(1)
+
+      log = opp.opportunity_logs.last
+      expect(log.note).to match(/automático/i)
+      expect(log.changes_data["to_stage_id"]).to eq(stage_calificada.id)
+    end
+
+    it "NO avanza si ya estaba calificada (qualified=true)" do
+      opp.update!(qualified: true, pipeline_stage: stage_calificada)
+      expect { described_class.new(opp).call_and_persist! }
+        .not_to change { opp.reload.pipeline_stage_id }
+    end
+
+    it "NO avanza si no existe etapa llamada Calificada en el pipeline" do
+      stage_calificada.update!(name: "En proceso")
+      expect { described_class.new(opp).call_and_persist! }
+        .not_to change { opp.reload.pipeline_stage_id }
+    end
+
+    it "NO avanza si la etapa actual ya está en posición >= Calificada" do
+      opp.update!(pipeline_stage: stage_propuesta)
+      expect { described_class.new(opp).call_and_persist! }
+        .not_to change { opp.reload.pipeline_stage_id }
+    end
+
+    it "NO avanza si la etapa actual es terminal (won)" do
+      opp.update!(pipeline_stage: stage_ganada, status: "won", qualified: false)
+      expect { described_class.new(opp).call_and_persist! }
+        .not_to change { opp.reload.pipeline_stage_id }
+    end
+
+    it "NO avanza si el score no supera el umbral" do
+      low_opp = create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
+                        bant_data: { "budget" => { "score" => 0 }, "authority" => { "score" => 0 },
+                                     "need" => { "score" => 0 }, "timeline" => { "score" => 0 } })
+      expect { described_class.new(low_opp).call_and_persist! }
+        .not_to change { low_opp.reload.pipeline_stage_id }
+    end
+  end
+
   describe "fallback sin BantCriterion" do
     before do
       criterion.destroy

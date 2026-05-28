@@ -20,6 +20,7 @@ module Auditable
 
   EXCLUDED_CONTROLLERS = %w[
     opportunities
+    contacts
     sessions
     audit_events
     me

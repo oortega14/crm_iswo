@@ -13,7 +13,10 @@ module Api
 
         scope = policy_scope(AuditEvent).includes(:user)
         # No usar `params[:action]`: en Rails es siempre el nombre de la acción del controlador ("index").
-        scope = scope.where(action: params[:event_action]) if params[:event_action].present?
+        if params[:event_action].present?
+          ea = ActiveRecord::Base.sanitize_sql_like(params[:event_action].to_s)
+          scope = scope.where("action = ? OR action ILIKE ?", ea, "%.#{ea}")
+        end
 
         if params[:entity_type].present?
           et = ActiveRecord::Base.sanitize_sql_like(params[:entity_type].to_s)

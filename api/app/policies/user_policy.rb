@@ -10,12 +10,12 @@
 class UserPolicy < ApplicationPolicy
   def index?   = manager_or_admin?
   def show?    = manager_or_admin? || owner?
-  def create?  = manager_or_admin?
-  def update?  = admin? || (manager? && !target_is_admin?) || owner?
+  def create?  = admin?
+  def update?  = admin? || owner?
   def destroy? = admin? && !owner? # no borrarse a sí mismo
 
-  def activate?       = update?
-  def deactivate?     = update?
+  def activate?       = admin?
+  def deactivate?     = admin?
   def reset_password? = admin?
 
   class Scope < ApplicationPolicy::Scope

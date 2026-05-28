@@ -61,6 +61,7 @@ module Api
           title:             h[:title].presence || default_opportunity_title(contact, h),
           notes:             h[:notes],
           estimated_value:   h[:estimated_value],
+          temperature:       h[:temperature].presence || 'cold',
           pipeline_id:       stage.pipeline_id,
           pipeline_stage_id: stage.id,
           lead_source_id:    h[:lead_source_id].presence,
@@ -213,7 +214,7 @@ module Api
         raw.permit(
           :contact_id, :pipeline_id, :pipeline_stage_id, :stage_id,
           :contact_name, :contact_email, :contact_phone, :company_name,
-          :title, :notes, :estimated_value, :status,
+          :title, :notes, :estimated_value, :status, :temperature,
           :expected_close_date, :lead_source_id,
           custom_fields: {}, bant_data: {}
         )

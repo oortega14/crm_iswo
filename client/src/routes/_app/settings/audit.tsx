@@ -147,7 +147,8 @@ function AuditSettingsPage() {
   })
 
   const getActionBadge = (action: string) => {
-    switch (action) {
+    const type = action.includes('.') ? (action.split('.').pop() ?? action) : action
+    switch (type) {
       case 'create':
         return <Badge variant="success">Crear</Badge>
       case 'update':
@@ -156,6 +157,7 @@ function AuditSettingsPage() {
             Actualizar
           </Badge>
         )
+      case 'destroy':
       case 'delete':
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Eliminar</Badge>
       case 'login':
@@ -222,7 +224,7 @@ function AuditSettingsPage() {
             <SelectItem value="all">Todas las acciones</SelectItem>
             <SelectItem value="create">Crear</SelectItem>
             <SelectItem value="update">Actualizar</SelectItem>
-            <SelectItem value="delete">Eliminar</SelectItem>
+            <SelectItem value="destroy">Eliminar</SelectItem>
             <SelectItem value="login">Login</SelectItem>
             <SelectItem value="export">Exportar</SelectItem>
             <SelectItem value="import">Importar</SelectItem>

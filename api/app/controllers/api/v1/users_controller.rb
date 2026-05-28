@@ -35,8 +35,13 @@ module Api
         authorize User
         @user = current_tenant.users.new(user_params)
         @user.password ||= SecureRandom.hex(12) # admin invita; user setea después
+        @user.skip_confirmation! if @user.respond_to?(:skip_confirmation!)
         if @user.save
-          UserMailer.with(user: @user).welcome.deliver_later if defined?(UserMailer)
+          begin
+            UserMailer.with(user: @user).welcome.deliver_later if defined?(UserMailer)
+          rescue StandardError => e
+            Rails.logger.warn("[UsersController#create] Welcome mailer failed: #{e.class}: #{e.message}")
+          end
           render_created(@user, with: UserSerializer)
         else
           render_unprocessable(@user)
@@ -46,7 +51,9 @@ module Api
       # PATCH /api/v1/users/:id
       def update
         authorize @user
+        old_role = @user.role
         if @user.update(user_params)
+          log_role_change_audit!(old_role, @user) if old_role != @user.role
           render_resource(@user, with: UserSerializer)
         else
           render_unprocessable(@user)
@@ -98,6 +105,21 @@ module Api
 
       def cast_bool(v)
         ActiveModel::Type::Boolean.new.cast(v)
+      end
+
+      def log_role_change_audit!(old_role, user)
+        AuditEvent.create!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      "role_change",
+          entity_type: "User",
+          entity_id:   user.id,
+          metadata:    { from: old_role, to: user.role },
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent.to_s.truncate(255)
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] role_change user=#{user.id}: #{e.message}")
       end
     end
   end

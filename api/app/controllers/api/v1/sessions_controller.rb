@@ -26,6 +26,7 @@ module Api
         self.resource = warden.authenticate!(auth_options)
         sign_in(resource_name, resource)
         issue_refresh_cookie(resource)
+        log_session_audit("login", resource)
 
         render json: user_payload(resource).merge(
           meta: { tenant: { id: current_tenant.id, slug: current_tenant.slug } }
@@ -34,6 +35,7 @@ module Api
 
       # DELETE /api/v1/sessions
       def destroy
+        log_session_audit("logout", current_user) if current_user
         sign_out(resource_name) if current_user
         clear_refresh_cookie
         head :no_content
@@ -91,6 +93,21 @@ module Api
 
       def respond_to_on_destroy
         head :no_content
+      end
+
+      def log_session_audit(action, user)
+        AuditEvent.create!(
+          tenant:      current_tenant,
+          user:        user,
+          action:      action,
+          entity_type: "User",
+          entity_id:   user.id,
+          metadata:    {},
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent.to_s.truncate(255)
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] #{action}: #{e.message}")
       end
     end
   end

@@ -232,10 +232,12 @@ function UsersSettingsPage() {
             <RefreshCw className={`mr-2 h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
             Recargar
           </Button>
-          <Button size="sm" onClick={() => setIsInviteDialogOpen(true)}>
-            <UserPlus className="mr-2 h-4 w-4" />
-            Invitar usuario
-          </Button>
+          {isAdmin && (
+            <Button size="sm" onClick={() => setIsInviteDialogOpen(true)}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Invitar usuario
+            </Button>
+          )}
         </div>
       </div>
 
@@ -348,53 +350,53 @@ function UsersSettingsPage() {
                         {user.last_sign_in_at ? formatDate(user.last_sign_in_at) : 'Nunca'}
                       </TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                changeRoleMutation.mutate({ userId: user.id, role: 'admin' })
-                              }
-                            >
-                              <Shield className="mr-2 h-4 w-4" />
-                              Rol: Admin
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                changeRoleMutation.mutate({ userId: user.id, role: 'manager' })
-                              }
-                            >
-                              Rol: Manager
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                changeRoleMutation.mutate({ userId: user.id, role: 'consultant' })
-                              }
-                            >
-                              Rol: Consultor
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                changeRoleMutation.mutate({ userId: user.id, role: 'viewer' })
-                              }
-                            >
-                              Rol: Solo lectura
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() =>
-                                toggleActiveMutation.mutate({ userId: user.id, active: !user.active })
-                              }
-                              disabled={toggleActiveMutation.isPending}
-                            >
-                              {user.active ? 'Desactivar usuario' : 'Activar usuario'}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            {isAdmin && (
+                        {isAdmin && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  changeRoleMutation.mutate({ userId: user.id, role: 'admin' })
+                                }
+                              >
+                                <Shield className="mr-2 h-4 w-4" />
+                                Rol: Admin
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  changeRoleMutation.mutate({ userId: user.id, role: 'manager' })
+                                }
+                              >
+                                Rol: Manager
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  changeRoleMutation.mutate({ userId: user.id, role: 'consultant' })
+                                }
+                              >
+                                Rol: Consultor
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  changeRoleMutation.mutate({ userId: user.id, role: 'viewer' })
+                                }
+                              >
+                                Rol: Solo lectura
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  toggleActiveMutation.mutate({ userId: user.id, active: !user.active })
+                                }
+                                disabled={toggleActiveMutation.isPending}
+                              >
+                                {user.active ? 'Desactivar usuario' : 'Activar usuario'}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => resetPasswordMutation.mutate(user.id)}
                                 disabled={resetPasswordMutation.isPending}
@@ -402,18 +404,18 @@ function UsersSettingsPage() {
                                 <Mail className="mr-2 h-4 w-4" />
                                 Enviar restablecimiento de contraseña
                               </DropdownMenuItem>
-                            )}
-                            {isAdmin && <DropdownMenuSeparator />}
-                            {isAdmin && currentUser?.id !== user.id && (
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => setConfirmDeleteUser({ id: user.id, name: user.name })}
-                              >
-                                Eliminar usuario
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              <DropdownMenuSeparator />
+                              {currentUser?.id !== user.id && (
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => setConfirmDeleteUser({ id: user.id, name: user.name })}
+                                >
+                                  Eliminar usuario
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

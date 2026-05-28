@@ -23,6 +23,7 @@ module Api
         authorize AdIntegration
         integration = current_tenant.ad_integrations.new(permitted)
         if integration.save
+          log_integration_audit!("integration_connect", integration)
           render_created(integration, with: AdIntegrationSerializer)
         else
           render_unprocessable(integration)
@@ -42,6 +43,7 @@ module Api
 
       def destroy
         authorize @integration
+        log_integration_audit!("integration_disconnect", @integration)
         @integration.destroy
         render_no_content
       end
@@ -164,6 +166,21 @@ module Api
 
       def public_api_origin
         ENV["API_PUBLIC_ORIGIN"].presence || request.base_url
+      end
+
+      def log_integration_audit!(action, integration)
+        AuditEvent.create!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      action,
+          entity_type: "AdIntegration",
+          entity_id:   integration.id,
+          metadata:    { provider: integration.provider },
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent.to_s.truncate(255)
+        )
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] #{action}: #{e.message}")
       end
     end
   end

@@ -28,7 +28,14 @@ module Tenants
       { name: "Perdida",    position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
     ].freeze
 
-    DEFAULT_LEAD_SOURCES = %w[web whatsapp meta_ads google_ads referido manual].freeze
+    DEFAULT_LEAD_SOURCES = [
+      { kind: "web",      name: "Web / Orgánico"      },
+      { kind: "whatsapp", name: "WhatsApp"             },
+      { kind: "meta",     name: "Meta Ads"             },
+      { kind: "google",   name: "Google Ads"           },
+      { kind: "referral", name: "Referido"             },
+      { kind: "manual",   name: "Manual / Presencial"  },
+    ].freeze
 
     # Campos extra para la vertical Libranzas (crédito por descuento de nómina)
     LIBRANZAS_FIELDS = [
@@ -122,8 +129,8 @@ module Tenants
             pipeline.pipeline_stages.create!(attrs.merge(tenant: tenant))
           end
 
-          DEFAULT_LEAD_SOURCES.each_with_index do |label, i|
-            LeadSource.create!(tenant: tenant, name: label, position: i)
+          DEFAULT_LEAD_SOURCES.each do |attrs|
+            LeadSource.create!(attrs.merge(tenant: tenant))
           end
 
           @field_definitions.each do |attrs|

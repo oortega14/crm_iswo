@@ -71,8 +71,25 @@ export interface Opportunity {
   last_activity_at?: string
   expected_close_on?: string
   reminder_due_at?: string
+  custom_fields?: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+// Tenant Field Definition Types (F5 — Verticales)
+export type FieldType = 'text' | 'number' | 'select' | 'date' | 'boolean' | 'currency'
+export type FieldEntity = 'opportunity' | 'contact'
+
+export interface TenantFieldDefinition {
+  id: string
+  key: string
+  label: string
+  field_type: FieldType
+  options: string[]
+  required: boolean
+  entity: FieldEntity
+  position: number
+  active: boolean
 }
 
 export interface OpportunityLog {

@@ -45,20 +45,53 @@ module Opportunities
     end
 
     # Conveniencia: persiste el score en la opp y devuelve el número.
+    # Si la oportunidad recién supera el umbral, la avanza automáticamente
+    # a la etapa "Calificada" del pipeline (RFC §6.1 ciclo de vida).
     def call_and_persist!
-      result = call
+      result    = call
       threshold = @criteria.threshold_qualified.to_i
+      newly_qualified = !@opportunity.qualified && result[:score] >= threshold
+
       @opportunity.update!(
         bant_score: result[:score],
         qualified:  result[:score] >= threshold,
-        bant_data: (@opportunity.bant_data || {}).merge("breakdown" => result[:breakdown])
+        bant_data:  (@opportunity.bant_data || {}).merge("breakdown" => result[:breakdown])
       )
+
+      auto_advance_stage! if newly_qualified
+
       result[:score]
     end
 
     # =========================================================================
 
     private
+
+    # Mueve la oportunidad a la etapa "Calificada" del pipeline si:
+    #   1. Existe una etapa con ese nombre (case-insensitive) en el mismo pipeline.
+    #   2. La etapa actual tiene posición anterior (aún no ha pasado por allí).
+    #   3. La etapa actual no es terminal (won/lost).
+    def auto_advance_stage!
+      qualified_stage = @opportunity.pipeline
+                                    .pipeline_stages
+                                    .find_by("lower(name) = ?", "calificada")
+      return unless qualified_stage
+      return if @opportunity.pipeline_stage_id == qualified_stage.id
+      return if @opportunity.pipeline_stage&.terminal?
+      return if (@opportunity.pipeline_stage&.position || 0) >= qualified_stage.position
+
+      old_stage_id = @opportunity.pipeline_stage_id
+      @opportunity.update_columns(
+        pipeline_stage_id: qualified_stage.id,
+        last_activity_at:  Time.current
+      )
+      @opportunity.opportunity_logs.create!(
+        tenant:       @tenant,
+        action:       "stage_change",
+        changes_data: { from_stage_id: old_stage_id, to_stage_id: qualified_stage.id },
+        note:         "Avance automático por calificación BANT"
+      )
+    end
 
     def default_criteria
       # Fallback por si el tenant aún no configuró pesos: 25/25/25/25, umbral 60.

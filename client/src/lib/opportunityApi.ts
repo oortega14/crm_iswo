@@ -263,6 +263,9 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
     expected_close_on: a.expected_close_on != null ? String(a.expected_close_on) : undefined,
     reminder_due_at: a.reminder_due_at != null ? String(a.reminder_due_at) : undefined,
+    custom_fields: a.custom_fields != null && typeof a.custom_fields === 'object'
+      ? (a.custom_fields as Record<string, unknown>)
+      : undefined,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
   }
@@ -348,5 +351,6 @@ export function toOpportunityUpdatePayload(
   if (patch.expected_close_on !== undefined) out.expected_close_on = patch.expected_close_on || null
   if (patch.bant_score !== undefined) out.bant_score = patch.bant_score
   if (patch.bant_data !== undefined) out.bant_data = patch.bant_data
+  if (patch.custom_fields !== undefined) out.custom_fields = patch.custom_fields
   return out
 }

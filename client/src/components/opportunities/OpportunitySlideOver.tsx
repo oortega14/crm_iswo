@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BantSliders } from './BantSliders'
 import { TemperatureSelector } from './TemperatureSelector'
 import { ActivityLog } from './ActivityLog'
@@ -37,7 +38,7 @@ import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
 import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import type { Opportunity, OpportunityTemperature } from '@/types'
+import type { Opportunity, OpportunityTemperature, TenantFieldDefinition } from '@/types'
 
 interface OpportunitySlideOverProps {
   opportunity?: Opportunity
@@ -501,6 +502,13 @@ export function OpportunitySlideOver({
                       </>
                     )}
 
+                    {/* Campos personalizados por vertical */}
+                    <CustomFieldsSection
+                      opportunity={opportunity}
+                      onSave={(custom_fields) => updateMutation.mutate({ custom_fields })}
+                      disabled={updateMutation.isPending || role === 'viewer'}
+                    />
+
                     {/* Notes — editable inline */}
                     <Separator />
                     <div>
@@ -629,6 +637,147 @@ export function OpportunitySlideOver({
       open={editContactOpen}
       onOpenChange={setEditContactOpen}
     />
+    </>
+  )
+}
+
+// ============================================================================
+// CustomFieldsSection — campos extra configurados por el tenant (F5 Verticales)
+// ============================================================================
+function mapFieldDefs(raw: unknown): TenantFieldDefinition[] {
+  const items = (raw as { data?: unknown[] })?.data ?? []
+  return items.map((item) => {
+    const r = item as { id?: string; attributes?: Record<string, unknown> }
+    const a = r.attributes ?? {}
+    return {
+      id:         String(r.id ?? ''),
+      key:        String(a.key ?? ''),
+      label:      String(a.label ?? ''),
+      field_type: (a.field_type as TenantFieldDefinition['field_type']) ?? 'text',
+      options:    Array.isArray(a.options) ? (a.options as string[]) : [],
+      required:   Boolean(a.required),
+      entity:     (a.entity as TenantFieldDefinition['entity']) ?? 'opportunity',
+      position:   Number(a.position ?? 0),
+      active:     Boolean(a.active ?? true),
+    }
+  })
+}
+
+function CustomFieldsSection({
+  opportunity,
+  onSave,
+  disabled,
+}: {
+  opportunity: Opportunity
+  onSave: (fields: Record<string, unknown>) => void
+  disabled: boolean
+}) {
+  const { data: defs = [] } = useQuery({
+    queryKey: ['tenant_field_definitions', 'opportunity'],
+    queryFn: async () => {
+      const res = await api.get('/tenant_field_definitions', { params: { entity: 'opportunity' } })
+      return mapFieldDefs(res.data)
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const [localValues, setLocalValues] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    setLocalValues(opportunity.custom_fields ?? {})
+  }, [opportunity.id, opportunity.custom_fields])
+
+  if (defs.length === 0) return null
+
+  const handleBlur = (key: string) => {
+    const current = opportunity.custom_fields ?? {}
+    if (localValues[key] !== current[key]) {
+      onSave({ ...current, ...localValues })
+    }
+  }
+
+  const handleChange = (key: string, value: unknown) => {
+    setLocalValues((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSelectChange = (key: string, value: string, current: Record<string, unknown>) => {
+    const updated = { ...current, [key]: value }
+    setLocalValues(updated)
+    onSave(updated)
+  }
+
+  const handleBooleanChange = (key: string, value: boolean, current: Record<string, unknown>) => {
+    const updated = { ...current, [key]: value }
+    setLocalValues(updated)
+    onSave(updated)
+  }
+
+  return (
+    <>
+      <Separator />
+      <div>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
+          Datos del negocio
+        </label>
+        <div className="space-y-3">
+          {defs.map((def) => {
+            const val = localValues[def.key]
+            const current = opportunity.custom_fields ?? {}
+
+            if (def.field_type === 'boolean') {
+              return (
+                <div key={def.key} className="flex items-center justify-between">
+                  <span className="text-sm">{def.label}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(val)}
+                    disabled={disabled}
+                    onChange={(e) => handleBooleanChange(def.key, e.target.checked, current)}
+                    className="size-4 rounded border-input accent-primary"
+                  />
+                </div>
+              )
+            }
+
+            if (def.field_type === 'select') {
+              return (
+                <div key={def.key} className="space-y-1">
+                  <label className="text-xs text-muted-foreground">{def.label}</label>
+                  <Select
+                    value={String(val ?? '')}
+                    disabled={disabled}
+                    onValueChange={(v) => handleSelectChange(def.key, v, current)}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {def.options.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            }
+
+            return (
+              <div key={def.key} className="space-y-1">
+                <label className="text-xs text-muted-foreground">{def.label}</label>
+                <input
+                  type={def.field_type === 'date' ? 'date' : def.field_type === 'number' || def.field_type === 'currency' ? 'number' : 'text'}
+                  value={String(val ?? '')}
+                  disabled={disabled}
+                  onChange={(e) => handleChange(def.key, e.target.value)}
+                  onBlur={() => handleBlur(def.key)}
+                  placeholder={def.required ? `${def.label} *` : def.label}
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </>
   )
 }

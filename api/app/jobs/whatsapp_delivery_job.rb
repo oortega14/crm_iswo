@@ -19,7 +19,9 @@ class WhatsappDeliveryJob < ApplicationJob
   # Single-job uniqueness por message_id (evita doble envío en reintentos
   # duplicados de Sidekiq).
   def perform(message_id)
-    msg = WhatsappMessage.find_by(id: message_id)
+    # without_tenant: necesario porque el job no conoce el tenant a priori.
+    # Una vez cargado el mensaje, se ejecuta dentro del scope correcto.
+    msg = ActsAsTenant.without_tenant { WhatsappMessage.find_by(id: message_id) }
     return unless msg
     return if msg.status.in?(%w[sent delivered read])
 

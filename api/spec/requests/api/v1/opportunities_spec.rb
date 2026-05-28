@@ -84,8 +84,15 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(created.opportunity_logs.last.action).to eq("create")
     end
 
-    it "422 si falta título" do
+    it "201 sin título genera uno automático desde el contacto" do
       bad = { opportunity: { contact_id: contact.id, pipeline_id: pipeline.id, pipeline_stage_id: stage.id } }.to_json
+      post "/api/v1/opportunities", params: bad, headers: auth_headers(consultant)
+      expect(response).to have_http_status(:created)
+      expect(json.dig("data", "attributes", "title")).to be_present
+    end
+
+    it "422 si falta la etapa del pipeline" do
+      bad = { opportunity: { contact_id: contact.id } }.to_json
       post "/api/v1/opportunities", params: bad, headers: auth_headers(consultant)
       expect(response.status).to eq(422)
       expect(json["error"]).to eq("unprocessable_entity")

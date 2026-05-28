@@ -22,13 +22,16 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
     end
 
     it "ejecuta dentro del scope del tenant del mensaje" do
+      # Forzar la materialización del mensaje ANTES de limpiar el tenant,
+      # ya que `let` es lazy y el create necesita el tenant context.
+      msg_id = message.id
       ActsAsTenant.current_tenant = nil
       expect(WhatsApp::MessageSender).to receive(:new) do |msg|
         expect(ActsAsTenant.current_tenant).to eq(msg.tenant)
         instance_double(WhatsApp::MessageSender, deliver: true)
       end
 
-      described_class.new.perform(message.id)
+      described_class.new.perform(msg_id)
     end
 
     it "no hace nada si el mensaje no existe" do

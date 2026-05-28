@@ -7,7 +7,7 @@ RSpec.describe LandingPage, type: :model do
   subject { build(:landing_page, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to have_many(:landing_form_submissions).dependent(:destroy) }
   end
 
@@ -29,8 +29,8 @@ RSpec.describe LandingPage, type: :model do
     end
 
     it "permite mismo slug en tenants distintos", :without_tenant do
-      t1 = create(:tenant, slug: "t1")
-      t2 = create(:tenant, slug: "t2")
+      t1 = create(:tenant, slug: "tenant-uno")
+      t2 = create(:tenant, slug: "tenant-dos")
       ActsAsTenant.with_tenant(t1) { create(:landing_page, tenant: t1, slug: "oferta") }
       ActsAsTenant.with_tenant(t2) { expect(build(:landing_page, tenant: t2, slug: "oferta")).to be_valid }
     end

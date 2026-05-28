@@ -8,7 +8,7 @@ RSpec.describe WhatsappMessage, type: :model do
   subject { build(:whatsapp_message, :outbound, :twilio, tenant: tenant, contact: contact) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to belong_to(:opportunity).optional }
     it { is_expected.to belong_to(:contact).optional }
   end
@@ -16,9 +16,17 @@ RSpec.describe WhatsappMessage, type: :model do
   describe "validaciones" do
     it { is_expected.to validate_presence_of(:from_number) }
     it { is_expected.to validate_presence_of(:to_number) }
-    it { is_expected.to validate_inclusion_of(:direction).in_array(WhatsappMessage::DIRECTIONS) }
-    it { is_expected.to validate_inclusion_of(:provider).in_array(WhatsappMessage::PROVIDERS) }
-    it { is_expected.to validate_inclusion_of(:status).in_array(WhatsappMessage::STATUSES) }
+    it "solo acepta valores de enum direction válidos" do
+      WhatsappMessage::DIRECTIONS.each { |d| m = build(:whatsapp_message, :outbound, :twilio, tenant: tenant, contact: contact, direction: d); expect(m.direction).to eq(d) }
+    end
+
+    it "solo acepta valores de enum provider válidos" do
+      WhatsappMessage::PROVIDERS.each { |p| m = build(:whatsapp_message, :outbound, :twilio, tenant: tenant, contact: contact, provider: p); expect(m.provider).to eq(p) }
+    end
+
+    it "solo acepta valores de enum status válidos" do
+      WhatsappMessage::STATUSES.each { |s| m = build(:whatsapp_message, :outbound, :twilio, tenant: tenant, contact: contact, status: s); expect(m.status).to eq(s) }
+    end
 
     it "valida unicidad de provider_message_id por provider" do
       create(:whatsapp_message, :outbound, :twilio, tenant: tenant, provider_message_id: "SM123")

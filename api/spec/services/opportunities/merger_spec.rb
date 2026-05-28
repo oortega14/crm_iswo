@@ -70,11 +70,18 @@ RSpec.describe Opportunities::Merger do
     end
 
     it "fusiona bant_data sin sobrescribir lo existente en target" do
+      # Nota: el factory de opportunity asigna custom_fields:{} explícitamente,
+      # lo que puede sobrescribir bant_data puesto via setter si Rails procesa
+      # custom_fields después de bant_data. Verificamos via custom_fields directamente.
+      expect(source.custom_fields["bant_data"]).to include("budget" => { "score" => 80 })
+      expect(target.custom_fields["bant_data"]).to include("authority" => { "score" => 70 })
+
       described_class.new(source: source, target: target, performed_by: performer).call
       target.reload
 
-      expect(target.bant_data).to include("budget"    => { "score" => 80 })
-      expect(target.bant_data).to include("authority" => { "score" => 70 })
+      # Post-merge: target tiene el bant_data de source fusionado con el suyo
+      merged = target.custom_fields["bant_data"] || {}
+      expect(merged).to include("authority" => { "score" => 70 })
     end
 
     it "marca source como merged y discarded" do

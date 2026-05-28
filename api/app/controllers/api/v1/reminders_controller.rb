@@ -63,14 +63,19 @@ module Api
       def complete
         authorize @reminder, :update?
         @reminder.update!(status: "done")
-        @reminder.opportunity.touch_activity!
+        @reminder.opportunity&.touch_activity!
         render_no_content
       end
 
       # POST /api/v1/reminders/:id/snooze  { minutes: 30 }
       def snooze
         authorize @reminder, :update?
-        @reminder.update!(remind_at: Time.current + params.fetch(:minutes, 30).to_i.minutes)
+        minutes = params.fetch(:minutes, 30).to_i
+        if minutes <= 0
+          return render json: { error: "minutes debe ser un número positivo" },
+                        status: :unprocessable_entity
+        end
+        @reminder.update!(remind_at: Time.current + minutes.minutes)
         render_no_content
       end
 

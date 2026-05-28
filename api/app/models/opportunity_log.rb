@@ -9,7 +9,7 @@
 class OpportunityLog < ApplicationRecord
   include TenantScoped
 
-  ACTIONS = %w[create update stage_change assign merge export note merged destroy classify].freeze
+  ACTIONS = %w[create update stage_change assign merge export note merged destroy classify google_conversion_upload].freeze
   enum :action, ACTIONS.zip(ACTIONS).to_h, prefix: :action
 
   # Campos de contacto que se enmascaran antes de persistir (A.8.11)

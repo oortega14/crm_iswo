@@ -43,6 +43,7 @@ module Api
 
       # GET /api/v1/referral_networks/tree?root_user_id=...&depth=3
       def tree
+        authorize ReferralNetwork, :tree?
         root_id   = params.fetch(:root_user_id, current_user.id).to_i
         max_depth = [params.fetch(:depth, 3).to_i, 10].min
 
@@ -51,6 +52,7 @@ module Api
 
       # GET /api/v1/referral_networks/my_network
       def my_network
+        authorize ReferralNetwork, :index?
         render json: { data: build_tree(current_user.id, 5) }, status: :ok
       end
 

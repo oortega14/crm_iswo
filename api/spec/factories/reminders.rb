@@ -11,8 +11,9 @@ FactoryBot.define do
     remind_at   { 1.day.from_now }
     status      { "pending" }
 
-    trait :done  do status { "done"  } end
-    trait :email do channel { "email" } end
+    trait :done    do status  { "done"   } end
+    trait :email   do channel { "email"  } end
+    trait :in_app  do channel { "in_app" } end
     trait :whatsapp do channel { "whatsapp" } end
   end
 end

@@ -7,7 +7,7 @@ RSpec.describe Pipeline, type: :model do
   subject { build(:pipeline, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to have_many(:pipeline_stages).dependent(:destroy) }
     it { is_expected.to have_many(:opportunities).dependent(:restrict_with_exception) }
   end

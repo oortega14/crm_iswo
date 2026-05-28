@@ -40,7 +40,10 @@ module WhatsApp
       )
       true
     rescue DeliveryError, Faraday::Error => e
-      @message.update!(status: "failed", error_message: e.message.truncate(500))
+      # update_columns saltea validaciones; necesario porque el mensaje puede
+      # tener un provider inválido cuando llegamos al rescue (ej. tests o
+      # corrupción de datos), y update! volvería a fallar por la validación.
+      @message.update_columns(status: "failed", error_message: e.message.truncate(500))
       false
     end
 

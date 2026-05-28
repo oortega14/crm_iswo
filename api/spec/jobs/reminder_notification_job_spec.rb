@@ -11,13 +11,24 @@ RSpec.describe ReminderNotificationJob, type: :job do
     end
 
     context "dispatcher" do
-      let(:reminder_email)    { build_stubbed(:reminder, :email,    tenant: tenant) }
-      let(:reminder_in_app)   { build_stubbed(:reminder,            tenant: tenant, channel: "in_app") }
-      let(:reminder_unknown)  { build_stubbed(:reminder,            tenant: tenant, channel: "carrier_pigeon") }
+      let(:reminder_email)  { build_stubbed(:reminder, :email,  tenant: tenant) }
+      let(:reminder_in_app) { build_stubbed(:reminder, :in_app, tenant: tenant) }
+      # Canal desconocido: usar un reminder válido y stubear el canal para evitar
+      # ArgumentError de Rails 8.1 que rechaza valores de enum inválidos.
+      let(:reminder_unknown) do
+        r = build_stubbed(:reminder, :email, tenant: tenant)
+        allow(r).to receive(:channel).and_return("carrier_pigeon")
+        r
+      end
 
       before do
-        # Devolvemos solo el reminder pedido en cada example.
-        allow(Reminder).to receive_message_chain(:due, :where).and_return([reminder])
+        # receive_message_chain devuelve Array; el job llama find_each sobre él.
+        # Usamos and_yield para simular el comportamiento de find_each en un Array.
+        allow(Reminder).to receive_message_chain(:due, :where) do
+          rel = double("relation")
+          allow(rel).to receive(:find_each).and_yield(reminder)
+          rel
+        end
         allow(reminder).to receive(:mark_sent!)
         allow(reminder).to receive(:mark_failed!)
         allow(reminder).to receive(:tenant).and_return(tenant)
@@ -58,7 +69,11 @@ RSpec.describe ReminderNotificationJob, type: :job do
       let(:reminder) { build_stubbed(:reminder, :email, tenant: tenant) }
 
       before do
-        allow(Reminder).to receive_message_chain(:due, :where).and_return([reminder])
+        allow(Reminder).to receive_message_chain(:due, :where) do
+          rel = double("relation")
+          allow(rel).to receive(:find_each).and_yield(reminder)
+          rel
+        end
         allow(reminder).to receive(:tenant).and_return(tenant)
         allow(ReminderMailer).to receive(:with).and_raise(StandardError, "smtp down")
       end

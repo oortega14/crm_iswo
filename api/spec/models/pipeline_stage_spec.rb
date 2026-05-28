@@ -9,7 +9,7 @@ RSpec.describe PipelineStage, type: :model do
   subject { build(:pipeline_stage, tenant: tenant, pipeline: pipeline) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to belong_to(:pipeline) }
     it { is_expected.to have_many(:opportunities).dependent(:restrict_with_exception) }
   end

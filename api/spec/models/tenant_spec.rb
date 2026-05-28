@@ -86,6 +86,16 @@ RSpec.describe Tenant, type: :model do
   end
 
   describe "#whatsapp_outbound_from_number", :without_tenant do
+    around do |example|
+      # Limpiar ENV vars que tienen prioridad sobre la integración en la lógica del modelo
+      old_twilio  = ENV.delete("TWILIO_WHATSAPP_NUMBER")
+      old_provider = ENV.delete("WHATSAPP_PROVIDER")
+      example.run
+    ensure
+      ENV["TWILIO_WHATSAPP_NUMBER"] = old_twilio   if old_twilio
+      ENV["WHATSAPP_PROVIDER"]      = old_provider if old_provider
+    end
+
     it "usa la integración Twilio aunque el estado sea error (no solo active)" do
       tenant = create(:tenant, settings: {})
       ActsAsTenant.with_tenant(tenant) do

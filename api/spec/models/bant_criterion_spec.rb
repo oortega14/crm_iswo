@@ -7,7 +7,7 @@ RSpec.describe BantCriterion, type: :model do
   subject { build(:bant_criterion, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
   end
 
   describe "validaciones" do

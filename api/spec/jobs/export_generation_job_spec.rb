@@ -39,9 +39,15 @@ RSpec.describe ExportGenerationJob, type: :job do
     end
 
     context "recurso desconocido" do
-      let(:export) { create(:export, tenant: tenant, user: user, resource: "unicorns", format: "csv") }
+      # Rails 8.1 enums no permiten cargar valores inválidos desde DB.
+      # Simulamos el error de "recurso no soportado" stubando el método
+      # que construye el scope interno del job.
+      let(:export) { create(:export, tenant: tenant, user: user, resource: "contacts", format: "csv") }
 
       it "marca el export como failed con el mensaje del error" do
+        allow_any_instance_of(described_class).to receive(:collection)
+          .and_raise(RuntimeError, "Recurso no soportado: unicorns")
+
         described_class.new.perform(export.id)
         export.reload
         expect(export.status).to eq("failed")

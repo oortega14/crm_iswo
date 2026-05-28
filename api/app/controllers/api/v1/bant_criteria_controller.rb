@@ -6,6 +6,7 @@ module Api
     # BantCriteriaController — singleton por tenant
     # ========================================================================
     class BantCriteriaController < BaseController
+      auditable_resource :criterion
       before_action :set_criterion
 
       def show

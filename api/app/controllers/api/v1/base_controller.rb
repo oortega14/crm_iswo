@@ -17,6 +17,7 @@ module Api
       include ErrorHandler
       include Paginatable
       include Pundit::Authorization
+      include Auditable
 
       # Devise :trackable actualiza users en cada request (sign_in_count, current_sign_in_at).
       # Con JWT + SPA eso dispara un UPDATE en cada GET (p. ej. polling del dashboard).

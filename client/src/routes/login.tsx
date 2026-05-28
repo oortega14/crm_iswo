@@ -212,7 +212,7 @@ function LoginPage() {
                 <Input
                   id="tenantSlug"
                   type="text"
-                  placeholder="iswo"
+                  placeholder="iswo, mi-casita, libranzas…"
                   autoComplete="organization"
                   {...register('tenantSlug')}
                   aria-invalid={!!errors.tenantSlug}

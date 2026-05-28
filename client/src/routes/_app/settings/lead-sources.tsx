@@ -39,6 +39,8 @@ import { toast } from 'sonner'
 import type { LeadSource, LeadSourceKind } from '@/types'
 import api from '@/lib/api'
 import { jsonApiPrimaryList } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
+import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/settings/lead-sources')({
   component: LeadSourcesSettingsPage,
@@ -87,6 +89,8 @@ function mapLeadSource(r: { id?: string; attributes?: Record<string, unknown> })
 // ---------------------------------------------------------------------------
 function LeadSourcesSettingsPage() {
   const queryClient = useQueryClient()
+  const isAdmin   = useAuthStore((s) => s.isAdmin())
+  const canManage = useAuthStore((s) => s.isAdmin() || s.isManager())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingSource, setEditingSource] = useState<LeadSource | null>(null)
   const [formName, setFormName] = useState('')
@@ -94,14 +98,14 @@ function LeadSourcesSettingsPage() {
   const [confirmDeleteSource, setConfirmDeleteSource] = useState<LeadSource | null>(null)
 
   const { data: sources = [], isLoading } = useQuery({
-    queryKey: ['lead_sources'],
+    queryKey: queryKeys.leadSources.all,
     queryFn: async () => {
       const res = await api.get('/lead_sources')
       return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapLeadSource)
     },
   })
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['lead_sources'] })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.leadSources.all })
 
   const saveMutation = useMutation({
     mutationFn: async (body: { name: string; kind: LeadSourceKind }) => {
@@ -178,10 +182,12 @@ function LeadSourcesSettingsPage() {
             Define los orígenes de tus oportunidades. Se asignan al registrar o importar leads.
           </p>
         </div>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva fuente
-        </Button>
+        {canManage && (
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva fuente
+          </Button>
+        )}
       </div>
 
       {/* Lista */}
@@ -211,6 +217,8 @@ function LeadSourcesSettingsPage() {
                       key={source.id}
                       source={source}
                       meta={meta}
+                      canManage={canManage}
+                      canDelete={isAdmin}
                       onEdit={() => openEdit(source)}
                       onToggle={(active) => toggleActiveMutation.mutate({ id: source.id, active })}
                       onDelete={() => setConfirmDeleteSource(source)}
@@ -227,6 +235,8 @@ function LeadSourcesSettingsPage() {
                   key={source.id}
                   source={source}
                   meta={KIND_META.manual}
+                  canManage={canManage}
+                  canDelete={isAdmin}
                   onEdit={() => openEdit(source)}
                   onToggle={(active) => toggleActiveMutation.mutate({ id: source.id, active })}
                   onDelete={() => setConfirmDeleteSource(source)}
@@ -328,12 +338,14 @@ function LeadSourcesSettingsPage() {
 type SourceRowProps = {
   source: LeadSource
   meta: { label: string; color: string }
+  canManage: boolean
+  canDelete: boolean
   onEdit: () => void
   onToggle: (active: boolean) => void
   onDelete: () => void
 }
 
-function SourceRow({ source, meta, onEdit, onToggle, onDelete }: SourceRowProps) {
+function SourceRow({ source, meta, canManage, canDelete, onEdit, onToggle, onDelete }: SourceRowProps) {
   return (
     <div className="group flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:border-border">
       <div className="flex items-center gap-3 min-w-0">
@@ -351,24 +363,30 @@ function SourceRow({ source, meta, onEdit, onToggle, onDelete }: SourceRowProps)
       </div>
 
       <div className="flex items-center gap-3 shrink-0 ml-4">
-        <Switch
-          checked={source.active}
-          onCheckedChange={onToggle}
-          aria-label={source.active ? 'Desactivar fuente' : 'Activar fuente'}
-        />
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
-            <Edit className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive hover:text-destructive"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {canManage && (
+          <Switch
+            checked={source.active}
+            onCheckedChange={onToggle}
+            aria-label={source.active ? 'Desactivar fuente' : 'Activar fuente'}
+          />
+        )}
+        {canManage && (
+          <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
+              <Edit className="h-3.5 w-3.5" />
+            </Button>
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive hover:text-destructive"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

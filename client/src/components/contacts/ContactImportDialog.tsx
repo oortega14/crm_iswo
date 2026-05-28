@@ -116,73 +116,113 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
     importMutation.mutate(file)
   }
 
+  const clearFile = () => {
+    setSelectedLabel(null)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="size-4" />
-            Importar contactos (Excel)
+            Importar contactos
           </DialogTitle>
-          <DialogDescription className="space-y-2 text-left">
-            <span className="block">
-              Usa la plantilla <strong>.xlsx</strong>. Primera fila = cabeceras; datos desde la fila 2. Columnas:{' '}
-              <code className="rounded bg-muted px-1 text-xs">
-                first_name, last_name, email, phone, company, position, city, country, kind, notes
-              </code>
-              . También admitimos cabeceras en español (nombre, apellido, correo, teléfono, empresa…).
-            </span>
-            <span className="block text-muted-foreground">
-              Para empresas usa <code className="text-xs">kind</code> = company o rellena solo empresa sin nombre.
-            </span>
+          <DialogDescription>
+            Sube un archivo Excel (.xlsx) para crear contactos en bloque.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={downloadTemplateMutation.isPending}
-            onClick={() => downloadTemplateMutation.mutate()}
-          >
-            {downloadTemplateMutation.isPending ? (
-              <Spinner className="size-4" />
-            ) : (
-              <Download className="size-4" />
-            )}
-            Descargar plantilla Excel
-          </Button>
-        </div>
-
-        <div className="space-y-2">
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            className="hidden"
-            onChange={onPickFile}
-          />
-          <Button type="button" variant="secondary" className="w-full gap-2" onClick={() => inputRef.current?.click()}>
-            <FileSpreadsheet className="size-4" />
-            Elegir archivo Excel (.xlsx)
-          </Button>
-          {selectedLabel ? (
-            <p className="truncate text-xs text-muted-foreground" title={selectedLabel}>
-              Archivo: {selectedLabel}
+        <div className="space-y-3">
+          {/* Instrucciones compactas */}
+          <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground space-y-1">
+            <p>
+              <span className="font-medium text-foreground">Columnas esperadas:</span>{' '}
+              <code className="rounded bg-muted px-1 text-xs">
+                first_name, last_name, email, phone, company, position, city, country, kind, notes
+              </code>
             </p>
-          ) : null}
+            <p className="text-xs">
+              Primera fila = cabeceras · También acepta nombres en español (nombre, apellido, correo…) ·
+              Para empresas usa <code className="text-xs">kind = company</code>
+            </p>
+          </div>
+
+          {/* Paso 1: Plantilla */}
+          <div className="flex items-center justify-between rounded-md border px-4 py-3">
+            <div className="min-w-0 mr-4">
+              <p className="text-sm font-medium">Paso 1 — Descarga la plantilla</p>
+              <p className="text-xs text-muted-foreground">Abre en Excel, rellena y guarda como .xlsx</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              disabled={downloadTemplateMutation.isPending}
+              onClick={() => downloadTemplateMutation.mutate()}
+            >
+              {downloadTemplateMutation.isPending ? (
+                <Spinner className="size-3.5" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              Descargar plantilla
+            </Button>
+          </div>
+
+          {/* Paso 2: Elegir archivo */}
+          <div className="rounded-md border px-4 py-3 space-y-2">
+            <p className="text-sm font-medium">Paso 2 — Elige el archivo completado</p>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={onPickFile}
+            />
+            {selectedLabel ? (
+              <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                <FileSpreadsheet className="size-4 shrink-0 text-emerald-500" />
+                <span className="flex-1 truncate text-foreground" title={selectedLabel}>
+                  {selectedLabel}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Quitar archivo"
+                  className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={clearFile}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() => inputRef.current?.click()}
+              >
+                <FileSpreadsheet className="size-4" />
+                Elegir archivo Excel (.xlsx)
+              </Button>
+            )}
+          </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="gap-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button type="button" disabled={importMutation.isPending} onClick={() => void submitImport()}>
+          <Button
+            type="button"
+            disabled={importMutation.isPending || !selectedLabel}
+            onClick={() => void submitImport()}
+          >
             {importMutation.isPending ? (
               <>
-                <Spinner className="size-4" />
+                <Spinner className="size-4 mr-1" />
                 Importando…
               </>
             ) : (

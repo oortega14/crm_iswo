@@ -175,6 +175,8 @@ module Opportunities
     end
 
     # Round-robin: consultant con menos oportunidades abiertas.
+    # Fallback: cualquier admin activo. Si tampoco hay, nil (oportunidad huérfana
+    # aceptable en tenants recién creados sin usuarios).
     def round_robin_owner
       @tenant.users
              .where(role: "consultant", active: true)
@@ -182,7 +184,8 @@ module Opportunities
              .where(opportunities: { status: [nil, "new_lead", "contacted", "qualified", "proposal"] })
              .group("users.id")
              .order(Arel.sql("COUNT(opportunities.id) ASC"))
-             .first
+             .first ||
+        @tenant.users.where(role: "admin", active: true).first
     end
   end
 end

@@ -64,6 +64,7 @@ export function OpportunitySlideOver({
   useEffect(() => {
     setNotesValue(opportunity?.notes ?? '')
     setAiResult(null)
+    setActiveTab('overview')
   }, [opportunity?.id, opportunity?.notes])
 
   useEffect(() => {

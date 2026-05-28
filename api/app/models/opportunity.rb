@@ -67,7 +67,8 @@ class Opportunity < ApplicationRecord
 
   # ---- Callbacks ------------------------------------------------------------
   before_validation :set_last_activity_at, on: :create
-  before_save :track_close_transition
+  before_save       :track_close_transition
+  after_commit      :enqueue_google_conversion_upload, on: %i[create update]
 
   # ---- Scopes ---------------------------------------------------------------
   scope :open,        -> { where.not(status: %w[won lost]) }
@@ -130,5 +131,11 @@ class Opportunity < ApplicationRecord
       self.closed_at = nil
       self.close_reason = nil
     end
+  end
+
+  def enqueue_google_conversion_upload
+    return unless saved_change_to_status?(to: "won")
+
+    UploadGoogleConversionJob.perform_later(id)
   end
 end

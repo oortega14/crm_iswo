@@ -57,6 +57,9 @@ Rails.application.routes.draw do
       # ---- Configuración del tenant ------------------------------------------
       resource :tenant,          only: %i[show update], controller: "tenants"
       resource :bant_criterion,  only: %i[show update], controller: "bant_criteria"
+      resources :tenant_field_definitions, only: %i[index show create update destroy] do
+        collection { patch :reorder }
+      end
 
       # ---- Usuarios del tenant -----------------------------------------------
       resources :users do

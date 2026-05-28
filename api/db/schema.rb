@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_25_204548) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -362,6 +362,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_204548) do
     t.index ["user_id"], name: "index_reminders_on_user_id"
   end
 
+  create_table "tenant_field_definitions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.string "entity", default: "opportunity", null: false, comment: "Entidad destino: 'opportunity' | 'contact'"
+    t.string "field_type", default: "text", null: false, comment: "text | number | select | date | boolean | currency"
+    t.string "key", null: false, comment: "Clave interna, e.g. 'empleador_nit'"
+    t.string "label", null: false, comment: "Etiqueta visible al usuario"
+    t.jsonb "options", default: [], null: false, comment: "Opciones para tipo 'select', ej. ['Sector público','Privado']"
+    t.integer "position", default: 0, null: false
+    t.boolean "required", default: false, null: false
+    t.bigint "tenant_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["tenant_id", "entity", "position"], name: "idx_tenant_field_defs_order"
+    t.index ["tenant_id", "key", "entity"], name: "idx_tenant_field_defs_unique_key", unique: true
+    t.index ["tenant_id"], name: "index_tenant_field_definitions_on_tenant_id"
+    t.check_constraint "entity::text = ANY (ARRAY['opportunity'::character varying, 'contact'::character varying]::text[])", name: "chk_tenant_field_def_entity"
+    t.check_constraint "field_type::text = ANY (ARRAY['text'::character varying, 'number'::character varying, 'select'::character varying, 'date'::character varying, 'boolean'::character varying, 'currency'::character varying]::text[])", name: "chk_tenant_field_def_type"
+  end
+
   create_table "tenants", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.datetime "created_at", null: false
@@ -489,6 +508,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_25_204548) do
   add_foreign_key "reminders", "opportunities"
   add_foreign_key "reminders", "tenants"
   add_foreign_key "reminders", "users"
+  add_foreign_key "tenant_field_definitions", "tenants"
   add_foreign_key "users", "tenants"
   add_foreign_key "whatsapp_messages", "contacts"
   add_foreign_key "whatsapp_messages", "opportunities"

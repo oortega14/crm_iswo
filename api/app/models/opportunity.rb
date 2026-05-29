@@ -71,7 +71,7 @@ class Opportunity < ApplicationRecord
   after_commit      :enqueue_google_conversion_upload, on: %i[create update]
 
   # ---- Scopes ---------------------------------------------------------------
-  scope :open,        -> { where.not(status: %w[won lost]) }
+  scope :open,        -> { where.not(status: %w[won lost merged]) }
   scope :won,         -> { where(status: "won") }
   scope :lost,        -> { where(status: "lost") }
   scope :by_owner,    ->(user_id) { where(owner_user_id: user_id) }
@@ -82,7 +82,7 @@ class Opportunity < ApplicationRecord
 
   # ---- Helpers --------------------------------------------------------------
   def terminal?
-    status_won? || status_lost?
+    status_won? || status_lost? || status_merged?
   end
 
   def touch_activity!(recalc_temperature: true)

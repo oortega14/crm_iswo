@@ -86,7 +86,7 @@ module Api
       def dispatch_whatsapp_delivery!(msg)
         return unless defined?(WhatsappDeliveryJob)
 
-        WhatsappDeliveryJob.perform_now(msg.id)
+        WhatsappDeliveryJob.perform_later(msg.id)
       end
 
       def set_opportunity

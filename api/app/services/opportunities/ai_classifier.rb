@@ -81,6 +81,7 @@ module Opportunities
 
       # Esperamos JSON: { "temperature": "...", "reasoning": "...", "next_action": "..." }
       parsed = JSON.parse(text)
+      raise JSON::ParserError, "expected Hash" unless parsed.is_a?(Hash)
 
       temp = parsed["temperature"].to_s.downcase
       temp = "cold" unless %w[cold warm hot].include?(temp)
@@ -115,11 +116,12 @@ module Opportunities
     end
 
     def user_prompt
+      bant = (@opp.bant_data || {}).with_indifferent_access
       bant_parts = []
-      bant_parts << "Budget #{@opp.bant_budget}/25"    if @opp.bant_budget.to_i > 0
-      bant_parts << "Authority #{@opp.bant_authority}/25" if @opp.bant_authority.to_i > 0
-      bant_parts << "Need #{@opp.bant_need}/25"        if @opp.bant_need.to_i > 0
-      bant_parts << "Timeline #{@opp.bant_timeline}/25" if @opp.bant_timeline.to_i > 0
+      bant_parts << "Budget #{bant.dig(:budget, :score).to_i}/100"    if bant.dig(:budget, :score).to_i > 0
+      bant_parts << "Authority #{bant.dig(:authority, :score).to_i}/100" if bant.dig(:authority, :score).to_i > 0
+      bant_parts << "Need #{bant.dig(:need, :score).to_i}/100"        if bant.dig(:need, :score).to_i > 0
+      bant_parts << "Timeline #{bant.dig(:timeline, :score).to_i}/100" if bant.dig(:timeline, :score).to_i > 0
 
       days_since = if @opp.last_activity_at
                      ((Time.current - @opp.last_activity_at) / 86_400).round

@@ -81,7 +81,7 @@ module Opportunities
       return if (@opportunity.pipeline_stage&.position || 0) >= qualified_stage.position
 
       old_stage_id = @opportunity.pipeline_stage_id
-      @opportunity.update_columns(
+      @opportunity.update!(
         pipeline_stage_id: qualified_stage.id,
         last_activity_at:  Time.current
       )

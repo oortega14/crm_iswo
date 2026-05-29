@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_000001) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -262,6 +262,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_000001) do
     t.index ["pipeline_id"], name: "index_opportunities_on_pipeline_id"
     t.index ["pipeline_stage_id"], name: "index_opportunities_on_pipeline_stage_id"
     t.index ["temperature"], name: "index_opportunities_on_temperature"
+    t.index ["tenant_id", "contact_id"], name: "index_opportunities_on_tenant_id_and_contact_id"
     t.index ["tenant_id", "last_activity_at"], name: "index_opportunities_on_tenant_id_and_last_activity_at"
     t.index ["tenant_id", "owner_user_id"], name: "index_opportunities_on_tenant_id_and_owner_user_id"
     t.index ["tenant_id", "pipeline_stage_id"], name: "index_opportunities_on_tenant_id_and_pipeline_stage_id"
@@ -377,8 +378,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_000001) do
     t.index ["tenant_id", "entity", "position"], name: "idx_tenant_field_defs_order"
     t.index ["tenant_id", "key", "entity"], name: "idx_tenant_field_defs_unique_key", unique: true
     t.index ["tenant_id"], name: "index_tenant_field_definitions_on_tenant_id"
-    t.check_constraint "entity::text = ANY (ARRAY['opportunity'::character varying, 'contact'::character varying]::text[])", name: "chk_tenant_field_def_entity"
-    t.check_constraint "field_type::text = ANY (ARRAY['text'::character varying, 'number'::character varying, 'select'::character varying, 'date'::character varying, 'boolean'::character varying, 'currency'::character varying]::text[])", name: "chk_tenant_field_def_type"
+    t.check_constraint "entity::text = ANY (ARRAY['opportunity'::character varying::text, 'contact'::character varying::text])", name: "chk_tenant_field_def_entity"
+    t.check_constraint "field_type::text = ANY (ARRAY['text'::character varying::text, 'number'::character varying::text, 'select'::character varying::text, 'date'::character varying::text, 'boolean'::character varying::text, 'currency'::character varying::text])", name: "chk_tenant_field_def_type"
   end
 
   create_table "tenants", force: :cascade do |t|

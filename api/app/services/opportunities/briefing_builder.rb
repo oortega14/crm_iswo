@@ -13,9 +13,10 @@ module Opportunities
   class BriefingBuilder
     MAX_ITEMS = 5
 
-    def initialize(user, tenant)
-      @user   = user
-      @tenant = tenant
+    def initialize(user, tenant, opportunity_scope: nil)
+      @user              = user
+      @tenant            = tenant
+      @opportunity_scope = opportunity_scope
     end
 
     def call
@@ -38,8 +39,15 @@ module Opportunities
     private
 
     def base_scope
-      scope = Opportunity.kept.where.not(status: %w[won lost merged])
-      @user.role_admin? || @user.role_manager? ? scope : scope.where(owner_user_id: @user.id)
+      root = @opportunity_scope || default_opportunity_scope
+      root.kept.where.not(status: %w[won lost merged])
+    end
+
+    def default_opportunity_scope
+      scope = Opportunity.all
+      return scope if @user.role.in?(%w[admin manager viewer])
+
+      scope.where(owner_user_id: @user.id)
     end
 
     def build_hot_leads
@@ -48,15 +56,18 @@ module Opportunities
         .order(bant_score: :desc)
         .limit(MAX_ITEMS)
         .includes(:contact, :pipeline_stage)
+        .to_a
     end
 
     def build_overdue_reminders
       Reminder
-        .where(user: @user, status: "pending")
+        .where(user: @user)
+        .status_pending
         .where(remind_at: ..Time.current)
         .order(:remind_at)
         .limit(MAX_ITEMS)
         .includes(:opportunity)
+        .to_a
     end
 
     def build_stale_leads
@@ -67,6 +78,7 @@ module Opportunities
         .order(last_activity_at: :asc)
         .limit(MAX_ITEMS)
         .includes(:contact)
+        .to_a
     end
 
     def build_kpis
@@ -78,7 +90,7 @@ module Opportunities
         hot_count:     all.where(temperature: "hot").count,
         warm_count:    all.where(temperature: "warm").count,
         cold_count:    all.where(temperature: "cold").count,
-        overdue_count: Reminder.where(user: @user, status: "pending")
+        overdue_count: Reminder.where(user: @user).status_pending
                                .where(remind_at: ..Time.current).count,
         new_this_week: all.where(created_at: 7.days.ago..).count
       }

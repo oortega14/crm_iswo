@@ -43,8 +43,9 @@ module Api
 
       # GET /api/v1/referral_networks/tree?root_user_id=...&depth=3
       def tree
-        authorize ReferralNetwork, :tree?
-        root_id   = params.fetch(:root_user_id, current_user.id).to_i
+        root_id = params.fetch(:root_user_id, current_user.id).to_i
+        raise Pundit::NotAuthorizedError unless policy(ReferralNetwork).tree?(root_id)
+
         max_depth = [params.fetch(:depth, 3).to_i, 10].min
 
         render json: { data: build_tree(root_id, max_depth) }, status: :ok

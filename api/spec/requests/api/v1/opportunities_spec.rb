@@ -11,7 +11,8 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
   let(:pipeline) { create(:pipeline_with_stages, tenant: tenant) }
   let(:stage)    { pipeline.pipeline_stages.first }
   let(:won_stage) { pipeline.pipeline_stages.find_by(closed_won: true) }
-  let(:contact)  { create(:contact, tenant: tenant) }
+  let(:contact)         { create(:contact, tenant: tenant) }
+  let(:foreign_contact) { create(:contact, tenant: tenant) }
 
   let!(:own_opp) do
     create(:opportunity,
@@ -21,7 +22,7 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
   let!(:foreign_opp) do
     create(:opportunity,
            tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
-           contact: contact, owner_user: other_consultant, title: "Ajena")
+           contact: foreign_contact, owner_user: other_consultant, title: "Ajena")
   end
 
   describe "GET /api/v1/opportunities" do
@@ -43,6 +44,14 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       get "/api/v1/opportunities?status=qualified", headers: auth_headers(manager)
       ids = json["data"].map { |d| d["id"].to_i }
       expect(ids).to eq([own_opp.id])
+    end
+
+    it "filtra por q en título o contacto" do
+      own_opp.contact.update!(first_name: "Zulma", last_name: "UniqueSearch")
+      get "/api/v1/opportunities?q=UniqueSearch", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(own_opp.id)
+      expect(ids).not_to include(foreign_opp.id)
     end
 
     it "filtra por pipeline_id" do

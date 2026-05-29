@@ -12,12 +12,14 @@ module Api
       # GET /api/v1/reminders
       # GET /api/v1/opportunities/:opportunity_id/reminders
       def index
+        authorize Reminder, :index?
+
         scope = if params[:opportunity_id].present?
                   opp = current_tenant.opportunities.find(params[:opportunity_id])
                   authorize opp, :show?
                   opp.reminders
                 else
-                  policy_scope(Reminder).where(user: current_user)
+                  policy_scope(Reminder)
                 end
         scope = scope.where(status: params[:status]) if params[:status].present?
         if params[:overdue] == "true"
@@ -25,7 +27,11 @@ module Api
         end
         scope = scope.upcoming if params[:upcoming] == "true"
 
-        render_collection(scope.includes(:user, :opportunity).order(:remind_at), with: ReminderSerializer)
+        render_collection(
+          scope.includes(:user, :opportunity).order(:remind_at),
+          with:     ReminderSerializer,
+          include:  %i[opportunity]
+        )
       end
 
       def show
@@ -92,7 +98,11 @@ module Api
       end
 
       def reminder_params
-        params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id, :status)
+        permitted = params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id, :status)
+        unless current_user.role_admin? || current_user.role_manager?
+          permitted = permitted.except(:user_id)
+        end
+        permitted
       end
     end
   end

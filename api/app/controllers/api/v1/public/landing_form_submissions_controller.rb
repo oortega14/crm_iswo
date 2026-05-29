@@ -31,6 +31,7 @@ module Api
           )
 
           if submission.save
+            landing.increment!(:lead_count)
             LandingSubmissionProcessor.new(submission).call_later if defined?(LandingSubmissionProcessor)
 
             render json: { data: { id: submission.id, status: "received" } }, status: :created

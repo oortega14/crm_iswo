@@ -5,13 +5,19 @@ import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import {
+  buildTenant,
+  buildUserFromSession,
+  extractBearerToken,
+  type JsonApiResource,
+} from '@/lib/authSession'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
-import type { Tenant, User } from '@/types'
+import type { User } from '@/types'
 
 const loginSchema = z.object({
   tenantSlug: z.string().min(1, 'El identificador de empresa es obligatorio'),
@@ -24,11 +30,6 @@ const loginSearchSchema = z.object({
 })
 
 type LoginForm = z.infer<typeof loginSchema>
-
-type JsonApiResource<TAttributes> = {
-  id: string
-  attributes: TAttributes
-}
 
 type SessionAttributes = {
   email: string
@@ -60,38 +61,6 @@ type SessionMeta = {
   }
 }
 
-const buildUserFromSession = (resource: JsonApiResource<SessionAttributes>): User => {
-  const attrs = resource.attributes
-  const fullName = attrs.full_name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')
-  const timestamp = new Date().toISOString()
-
-  return {
-    id: resource.id,
-    email: attrs.email,
-    name: fullName || attrs.email,
-    role: attrs.role,
-    avatar_url: attrs.avatar_url || undefined,
-    active: attrs.active ?? true,
-    last_sign_in_at: attrs.last_sign_in_at,
-    created_at: attrs.created_at || timestamp,
-    updated_at: attrs.updated_at || timestamp,
-  }
-}
-
-const buildTenant = (resource: JsonApiResource<TenantAttributes>): Tenant => {
-  const attrs = resource.attributes
-  return {
-    id: resource.id,
-    name: attrs.name,
-    subdomain: attrs.slug,
-    logo_url: attrs.logo_url || undefined,
-    primary_color: attrs.brand_color || '#2563eb',
-    currency: attrs.currency || 'COP',
-    timezone: attrs.timezone || 'America/Bogota',
-    created_at: attrs.created_at || new Date().toISOString(),
-  }
-}
-
 export const Route = createFileRoute('/login')({
   validateSearch: loginSearchSchema,
   beforeLoad: ({ context }) => {
@@ -105,9 +74,11 @@ export const Route = createFileRoute('/login')({
 const ENV_TENANT = import.meta.env.VITE_TENANT_SLUG as string | undefined
 
 function resolveInitialTenant(fromUrl?: string): string {
-  if (ENV_TENANT?.trim()) return ENV_TENANT.trim().toLowerCase()
   if (fromUrl?.trim()) return fromUrl.trim().toLowerCase()
-  return window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() ?? ''
+  const stored = window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase()
+  if (stored) return stored
+  if (ENV_TENANT?.trim()) return ENV_TENANT.trim().toLowerCase()
+  return ''
 }
 
 function LoginPage() {
@@ -127,8 +98,7 @@ function LoginPage() {
         { headers: { 'X-Tenant-Slug': tenantSlug } },
       )
 
-      const authHeader = response.headers.authorization as string | undefined
-      const accessToken = authHeader?.replace(/^Bearer\s+/i, '').trim()
+      const accessToken = extractBearerToken(response)
       const sessionData = response.data?.data as JsonApiResource<SessionAttributes> | undefined
       const sessionMeta = (response.data?.meta || {}) as SessionMeta
 
@@ -183,6 +153,7 @@ function LoginPage() {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -192,6 +163,8 @@ function LoginPage() {
   const onSubmit = (data: LoginForm) => {
     loginMutation.mutate(data)
   }
+
+  const tenantForForgot = watch('tenantSlug')?.trim().toLowerCase()
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
@@ -271,6 +244,7 @@ function LoginPage() {
             <p className="text-center text-sm">
               <Link
                 to="/forgot-password"
+                search={tenantForForgot ? { tenant: tenantForForgot } : undefined}
                 className="text-primary underline-offset-4 hover:underline"
               >
                 ¿Olvidaste tu contraseña?

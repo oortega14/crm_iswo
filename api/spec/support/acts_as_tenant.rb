@@ -11,12 +11,16 @@ RSpec.configure do |config|
   config.before(:each) do |example|
     next if example.metadata[:without_tenant]
 
-    @_default_tenant ||= FactoryBot.create(:tenant)
+    # Crea un tenant fresco en cada test. No se puede cachear con ||= porque
+    # DatabaseCleaner rollbackea el registro entre tests, dejando una instancia
+    # stale que hace que Tenant.active.find_each devuelva 0 resultados.
+    @_default_tenant = FactoryBot.create(:tenant)
     ActsAsTenant.current_tenant = @_default_tenant
   end
 
   config.after(:each) do
     ActsAsTenant.current_tenant = nil
+    @_default_tenant = nil
   end
 end
 

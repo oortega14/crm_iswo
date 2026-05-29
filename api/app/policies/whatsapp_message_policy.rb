@@ -9,7 +9,7 @@
 # ============================================================================
 class WhatsappMessagePolicy < ApplicationPolicy
   def index?   = staff?
-  def show?    = staff?
+  def show?    = staff? && (manager_or_admin? || viewer? || owns_linked_opportunity?)
   def create?  = admin? || manager? || consultant?
   def update?  = false
   def destroy? = admin?
@@ -27,9 +27,16 @@ class WhatsappMessagePolicy < ApplicationPolicy
       else
         scope.none
       end
-    rescue ActiveRecord::StatementInvalid
-      # Si el join no está disponible (asociación futura), fallback por contact.
-      scope.all
+    rescue ActiveRecord::StatementInvalid => e
+      Rails.logger.warn("[WhatsappMessagePolicy] scope error: #{e.message}")
+      scope.none
     end
+  end
+
+  private
+
+  def owns_linked_opportunity?
+    record.respond_to?(:opportunity) &&
+      record.opportunity&.owner_user_id == user&.id
   end
 end

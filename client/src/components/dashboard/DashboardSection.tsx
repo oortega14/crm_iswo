@@ -23,7 +23,7 @@ const accentMap: Record<Accent, { wrap: string; icon: string; glow: string }> = 
 
 interface DashboardSectionProps {
   title: string
-  subtitle: string
+  subtitle?: string
   icon: LucideIcon
   accent: Accent
   children: React.ReactNode
@@ -70,7 +70,7 @@ export function DashboardSection({
               <h2 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">
                 {title}
               </h2>
-              <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
+              {subtitle && <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{subtitle}</p>}
             </div>
           </div>
           {action ? <div className="shrink-0 sm:pt-1">{action}</div> : null}

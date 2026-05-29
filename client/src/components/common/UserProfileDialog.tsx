@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { UserRound } from 'lucide-react'
 import {
@@ -48,7 +49,9 @@ interface Props {
 }
 
 export function UserProfileDialog({ open, onOpenChange }: Props) {
+  const navigate = useNavigate()
   const setUser = useAuthStore((s) => s.setUser)
+  const logout = useAuthStore((s) => s.logout)
 
   // Carga siempre datos frescos del backend al abrir
   const { data: meData, isLoading } = useQuery<MeResponse>({
@@ -63,6 +66,9 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
   const [name,  setName]  = useState('')
   const [phone, setPhone] = useState('')
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   // Sincronizar campos cuando llega la respuesta del API
   useEffect(() => {
@@ -92,6 +98,37 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
     },
     onError: (err: unknown) =>
       toast.error(formatRailsError(err, 'Error al guardar el perfil')),
+  })
+
+  const passwordMutation = useMutation({
+    mutationFn: async () => {
+      if (newPassword.length < 8) {
+        throw new Error('La nueva contraseña debe tener al menos 8 caracteres')
+      }
+      if (newPassword !== confirmPassword) {
+        throw new Error('Las contraseñas no coinciden')
+      }
+      await api.post('/password/change', {
+        user: {
+          current_password:      currentPassword,
+          password:              newPassword,
+          password_confirmation: confirmPassword,
+        },
+      })
+    },
+    onSuccess: async () => {
+      toast.success('Contraseña actualizada. Inicia sesión de nuevo.')
+      logout()
+      onOpenChange(false)
+      try {
+        await api.delete('/sessions')
+      } catch {
+        // La cookie de refresh ya fue revocada en el servidor.
+      }
+      navigate({ to: '/login' })
+    },
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'No se pudo cambiar la contraseña')),
   })
 
   return (
@@ -174,6 +211,56 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               </div>
             </div>
 
+            <Separator />
+
+            <div className="space-y-4">
+              <p className="text-sm font-medium">Cambiar contraseña</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-current-password">Contraseña actual</Label>
+                <Input
+                  id="profile-current-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-new-password">Nueva contraseña</Label>
+                <Input
+                  id="profile-new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-confirm-password">Confirmar nueva contraseña</Label>
+                <Input
+                  id="profile-confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => passwordMutation.mutate()}
+                disabled={
+                  passwordMutation.isPending ||
+                  !currentPassword ||
+                  !newPassword ||
+                  !confirmPassword
+                }
+              >
+                {passwordMutation.isPending && <Spinner className="mr-2" />}
+                Actualizar contraseña
+              </Button>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 Cancelar
@@ -183,7 +270,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 disabled={saveMutation.isPending || !name.trim()}
               >
                 {saveMutation.isPending && <Spinner className="mr-2" />}
-                Guardar
+                Guardar perfil
               </Button>
             </div>
           </>

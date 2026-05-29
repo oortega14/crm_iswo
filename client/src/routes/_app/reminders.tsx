@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Filter,
   Briefcase,
+  RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,7 +31,18 @@ import {
 import { ReminderDialog } from '@/components/reminders/ReminderDialog'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
-import api from '@/lib/api'
+import { formatRailsError } from '@/lib/api'
+import {
+  completeReminder,
+  deleteReminder,
+  fetchReminderStats,
+  fetchRemindersList,
+  reopenReminder,
+  reminderListErrorMessage,
+  snoozeReminder,
+  type ReminderListFilters,
+  type ReminderSummary,
+} from '@/lib/reminderApi'
 import { formatDate, cn } from '@/lib/utils'
 import { queryKeys } from '@/lib/queryClient'
 import { toast } from 'sonner'
@@ -39,112 +51,59 @@ export const Route = createFileRoute('/_app/reminders')({
   component: RemindersPage,
 })
 
-type ReminderItem = {
-  id: string
-  title: string
-  description: string
-  dueDate: string
-  channel: string
-  status: string
-  completed: boolean
-  opportunityName?: string
-  opportunityId?: string
-}
-
-type JsonApiReminder = {
-  id: string
-  attributes: {
-    title?: string
-    body?: string
-    subject?: string
-    message?: string
-    remind_at: string
-    channel: string
-    status: string
-  }
-  relationships?: {
-    opportunity?: { data?: { id?: string; type?: string } | null }
-  }
-}
-
-type JsonApiIncluded = {
-  id: string
-  type: string
-  attributes: {
-    contact_name?: string
-    title?: string
-  }
-}
-
 const CHANNEL_LABEL: Record<string, string> = {
   in_app: 'En app',
   email: 'Email',
   whatsapp: 'WhatsApp',
 }
 
-const mapReminder = (resource: JsonApiReminder, included: JsonApiIncluded[]): ReminderItem => {
-  const attrs = resource.attributes
-  const oppRel = resource.relationships?.opportunity?.data
-  const oppId = oppRel?.id != null ? String(oppRel.id) : undefined
-  const oppInc = oppId
-    ? included.find((r) => String(r.id) === oppId && r.type === 'opportunity')
-    : undefined
-  const opportunityName = oppInc
-    ? (oppInc.attributes.contact_name || oppInc.attributes.title || undefined)
-    : undefined
-  return {
-    id: resource.id,
-    title: attrs.subject || attrs.title || 'Recordatorio',
-    description: attrs.message || attrs.body || '',
-    dueDate: attrs.remind_at,
-    channel: attrs.channel,
-    status: attrs.status,
-    completed: attrs.status === 'done',
-    opportunityName,
-    opportunityId: oppId,
-  }
-}
-
 const groupOrder = ['Atrasados', 'Hoy', 'Manana', 'Proximos']
 
-function groupReminder(reminder: ReminderItem): string {
-  const date = new Date(reminder.dueDate)
+function groupReminder(reminder: ReminderSummary): string {
+  const date = new Date(reminder.remindAt)
   const today = new Date()
   const tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
   if (date.toDateString() === today.toDateString()) return 'Hoy'
   if (date.toDateString() === tomorrow.toDateString()) return 'Manana'
+  if (date < today && !reminder.completed) return 'Atrasados'
   if (date < today) return 'Atrasados'
   return 'Proximos'
 }
 
-function isOverdue(dueDate: string) {
-  return new Date(dueDate) < new Date()
+function isOverdue(remindAt: string, completed: boolean) {
+  return !completed && new Date(remindAt) < new Date()
 }
 
 function RemindersPage() {
   const queryClient = useQueryClient()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Fetch all reminders (no server-side status filter); filter client-side so stats are always accurate
-  const { data: allReminders = [], isLoading } = useQuery({
-    queryKey: queryKeys.reminders.all,
-    queryFn: async () => {
-      const response = await api.get('/reminders', { params: { items: 200 } })
-      const resources = (response.data?.data || []) as JsonApiReminder[]
-      const included = (response.data?.included || []) as JsonApiIncluded[]
-      return resources.map((r) => mapReminder(r, included))
-    },
+  const listFilters = useMemo((): ReminderListFilters => {
+    const base: ReminderListFilters = { items: 200 }
+    if (filter === 'pending') return { ...base, status: 'pending' }
+    if (filter === 'completed') return { ...base, status: 'done' }
+    return base
+  }, [filter])
+
+  const {
+    data: listData,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: queryKeys.reminders.list(listFilters),
+    queryFn: () => fetchRemindersList(listFilters),
   })
 
-  // Apply filter client-side for the list
-  const reminders =
-    filter === 'pending'
-      ? allReminders.filter((r) => !r.completed)
-      : filter === 'completed'
-        ? allReminders.filter((r) => r.completed)
-        : allReminders
+  const { data: stats } = useQuery({
+    queryKey: queryKeys.reminders.stats,
+    queryFn: fetchReminderStats,
+  })
+
+  const reminders = listData?.reminders ?? []
 
   const groupedReminders = reminders.reduce(
     (acc, r) => {
@@ -153,45 +112,53 @@ function RemindersPage() {
       acc[group].push(r)
       return acc
     },
-    {} as Record<string, ReminderItem[]>,
+    {} as Record<string, ReminderSummary[]>,
   )
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.stats }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.overdue }),
+    ])
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await invalidate()
+    setRefreshing(false)
+  }
 
   const snoozeMutation = useMutation({
-    mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
-      await api.post(`/reminders/${id}/snooze`, { minutes })
-    },
+    mutationFn: ({ id, minutes }: { id: string; minutes: number }) => snoozeReminder(id, minutes),
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       toast.success('Recordatorio pospuesto')
     },
-    onError: () => toast.error('No se pudo posponer el recordatorio'),
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo posponer el recordatorio')),
   })
 
   const toggleCompleteMutation = useMutation({
     mutationFn: async ({ id, completed }: { id: string; completed: boolean }) => {
-      if (completed) {
-        await api.post(`/reminders/${id}/complete`)
-      } else {
-        await api.patch(`/reminders/${id}`, { reminder: { status: 'pending' } })
-      }
+      if (completed) await completeReminder(id)
+      else await reopenReminder(id)
       return { id, completed }
     },
     onSuccess: (data) => {
-      invalidate()
+      void invalidate()
       toast.success(data.completed ? 'Recordatorio completado' : 'Recordatorio reabierto')
     },
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'No se pudo actualizar el recordatorio')),
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => api.delete(`/reminders/${id}`),
+    mutationFn: deleteReminder,
     onSuccess: () => {
-      invalidate()
+      void invalidate()
       toast.success('Recordatorio eliminado')
     },
-    onError: () => toast.error('No se pudo eliminar el recordatorio'),
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo eliminar el recordatorio')),
   })
 
   const getStatusBadge = (status: string) => {
@@ -211,24 +178,37 @@ function RemindersPage() {
     }
   }
 
-  // Stats from the full (unfiltered) list
-  const pendingCount   = allReminders.filter((r) => !r.completed).length
-  const overdueCount   = allReminders.filter((r) => !r.completed && isOverdue(r.dueDate)).length
-  const todayCount     = allReminders.filter(
-    (r) => !r.completed && new Date(r.dueDate).toDateString() === new Date().toDateString()
+  const pendingCount = stats?.pending ?? reminders.filter((r) => !r.completed).length
+  const overdueCount =
+    stats?.overdue ?? reminders.filter((r) => !r.completed && isOverdue(r.remindAt, r.completed)).length
+  const todayCount = reminders.filter(
+    (r) =>
+      !r.completed &&
+      r.remindAt &&
+      new Date(r.remindAt).toDateString() === new Date().toDateString(),
   ).length
-  const completedCount = allReminders.filter((r) => r.completed).length
+  const completedCount = stats?.done ?? reminders.filter((r) => r.completed).length
 
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader title="Recordatorios" description="Gestiona tus tareas y recordatorios">
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => void handleRefresh()}
+          disabled={refreshing}
+          title="Actualizar recordatorios"
+        >
+          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Actualizar</span>
+        </Button>
         <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo recordatorio
         </Button>
       </PageHeader>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-4">
@@ -284,7 +264,6 @@ function RemindersPage() {
         </Card>
       </div>
 
-      {/* Filter */}
       <div className="flex items-center gap-2">
         <Button
           variant={filter === 'pending' ? 'default' : 'outline'}
@@ -311,7 +290,14 @@ function RemindersPage() {
         </Button>
       </div>
 
-      {/* Reminders List */}
+      {isError && (
+        <Card className="border-destructive/40">
+          <CardContent className="py-6 text-center text-sm text-destructive">
+            {reminderListErrorMessage(error)}
+          </CardContent>
+        </Card>
+      )}
+
       {isLoading ? (
         <RemindersSkeleton />
       ) : (
@@ -357,12 +343,15 @@ function RemindersPage() {
                                     reminder.completed && 'line-through',
                                   )}
                                 >
-                                  {reminder.title}
+                                  {reminder.subject}
                                 </h3>
-                                {reminder.description && (
+                                {reminder.message && (
                                   <p className="text-sm text-muted-foreground mt-1">
-                                    {reminder.description}
+                                    {reminder.message}
                                   </p>
+                                )}
+                                {reminder.status === 'failed' && reminder.lastError && (
+                                  <p className="text-xs text-destructive mt-1">{reminder.lastError}</p>
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
@@ -429,13 +418,14 @@ function RemindersPage() {
                               <div
                                 className={cn(
                                   'flex items-center gap-1',
-                                  isOverdue(reminder.dueDate) && !reminder.completed
+                                  (reminder.overdue || isOverdue(reminder.remindAt, reminder.completed)) &&
+                                    !reminder.completed
                                     ? 'text-red-500'
                                     : 'text-muted-foreground',
                                 )}
                               >
                                 <Calendar className="h-3 w-3" />
-                                {formatDate(reminder.dueDate)}
+                                {formatDate(reminder.remindAt)}
                               </div>
 
                               <div className="flex items-center gap-1 text-muted-foreground">
@@ -443,10 +433,16 @@ function RemindersPage() {
                                 {CHANNEL_LABEL[reminder.channel] ?? reminder.channel}
                               </div>
 
-                              {reminder.opportunityName && (
+                              {reminder.opportunityId && (
                                 <div className="flex items-center gap-1 text-muted-foreground">
                                   <Briefcase className="h-3 w-3" />
-                                  <span className="truncate max-w-[200px]">{reminder.opportunityName}</span>
+                                  <Link
+                                    to="/opportunities"
+                                    search={{ selected: reminder.opportunityId }}
+                                    className="truncate max-w-[200px] hover:text-primary hover:underline"
+                                  >
+                                    {reminder.opportunityTitle || 'Ver oportunidad'}
+                                  </Link>
                                 </div>
                               )}
                             </div>
@@ -460,7 +456,7 @@ function RemindersPage() {
             )
           })}
 
-          {reminders.length === 0 && (
+          {reminders.length === 0 && !isError && (
             <Card>
               <CardContent className="py-12">
                 <div className="text-center">
@@ -483,7 +479,7 @@ function RemindersPage() {
       <ReminderDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onCreated={invalidate}
+        onCreated={() => void invalidate()}
       />
     </AppPageShell>
   )

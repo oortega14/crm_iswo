@@ -6,6 +6,7 @@ import { formatCurrency, cn, getInitials } from '@/lib/utils'
 import type { DashboardTopConsultant } from '@/lib/dashboardApi'
 
 interface TopConsultantsProps {
+  currency?: string
   data?: DashboardTopConsultant[]
   isLoading?: boolean
   isError?: boolean
@@ -40,7 +41,12 @@ function RankIcon({ index }: { index: number }) {
   return <span className="w-3.5 text-center text-[10px] font-bold text-muted-foreground">{index + 1}</span>
 }
 
-export function TopConsultants({ data = [], isLoading, isError }: TopConsultantsProps) {
+export function TopConsultants({
+  currency = 'COP',
+  data = [],
+  isLoading,
+  isError,
+}: TopConsultantsProps) {
   if (isLoading) {
     return (
       <Card className={shell}>
@@ -142,7 +148,7 @@ export function TopConsultants({ data = [], isLoading, isError }: TopConsultants
                     {consultant.name}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    {formatCurrency(consultant.total_value, 'COP')} · {consultant.won_count} ganada
+                    {formatCurrency(consultant.total_value, currency)} · {consultant.won_count} ganada
                     {consultant.won_count === 1 ? '' : 's'}
                   </p>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted/80">

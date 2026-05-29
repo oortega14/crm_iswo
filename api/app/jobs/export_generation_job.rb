@@ -56,57 +56,46 @@ class ExportGenerationJob < ApplicationJob
   private
 
   def build_xlsx(export)
-    require "caxlsx"
-
-    path    = tmp_path(export, "xlsx")
-    pkg     = Axlsx::Package.new
-    wb      = pkg.workbook
-    rows    = collection(export)
-    count   = 0
-
-    wb.add_worksheet(name: export.resource.titleize) do |sheet|
-      headers = rows.first&.attributes&.keys || []
-      sheet.add_row(headers)
-      rows.find_each do |r|
-        sheet.add_row(headers.map { |h| r[h] })
-        count += 1
-      end
-    end
-
-    pkg.serialize(path)
-    [path, count]
+    scope = collection(export)
+    result = Exports::FileBuilder.build(
+      scope:    scope,
+      resource: export.resource,
+      format:   "xlsx",
+      basename: "#{export.resource}_#{export.id}"
+    )
+    dest = tmp_path(export, "xlsx")
+    FileUtils.cp(result.path, dest)
+    File.delete(result.path) if File.exist?(result.path)
+    [dest, result.row_count]
   end
 
   def build_csv(export)
-    require "csv"
-
-    path    = tmp_path(export, "csv")
-    rows    = collection(export)
-    headers = rows.first&.attributes&.keys || []
-    count   = 0
-
-    CSV.open(path, "w") do |csv|
-      csv << headers
-      rows.find_each do |r|
-        csv << headers.map { |h| r[h] }
-        count += 1
-      end
-    end
-    [path, count]
+    scope = collection(export)
+    result = Exports::FileBuilder.build(
+      scope:    scope,
+      resource: export.resource,
+      format:   "csv",
+      basename: "#{export.resource}_#{export.id}"
+    )
+    dest = tmp_path(export, "csv")
+    FileUtils.cp(result.path, dest)
+    File.delete(result.path) if File.exist?(result.path)
+    [dest, result.row_count]
   end
 
   def collection(export)
-    base = case export.resource
-           when "contacts"          then Contact.all
-           when "opportunities"     then Opportunity.all
-           when "whatsapp_messages" then WhatsappMessage.all.where.not(direction: nil)
-           else raise "Recurso no soportado: #{export.resource}"
-           end
-
-    if export.filters.present? && base.respond_to?(:ransack)
-      base.ransack(export.filters).result
+    case export.resource
+    when "contacts", "opportunities"
+      Exports::ScopedCollection.new(
+        user:     export.user,
+        resource: export.resource,
+        filters:  export.filters || {}
+      ).resolve
+    when "whatsapp_messages"
+      base = WhatsappMessage.all.where.not(direction: nil)
+      export.filters.present? && base.respond_to?(:ransack) ? base.ransack(export.filters).result : base
     else
-      base
+      raise "Recurso no soportado: #{export.resource}"
     end
   end
 

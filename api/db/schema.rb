@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_28_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -422,6 +422,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_100000) do
     t.string "name", null: false, comment: "Nombre completo del consultor"
     t.string "phone", comment: "Teléfono de contacto"
     t.jsonb "preferences", default: {}, null: false
+    t.string "refresh_token_jti"
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
@@ -433,6 +434,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_100000) do
     t.datetime "updated_at", null: false
     t.index ["confirmation_token"], name: "index_users_on_confirmation_token", unique: true, where: "(confirmation_token IS NOT NULL)"
     t.index ["discarded_at"], name: "index_users_on_discarded_at"
+    t.index ["refresh_token_jti"], name: "index_users_on_refresh_token_jti", where: "(refresh_token_jti IS NOT NULL)"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true, where: "(reset_password_token IS NOT NULL)"
     t.index ["tenant_id", "active"], name: "index_users_on_tenant_id_and_active"
     t.index ["tenant_id", "email"], name: "index_users_on_tenant_and_email", unique: true

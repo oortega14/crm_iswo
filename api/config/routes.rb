@@ -44,6 +44,9 @@ Rails.application.routes.draw do
   # ==========================================================================
   namespace :api, defaults: { format: :json } do
     namespace :v1 do
+      # ---- IA (Claude / Anthropic) -------------------------------------------
+      get "/ai/capabilities", to: "ai_capabilities#show"
+
       # ---- Autenticación auxiliar --------------------------------------------
       post "/sessions/refresh", to: "sessions#refresh"
       post "/password/forgot",  to: "passwords#forgot"
@@ -87,6 +90,8 @@ Rails.application.routes.draw do
           get  :check_duplicates      # ?phone=...&email=...
           get  :import_template       # plantilla CSV
           post :import                # multipart CSV
+          get  "export.csv",  action: :export_download, defaults: { file_format: "csv" }
+          get  "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
           post :export                # encola ExportGenerationJob
         end
       end
@@ -98,10 +103,13 @@ Rails.application.routes.draw do
           post :assign               # { owner_user_id }
           post :merge                # { target_id }
           post :recalculate_bant
-          post :classify             # IA → actualiza temperature
+          post :sync_temperature     # reglas BANT + actividad → temperature
+          post :classify             # IA (o reglas) → actualiza temperature
         end
         collection do
           get  :kanban               # vista agrupada por etapa
+          get  "export.csv",  action: :export_download, defaults: { file_format: "csv" }
+          get  "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
           post :export
         end
 
@@ -138,6 +146,7 @@ Rails.application.routes.draw do
       get "/search", to: "searches#index"
 
       # ---- Dashboard home (SPA) ----------------------------------------------
+      get "/dashboard/briefing",             to: "dashboard#briefing"
       get "/dashboard/kpis",                 to: "dashboard#kpis"
       get "/dashboard/pipeline",             to: "dashboard#pipeline"
       get "/dashboard/activity",             to: "dashboard#activity"
@@ -223,7 +232,7 @@ Rails.application.routes.draw do
       # Super-admin — operaciones fuera del scope de tenant (SUPER_ADMIN_TOKEN)
       # ========================================================================
       namespace :admin do
-        resources :tenants, only: :create
+        resources :tenants, only: %i[index create]
       end
     end
   end

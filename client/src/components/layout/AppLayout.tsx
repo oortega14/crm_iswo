@@ -19,10 +19,12 @@ import {
   LogOut,
   ChevronDown,
   UserRound,
+  Building2,
 } from 'lucide-react'
 import { useAuthStore, useTenant, useUser } from '@/stores/auth'
 import { useTheme } from '@/components/common/ThemeProvider'
 import { queryKeys } from '@/lib/queryClient'
+import { fetchOverdueRemindersCount } from '@/lib/reminderApi'
 import api from '@/lib/api'
 import { cn, getInitials } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -69,6 +71,7 @@ const settingsNavItems: NavItem[] = [
   { label: 'Fuentes de Lead', href: '/settings/lead-sources', icon: Target, roles: ['admin'] },
   { label: 'BANT', href: '/settings/bant', icon: Target, roles: ['admin'] },
   { label: 'Registro de Auditoría', href: '/settings/audit', icon: FileText, roles: ['admin', 'manager'] },
+  { label: 'Onboarding tenants', href: '/settings/tenant-onboarding', icon: Building2, roles: ['admin'] },
 ]
 
 interface AppLayoutProps {
@@ -88,13 +91,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Fetch overdue reminders count
   const { data: overdueCount } = useQuery({
     queryKey: queryKeys.reminders.overdue,
-    queryFn: async () => {
-      const response = await api.get<{
-        meta?: { pagination?: { count?: number } }
-      }>('/reminders?status=pending&overdue=true')
-      return response.data.meta?.pagination?.count ?? 0
-    },
-    refetchInterval: 60000, // Poll every 60s
+    queryFn: fetchOverdueRemindersCount,
+    refetchInterval: 60000,
   })
 
   // Fetch pending duplicate flags count

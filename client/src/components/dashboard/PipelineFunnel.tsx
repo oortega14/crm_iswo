@@ -22,6 +22,7 @@ interface PipelineOption {
 }
 
 interface PipelineFunnelProps {
+  currency?: string
   data?: DashboardPipelineStage[]
   isLoading?: boolean
   isError?: boolean
@@ -75,6 +76,7 @@ function FunnelBarShape(props: {
 }
 
 export function PipelineFunnel({
+  currency = 'COP',
   data = [],
   isLoading,
   isError,
@@ -182,7 +184,7 @@ export function PipelineFunnel({
             )}
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/20 px-3 py-1 text-xs font-semibold text-foreground">
               <Sparkles className="size-3.5 opacity-90" />
-              {totalCount} op. · {formatCurrency(totalValue, 'COP')}
+              {totalCount} op. · {formatCurrency(totalValue, currency)}
             </span>
           </div>
         </div>
@@ -284,7 +286,7 @@ export function PipelineFunnel({
                       name: string
                       count: number
                     }
-                    const money = formatCurrency(Number(row.value) || 0, 'COP')
+                    const money = formatCurrency(Number(row.value) || 0, currency)
                     return (
                       <div
                         className="rounded-xl border border-border/80 px-3 py-2 text-xs shadow-xl"

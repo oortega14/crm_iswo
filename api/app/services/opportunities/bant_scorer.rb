@@ -59,6 +59,7 @@ module Opportunities
       )
 
       auto_advance_stage! if newly_qualified
+      sync_temperature!
 
       result[:score]
     end
@@ -71,6 +72,12 @@ module Opportunities
     #   1. Existe una etapa con ese nombre (case-insensitive) en el mismo pipeline.
     #   2. La etapa actual tiene posición anterior (aún no ha pasado por allí).
     #   3. La etapa actual no es terminal (won/lost).
+    def sync_temperature!
+      return unless defined?(Opportunities::TemperatureCalculator)
+
+      Opportunities::TemperatureCalculator.new(@opportunity.reload).apply!
+    end
+
     def auto_advance_stage!
       qualified_stage = @opportunity.pipeline
                                     .pipeline_stages

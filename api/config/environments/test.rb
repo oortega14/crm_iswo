@@ -3,6 +3,14 @@
 # your test database is "scratch space" for the test suite and is wiped
 # and recreated between test runs. Don't rely on the data there!
 
+# Si .env define DATABASE_URL hacia crm_iswo_development, RSpec ejecuta
+# db:test:purge sobre la BD de desarrollo y borra iswo / micasita / tus datos.
+dev_db_marker = /crm_iswo_development(?:\?|$)/i
+if ENV["DATABASE_URL"].to_s.match?(dev_db_marker)
+  warn "[test] Ignorando DATABASE_URL de desarrollo; usa crm_iswo_test (ver .env.test)"
+  ENV.delete("DATABASE_URL")
+end
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 

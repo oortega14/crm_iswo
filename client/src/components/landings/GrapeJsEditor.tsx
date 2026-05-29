@@ -1,4 +1,3 @@
-import 'grapesjs/dist/css/grapes.min.css'
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { Editor } from 'grapesjs'
 
@@ -29,6 +28,7 @@ export const GrapeJsEditor = forwardRef<GrapeJsHandle, Props>(({ initialProjectD
       const [{ default: grapesjs }, { default: webpagePlugin }] = await Promise.all([
         import('grapesjs'),
         import('grapesjs-preset-webpage'),
+        import('grapesjs/dist/css/grapes.min.css'),
       ])
 
       if (!containerRef.current) return

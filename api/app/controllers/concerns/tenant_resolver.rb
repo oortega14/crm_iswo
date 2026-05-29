@@ -4,8 +4,8 @@
 # TenantResolver — identifica el tenant desde el request.
 # ============================================================================
 # Prioridad:
-#   1. Subdominio (`micasita.crm.iswo.com.co` → slug "micasita").
-#   2. Header `X-Tenant-Slug` (fallback para tests y clientes internos).
+#   1. Header `X-Tenant-Slug` (SPA, login, tests).
+#   2. Subdominio (`micasita.crm.iswo.com.co` → slug "micasita") si no hay header.
 #
 # Si no resuelve, responde 400 para evitar caer en `ActsAsTenant::NoTenantSet`
 # más profundo con un mensaje poco útil.
@@ -25,11 +25,11 @@ module TenantResolver
   private
 
   def resolve_tenant!
-    slug = tenant_slug_from_subdomain || tenant_slug_from_header
+    slug = tenant_slug_from_header || tenant_slug_from_subdomain
     return render_tenant_missing if slug.blank?
 
     @current_tenant = Tenant.with_discarded.find_by(slug: slug)
-    return render_tenant_missing unless @current_tenant
+    return render_tenant_not_found(slug) unless @current_tenant
     return render_tenant_inactive if !@current_tenant.active? || (@current_tenant.respond_to?(:discarded?) && @current_tenant.discarded?)
   end
 
@@ -55,5 +55,12 @@ module TenantResolver
       error: "tenant_inactive",
       message: "El tenant existe pero está inactivo"
     }, status: :forbidden
+  end
+
+  def render_tenant_not_found(slug)
+    render json: {
+      error:   "tenant_not_found",
+      message: "No existe un tenant con slug «#{slug}». Revisa el identificador de empresa o ejecuta: bin/rails db:seed"
+    }, status: :bad_request
   end
 end

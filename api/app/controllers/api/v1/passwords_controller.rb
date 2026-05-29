@@ -8,6 +8,7 @@ module Api
     class PasswordsController < ApplicationController
       include TenantResolver
       include ErrorHandler
+      include RefreshTokenCookies
 
       before_action :authenticate_user!, only: :change
 
@@ -28,6 +29,7 @@ module Api
       def reset
         result = User.reset_password_by_token(reset_params)
         if result.errors.empty?
+          revoke_refresh_session!(result) if result.persisted?
           head :no_content
         else
           render json: { error: "invalid_token", details: result.errors.as_json(full_messages: true) },
@@ -38,6 +40,7 @@ module Api
       # POST /api/v1/password/change  { current_password, password, password_confirmation }
       def change
         if current_user.update_with_password(change_params)
+          revoke_refresh_session!(current_user)
           head :no_content
         else
           render json: { error: "invalid_password", details: current_user.errors.as_json(full_messages: true) },

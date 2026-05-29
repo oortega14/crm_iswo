@@ -16,6 +16,7 @@ module Api
     class SessionsController < Devise::SessionsController
       include TenantResolver
       include ErrorHandler
+      include RefreshTokenCookies
 
       skip_before_action :verify_signed_out_user, only: :destroy
       skip_before_action :assert_is_devise_resource!, only: :refresh
@@ -36,18 +37,25 @@ module Api
       # DELETE /api/v1/sessions
       def destroy
         log_session_audit("logout", current_user) if current_user
+        revoke_refresh_session!(current_user) if current_user
         sign_out(resource_name) if current_user
-        clear_refresh_cookie
         head :no_content
       end
 
       # POST /api/v1/sessions/refresh
       def refresh
-        token = cookies.encrypted[:refresh_token]
-        user  = User.find_by(id: token&.dig("user_id")) if token.is_a?(Hash)
+        token = normalize_refresh_cookie(cookies.encrypted[:refresh_token])
+        user  = find_user_for_refresh(token)
 
-        return render_invalid_refresh unless user && token_valid?(token)
-        return render_invalid_refresh unless user.tenant_id == current_tenant.id
+        unless user && refresh_token_matches?(token, user)
+          log_refresh_failure(token, user, "jti_or_expired")
+          return render_invalid_refresh
+        end
+
+        if user.tenant_id != current_tenant.id
+          log_refresh_failure(token, user, "tenant_mismatch")
+          return render_invalid_refresh
+        end
 
         sign_in(user, store: false)
         issue_refresh_cookie(user)
@@ -57,33 +65,37 @@ module Api
 
       private
 
-      def issue_refresh_cookie(user)
-        cookies.encrypted[:refresh_token] = {
-          value: {
-            user_id:    user.id,
-            issued_at:  Time.current.to_i,
-            expires_at: 7.days.from_now.to_i
-          },
-          expires:   7.days.from_now,
-          httponly:  true,
-          secure:    Rails.env.production?,
-          same_site: :lax
-        }
+      def normalize_refresh_cookie(raw)
+        return nil if raw.blank?
+
+        h = raw.is_a?(Hash) ? raw.stringify_keys : nil
+        return h if h&.dig("user_id").present?
+
+        nil
       end
 
-      def clear_refresh_cookie
-        cookies.delete(:refresh_token)
+      def find_user_for_refresh(token)
+        return nil unless token.is_a?(Hash)
+
+        uid = token["user_id"]
+        ActsAsTenant.without_tenant { User.kept.active.find_by(id: uid) }
       end
 
-      def token_valid?(token)
-        token["expires_at"].to_i > Time.current.to_i
+      def log_refresh_failure(token, user, reason)
+        return unless Rails.env.development?
+
+        Rails.logger.info(
+          "[Sessions#refresh] denied reason=#{reason} " \
+          "user_id=#{user&.id} tenant_header=#{request.headers['X-Tenant-Slug']} " \
+          "cookie_jti=#{token&.dig('jti').present?} stored_jti=#{user&.refresh_token_jti.present?}"
+        )
       end
 
       def render_invalid_refresh
         clear_refresh_cookie
         render json: {
           error:   "invalid_refresh_token",
-          message: "Refresh token inválido o expirado"
+          message: "Refresh token inválido o expirado. Vuelve a iniciar sesión."
         }, status: :unauthorized
       end
 

@@ -85,8 +85,17 @@ class Opportunity < ApplicationRecord
     status_won? || status_lost?
   end
 
-  def touch_activity!
+  def touch_activity!(recalc_temperature: true)
     update_column(:last_activity_at, Time.current)
+    sync_temperature_from_signals! if recalc_temperature
+  end
+
+  # Recalcula frío/tibio/caliente según BANT y días sin actividad (sin llamar a IA).
+  def sync_temperature_from_signals!
+    return unless defined?(Opportunities::TemperatureCalculator)
+
+    reload
+    Opportunities::TemperatureCalculator.new(self).apply!
   end
 
   # BANT detallado vive en custom_fields["bant_data"] (no hay columna dedicada).

@@ -262,6 +262,39 @@ function ExportsPage() {
     },
   })
 
+  const syncDownloadMutation = useMutation({
+    mutationFn: async (config: typeof exportConfig) => {
+      const filters = buildFilters(config)
+      const response = await api.get(`/${config.resource}/export.${config.format}`, {
+        params: { filters },
+        responseType: 'blob',
+      })
+      return {
+        blob: response.data as Blob,
+        resource: config.resource,
+        format: config.format,
+      }
+    },
+    onSuccess: ({ blob, resource, format }) => {
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${resource}_${new Date().toISOString().slice(0, 10)}.${format}`
+      link.click()
+      URL.revokeObjectURL(url)
+      toast.success('Archivo descargado (RFC: export directo)')
+      setIsExportDialogOpen(false)
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        formatRailsError(
+          err,
+          'No se pudo descargar. Si hay muchos registros, usa «Encolar exportación».'
+        )
+      )
+    },
+  })
+
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const handleDownload = async (exp: ExportRow) => {
@@ -682,9 +715,17 @@ function ExportsPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
               Cancelar
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => syncDownloadMutation.mutate(exportConfig)}
+              disabled={syncDownloadMutation.isPending || !canCreateExport}
+            >
+              {syncDownloadMutation.isPending && <Spinner className="mr-2" />}
+              Descargar ahora
             </Button>
             <Button
               onClick={() => createExportMutation.mutate(exportConfig)}

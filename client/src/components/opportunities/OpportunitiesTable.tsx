@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Opportunity } from '@/types'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
+import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
 
 interface OpportunitiesTableProps {
   opportunities: Opportunity[]
@@ -79,6 +80,12 @@ export function OpportunitiesTable({
               </span>
             )}
           </div>
+        ),
+      }),
+      columnHelper.accessor('temperature', {
+        header: 'Temp.',
+        cell: (info) => (
+          <TemperatureBadge temperature={info.getValue() ?? 'cold'} showLabel />
         ),
       }),
       columnHelper.display({

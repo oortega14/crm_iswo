@@ -13,8 +13,8 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useState } from 'react'
-import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
+import { moveOpportunityStage } from '@/lib/opportunityApi'
 import { KanbanColumn } from './KanbanColumn'
 import { OpportunityCard } from './OpportunityCard'
 import type { Opportunity, Pipeline } from '@/types'
@@ -64,12 +64,7 @@ export function KanbanBoard({
   // Usa move_stage para que el backend actualice status (won/lost) y registre el log
   const updateStageMutation = useMutation({
     mutationFn: async ({ id, stage_id }: { id: string; stage_id: string }) => {
-      const response = await api.post(
-        `/opportunities/${id}/move_stage`,
-        JSON.stringify({ pipeline_stage_id: stage_id }),
-        { headers: { 'Content-Type': 'application/json' } },
-      )
-      return response.data.data
+      await moveOpportunityStage(id, stage_id)
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: queryKeys.opportunities.all })
@@ -80,7 +75,7 @@ export function KanbanBoard({
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.pipeline })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 

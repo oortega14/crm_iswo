@@ -42,6 +42,7 @@ export const queryKeys = {
   reminders: {
     all: ['reminders'] as const,
     list: (filters: Record<string, unknown>) => ['reminders', 'list', filters] as const,
+    stats: ['reminders', 'stats'] as const,
     overdue: ['reminders', 'overdue'] as const,
     pending: ['reminders', 'pending'] as const,
     byOpportunity: (opportunityId: string) => ['reminders', 'opportunity', opportunityId] as const,
@@ -102,15 +103,17 @@ export const queryKeys = {
     list: ['referralNetworks', 'list'] as const,
   },
   
-  // Dashboard
+  // Dashboard (pipelineId opcional: filtra KPIs/actividad al embudo seleccionado)
   dashboard: {
-    kpis: ['dashboard', 'kpis'] as const,
-    pipeline: ['dashboard', 'pipeline'] as const,
-    pipelineFor: (id: string) => ['dashboard', 'pipeline', id] as const,
-    activity: ['dashboard', 'activity'] as const,
-    bantDistribution: ['dashboard', 'bantDistribution'] as const,
-    topConsultants: ['dashboard', 'topConsultants'] as const,
-    leadSources: ['dashboard', 'leadSources'] as const,
+    briefing: (pipelineId?: string) => ['dashboard', 'briefing', pipelineId ?? 'all'] as const,
+    kpis: (pipelineId?: string) => ['dashboard', 'kpis', pipelineId ?? 'all'] as const,
+    pipeline: (pipelineId?: string) => ['dashboard', 'pipeline', pipelineId ?? 'default'] as const,
+    activity: (pipelineId?: string) => ['dashboard', 'activity', pipelineId ?? 'all'] as const,
+    bantDistribution: (pipelineId?: string) =>
+      ['dashboard', 'bantDistribution', pipelineId ?? 'all'] as const,
+    topConsultants: (pipelineId?: string) =>
+      ['dashboard', 'topConsultants', pipelineId ?? 'all'] as const,
+    leadSources: (pipelineId?: string) => ['dashboard', 'leadSources', pipelineId ?? 'all'] as const,
   },
   
   // Search
@@ -118,4 +121,8 @@ export const queryKeys = {
   
   // Notifications
   notifications: ['notifications'] as const,
+
+  ai: {
+    capabilities: ['ai', 'capabilities'] as const,
+  },
 }

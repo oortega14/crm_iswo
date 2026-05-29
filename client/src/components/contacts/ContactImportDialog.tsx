@@ -1,8 +1,12 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Download, FileSpreadsheet, Upload } from 'lucide-react'
-import api, { formatRailsError } from '@/lib/api'
-import { useAuthStore } from '@/stores/auth'
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Upload } from 'lucide-react'
+import { formatRailsError } from '@/lib/api'
+import {
+  downloadContactImportTemplate,
+  importContactsFromFile,
+  type ContactImportResult,
+} from '@/lib/contactApi'
 import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,89 +17,66 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-
-type ImportPayload = {
-  created_count: number
-  skipped_count: number
-  errors: Array<{ row: number; message: string }>
-}
 
 interface ContactImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-const XLSX_MIME =
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const ACCEPT =
+  '.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv'
 
 export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogProps) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<ContactImportResult | null>(null)
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedLabel(null)
+      setImportResult(null)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }, [open])
 
   const downloadTemplateMutation = useMutation({
-    mutationFn: async () => {
-      // Usar fetch directamente para evitar que axios reinterprete la respuesta binaria
-      const { accessToken } = useAuthStore.getState()
-      const tenantSlug = window.localStorage.getItem('crm-tenant-slug') || ''
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-      const res = await fetch(`${baseUrl}/contacts/import_template`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'X-Tenant-Slug': tenantSlug,
-        },
-      })
-      if (!res.ok) {
-        const text = await res.text()
-        console.error('[template] status:', res.status, 'body:', text)
-        throw new Error(`Error ${res.status}: ${text.slice(0, 200)}`)
-      }
-      const arrayBuffer = await res.arrayBuffer()
-      const blob = new Blob([arrayBuffer], { type: XLSX_MIME })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'plantilla_contactos.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    },
+    mutationFn: downloadContactImportTemplate,
     onSuccess: () => toast.success('Plantilla Excel descargada'),
-    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo descargar la plantilla')),
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'No se pudo descargar la plantilla')),
   })
 
   const importMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData()
-      formData.append('file', file)
-      // Content-Type: undefined para que el browser setee multipart/form-data con el boundary correcto
-      const response = await api.post<{ data: ImportPayload }>('/contacts/import', formData, {
-        headers: { 'Content-Type': undefined },
-      })
-      return response.data.data
-    },
+    mutationFn: importContactsFromFile,
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
-      const errs = data.errors?.length ?? 0
-      toast.success(
-        `Importación lista: ${data.created_count} creados` +
-          (data.skipped_count ? `, ${data.skipped_count} filas vacías omitidas` : '') +
-          (errs ? `. ${errs} filas con error (revisa el detalle).` : '')
-      )
-      if (errs && data.errors.length > 0) {
-        const preview = data.errors.slice(0, 5).map((e) => `Fila ${e.row}: ${e.message}`)
-        toast.error('Algunas filas no se importaron', {
-          description: preview.join(' · '),
-        })
+      setImportResult(data)
+      const errCount = data.errors?.length ?? 0
+      if (data.created_count > 0 && errCount === 0) {
+        toast.success(
+          `Importación lista: ${data.created_count} contacto${data.created_count === 1 ? '' : 's'} creado${data.created_count === 1 ? '' : 's'}` +
+            (data.skipped_count
+              ? ` · ${data.skipped_count} fila${data.skipped_count === 1 ? '' : 's'} vacía${data.skipped_count === 1 ? '' : 's'} omitida${data.skipped_count === 1 ? '' : 's'}`
+              : ''),
+        )
+      } else if (data.created_count === 0 && errCount > 0) {
+        toast.error('No se importó ningún contacto. Revisa los errores en el detalle.')
+      } else if (errCount > 0) {
+        toast.warning(
+          `Importación parcial: ${data.created_count} creado${data.created_count === 1 ? '' : 's'}, ${errCount} fila${errCount === 1 ? '' : 's'} con error`,
+        )
+      } else {
+        toast.info('No había filas con datos para importar.')
       }
       setSelectedLabel(null)
       if (inputRef.current) inputRef.current.value = ''
-      onOpenChange(false)
     },
-    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo importar el archivo')),
+    onError: (err: unknown) =>
+      toast.error(formatRailsError(err, 'No se pudo importar el archivo')),
   })
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,13 +85,14 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
       setSelectedLabel(null)
       return
     }
+    setImportResult(null)
     setSelectedLabel(file.name)
   }
 
   const submitImport = () => {
     const file = inputRef.current?.files?.[0]
     if (!file) {
-      toast.error('Selecciona un archivo Excel (.xlsx)')
+      toast.error('Selecciona un archivo Excel (.xlsx) o CSV (.csv)')
       return
     }
     importMutation.mutate(file)
@@ -118,113 +100,182 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
 
   const clearFile = () => {
     setSelectedLabel(null)
+    setImportResult(null)
     if (inputRef.current) inputRef.current.value = ''
   }
 
+  const handleClose = () => {
+    onOpenChange(false)
+  }
+
+  const errCount = importResult?.errors?.length ?? 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[min(90vh,640px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <Upload className="size-4" />
             Importar contactos
           </DialogTitle>
           <DialogDescription>
-            Sube un archivo Excel (.xlsx) para crear contactos en bloque.
+            Descarga la plantilla, complétala y súbela en Excel (.xlsx) o CSV (.csv).
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          {/* Instrucciones compactas */}
-          <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground space-y-1">
-            <p>
-              <span className="font-medium text-foreground">Columnas esperadas:</span>{' '}
-              <code className="rounded bg-muted px-1 text-xs">
-                first_name, last_name, email, phone, company, position, city, country, kind, notes
-              </code>
-            </p>
-            <p className="text-xs">
-              Primera fila = cabeceras · También acepta nombres en español (nombre, apellido, correo…) ·
-              Para empresas usa <code className="text-xs">kind = company</code>
-            </p>
-          </div>
-
-          {/* Paso 1: Plantilla */}
-          <div className="flex items-center justify-between rounded-md border px-4 py-3">
-            <div className="min-w-0 mr-4">
-              <p className="text-sm font-medium">Paso 1 — Descarga la plantilla</p>
-              <p className="text-xs text-muted-foreground">Abre en Excel, rellena y guarda como .xlsx</p>
+        <ScrollArea className="min-h-0 flex-1 px-6 py-4">
+          <div className="space-y-3 pr-3">
+            <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground space-y-1">
+              <p>
+                <span className="font-medium text-foreground">Columnas:</span>{' '}
+                <code className="rounded bg-muted px-1 text-xs">
+                  first_name, last_name, email, phone, company, position, city, country, kind, notes
+                </code>
+              </p>
+              <p className="text-xs">
+                Primera fila = cabeceras · También en español (nombre, apellido, correo…) ·{' '}
+                <code className="text-xs">kind = company</code> para empresas
+              </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0 gap-1.5"
-              disabled={downloadTemplateMutation.isPending}
-              onClick={() => downloadTemplateMutation.mutate()}
-            >
-              {downloadTemplateMutation.isPending ? (
-                <Spinner className="size-3.5" />
-              ) : (
-                <Download className="size-3.5" />
-              )}
-              Descargar plantilla
-            </Button>
-          </div>
 
-          {/* Paso 2: Elegir archivo */}
-          <div className="rounded-md border px-4 py-3 space-y-2">
-            <p className="text-sm font-medium">Paso 2 — Elige el archivo completado</p>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="hidden"
-              onChange={onPickFile}
-            />
-            {selectedLabel ? (
-              <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
-                <FileSpreadsheet className="size-4 shrink-0 text-emerald-500" />
-                <span className="flex-1 truncate text-foreground" title={selectedLabel}>
-                  {selectedLabel}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Quitar archivo"
-                  className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={clearFile}
-                >
-                  ✕
-                </button>
+            <div className="flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Paso 1 — Plantilla</p>
+                <p className="text-xs text-muted-foreground">Rellena en Excel y guarda como .xlsx</p>
               </div>
-            ) : (
               <Button
                 type="button"
-                variant="secondary"
-                className="w-full gap-2"
-                onClick={() => inputRef.current?.click()}
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5 sm:self-center"
+                disabled={downloadTemplateMutation.isPending}
+                onClick={() => downloadTemplateMutation.mutate()}
               >
-                <FileSpreadsheet className="size-4" />
-                Elegir archivo Excel (.xlsx)
+                {downloadTemplateMutation.isPending ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                Descargar plantilla
               </Button>
+            </div>
+
+            <div className="rounded-md border px-4 py-3 space-y-2">
+              <p className="text-sm font-medium">Paso 2 — Archivo completado</p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept={ACCEPT}
+                className="hidden"
+                onChange={onPickFile}
+              />
+              {selectedLabel ? (
+                <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm">
+                  <FileSpreadsheet className="size-4 shrink-0 text-emerald-500" />
+                  <span className="flex-1 truncate text-foreground" title={selectedLabel}>
+                    {selectedLabel}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Quitar archivo"
+                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={clearFile}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={() => inputRef.current?.click()}
+                >
+                  <FileSpreadsheet className="size-4" />
+                  Elegir archivo (.xlsx o .csv)
+                </Button>
+              )}
+            </div>
+
+            {importResult && (
+              <div
+                className={`rounded-md border px-3 py-2.5 text-sm ${
+                  errCount > 0 && importResult.created_count === 0
+                    ? 'border-destructive/40 bg-destructive/5'
+                    : errCount > 0
+                      ? 'border-amber-500/40 bg-amber-500/5'
+                      : 'border-emerald-500/40 bg-emerald-500/5'
+                }`}
+              >
+                <div className="flex items-start gap-2">
+                  {errCount > 0 ? (
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                  )}
+                  <div className="min-w-0 space-y-1">
+                    <p className="font-medium text-foreground">Resultado</p>
+                    <ul className="text-muted-foreground text-xs space-y-0.5">
+                      <li>
+                        <span className="text-foreground">{importResult.created_count}</span> creados
+                      </li>
+                      {importResult.skipped_count > 0 && (
+                        <li>
+                          <span className="text-foreground">{importResult.skipped_count}</span> filas
+                          vacías omitidas
+                        </li>
+                      )}
+                      {errCount > 0 && (
+                        <li>
+                          <span className="text-foreground">{errCount}</span> filas con error
+                        </li>
+                      )}
+                    </ul>
+                    {errCount > 0 && (
+                      <ul className="mt-2 max-h-32 overflow-y-auto rounded border bg-background/80 px-2 py-1.5 text-xs text-foreground">
+                        {importResult.errors.map((e) => (
+                          <li key={`${e.row}-${e.message}`} className="py-0.5">
+                            {e.row > 0 ? (
+                              <>
+                                Fila <strong>{e.row}</strong>: {e.message}
+                              </>
+                            ) : (
+                              e.message
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-        </div>
+        </ScrollArea>
 
-        <DialogFooter className="gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancelar
+        <DialogFooter className="shrink-0 gap-2 border-t px-6 py-4">
+          <Button type="button" variant="ghost" onClick={handleClose}>
+            {importResult ? 'Cerrar' : 'Cancelar'}
           </Button>
           <Button
             type="button"
-            disabled={importMutation.isPending || !selectedLabel}
-            onClick={() => void submitImport()}
+            disabled={importMutation.isPending || (!selectedLabel && !importResult)}
+            onClick={() => {
+              if (importResult) {
+                setImportResult(null)
+                inputRef.current?.click()
+                return
+              }
+              void submitImport()
+            }}
           >
             {importMutation.isPending ? (
               <>
                 <Spinner className="size-4 mr-1" />
                 Importando…
               </>
+            ) : importResult ? (
+              'Importar otro archivo'
             ) : (
               'Importar'
             )}

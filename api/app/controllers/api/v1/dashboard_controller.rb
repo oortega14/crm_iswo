@@ -10,7 +10,7 @@ module Api
       def kpis
         authorize Opportunity, :index?
 
-        scope = policy_scope(Opportunity).kept
+        scope = dashboard_opportunities_scope
 
         open_scope   = scope.open
         total        = open_scope.count
@@ -27,6 +27,7 @@ module Api
         avg          = scope.average(:bant_score)
         bant_avg     = avg ? avg.round.to_i : 0
 
+        open = open_scope
         render json: {
           data: {
             total_in_pipeline:  total,
@@ -35,7 +36,10 @@ module Api
             bant_average:       bant_avg,
             win_rate:           win_rate,
             won_count:          won_count,
-            lost_count:         lost_count
+            lost_count:         lost_count,
+            hot_count:          open.where(temperature: "hot").count,
+            warm_count:         open.where(temperature: "warm").count,
+            cold_count:         open.where(temperature: "cold").count
           }
         }, status: :ok
       end
@@ -82,11 +86,12 @@ module Api
         authorize Reminder, :index?
 
         today = Time.zone.today.all_day
+        opp_scope = dashboard_opportunities_scope
 
         logs = OpportunityLog
                .includes(:user, opportunity: [:lead_source])
                .joins(:opportunity)
-               .merge(policy_scope(Opportunity).kept)
+               .merge(opp_scope)
                .where(action: %w[create stage_change])
                .where(created_at: today)
                .recent
@@ -94,6 +99,8 @@ module Api
 
         reminders = policy_scope(Reminder).status_pending
                         .includes(:user, opportunity: [])
+                        .joins(:opportunity)
+                        .merge(opp_scope)
                         .where(remind_at: today)
                         .order(:remind_at)
                         .limit(40)
@@ -121,7 +128,7 @@ module Api
       def bant_distribution
         authorize Opportunity, :index?
 
-        scope        = policy_scope(Opportunity).kept
+        scope        = dashboard_opportunities_scope
         low          = scope.where(bant_score: ...40).count
         medium       = scope.where(bant_score: 40...70).count
         high         = scope.where(bant_score: 70..).count
@@ -131,10 +138,23 @@ module Api
         render json: { data: { low: low, medium: medium, high: high, average: average } }, status: :ok
       end
 
+      def briefing
+        authorize Opportunity, :index?
+        authorize Reminder, :index?
+
+        raw = Opportunities::BriefingBuilder.new(
+          current_user,
+          current_tenant,
+          opportunity_scope: dashboard_opportunities_scope
+        ).call
+
+        render json: { data: Opportunities::BriefingPayload.from(raw) }, status: :ok
+      end
+
       def lead_sources_breakdown
         authorize Opportunity, :index?
 
-        scope = policy_scope(Opportunity).kept
+        scope = dashboard_opportunities_scope
 
         # Agrupa oportunidades activas (open) por lead_source
         rows = scope.open
@@ -148,10 +168,6 @@ module Api
                       Arel.sql("COALESCE(SUM(opportunities.estimated_value), 0)")
                     )
 
-        # Agrupa los sin fuente asignada
-        no_source_count = scope.open.where(lead_source_id: nil).count
-        no_source_value = scope.open.where(lead_source_id: nil).sum(:estimated_value).to_f
-
         payload = rows.map do |id, name, kind, count, value|
           {
             id: id&.to_s,
@@ -162,14 +178,19 @@ module Api
           }
         end.sort_by { |r| -r[:count] }
 
-        if no_source_count.positive?
-          payload << {
-            id: nil,
-            name: "Sin fuente",
-            kind: nil,
-            count: no_source_count,
-            value: no_source_value
-          }
+        # Evita duplicar "Sin fuente" si el GROUP BY ya devolvió fila con id nil
+        unless payload.any? { |r| r[:id].nil? }
+          no_source_count = scope.open.where(lead_source_id: nil).count
+          if no_source_count.positive?
+            no_source_value = scope.open.where(lead_source_id: nil).sum(:estimated_value).to_f
+            payload << {
+              id: nil,
+              name: "Sin fuente",
+              kind: nil,
+              count: no_source_count,
+              value: no_source_value
+            }
+          end
         end
 
         render json: { data: payload }, status: :ok
@@ -179,7 +200,7 @@ module Api
         authorize Opportunity, :index?
 
         start_month = Time.current.beginning_of_month
-        tuples = policy_scope(Opportunity).kept.won
+        tuples = dashboard_opportunities_scope.won
                   .where("closed_at >= ?", start_month)
                   .group(:owner_user_id)
                   .pluck(
@@ -208,9 +229,23 @@ module Api
 
       private
 
+      # Oportunidades visibles según rol (RFC §6.3 / A.8.2). Opcionalmente filtradas por pipeline_id.
+      def dashboard_opportunities_scope
+        scope = policy_scope(Opportunity).kept
+        pipe = pipeline_from_optional_param
+        scope = scope.where(pipeline_id: pipe.id) if pipe
+        scope
+      end
+
+      def pipeline_from_optional_param
+        return if params[:pipeline_id].blank?
+
+        current_tenant.pipelines.kept.find_by(id: params[:pipeline_id])
+      end
+
       def resolve_dashboard_pipeline
         if params[:pipeline_id].present?
-          return current_tenant.pipelines.kept.find(params[:pipeline_id])
+          return current_tenant.pipelines.kept.find_by(id: params[:pipeline_id])
         end
 
         current_tenant.pipelines.kept.order(Arel.sql("is_default DESC NULLS LAST"), :created_at).first

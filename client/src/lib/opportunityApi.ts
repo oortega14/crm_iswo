@@ -1,3 +1,4 @@
+import api, { formatRailsError } from '@/lib/api'
 import type {
   Opportunity,
   OpportunityStatus,
@@ -271,36 +272,6 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
   }
 }
 
-/** Recordatorio anidado en oportunidad (JSON:API `reminder`). */
-export type OpportunityReminderRow = {
-  id: string
-  subject: string
-  message: string
-  remind_at: string
-  channel: string
-  status: string
-}
-
-export function mapOpportunityReminderResource(resource: JsonApiResource): OpportunityReminderRow {
-  const a = resource.attributes ?? {}
-  const title =
-    (typeof a.title === 'string' && a.title) ||
-    (typeof a.subject === 'string' && a.subject) ||
-    'Recordatorio'
-  const body =
-    (typeof a.body === 'string' && a.body) ||
-    (typeof a.message === 'string' && a.message) ||
-    ''
-  return {
-    id: String(resource.id ?? ''),
-    subject: title,
-    message: body,
-    remind_at: String(a.remind_at ?? ''),
-    channel: String(a.channel ?? 'in_app'),
-    status: String(a.status ?? 'pending'),
-  }
-}
-
 /** Mapea un recurso JSON:API `opportunity_log` a nuestro tipo de dominio. */
 export function mapOpportunityLogResource(
   resource: JsonApiResource,
@@ -353,4 +324,154 @@ export function toOpportunityUpdatePayload(
   if (patch.bant_data !== undefined) out.bant_data = patch.bant_data
   if (patch.custom_fields !== undefined) out.custom_fields = patch.custom_fields
   return out
+}
+
+/** Filtros GET /api/v1/opportunities (RFC F1 + extensiones UI) */
+export interface OpportunityListFilters {
+  pipeline_id?: string
+  stage_id?: string
+  contact_id?: string
+  owner_id?: string
+  status?: string
+  temperature?: string
+  q?: string
+  stale_days?: number
+}
+
+export function buildOpportunityListParams(filters: OpportunityListFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  if (filters.contact_id) {
+    params.set('contact_id', filters.contact_id)
+    return params
+  }
+  if (filters.pipeline_id) params.set('pipeline_id', filters.pipeline_id)
+  if (filters.stage_id) params.set('stage_id', filters.stage_id)
+  if (filters.owner_id) params.set('owner_id', filters.owner_id)
+  if (filters.status) params.set('status', filters.status)
+  if (filters.temperature) params.set('temperature', filters.temperature)
+  if (filters.q && filters.q.length >= 2) params.set('q', filters.q)
+  if (filters.stale_days != null && filters.stale_days > 0) {
+    params.set('stale_days', String(filters.stale_days))
+  }
+  return params
+}
+
+export async function fetchOpportunities(
+  filters: OpportunityListFilters,
+): Promise<Opportunity[]> {
+  const params = buildOpportunityListParams(filters)
+  const response = await api.get(`/opportunities?${params.toString()}`)
+  const rows = jsonApiPrimaryList(response.data)
+  const included = jsonApiIncluded(response.data)
+  return rows
+    .filter((r) => r.id)
+    .map((r) => mapOpportunityResource(r, included))
+    .filter((o) => o.id.length > 0)
+}
+
+export async function fetchOpportunityDetail(id: string): Promise<Opportunity> {
+  const response = await api.get(`/opportunities/${id}`, {
+    params: { include: 'owner_user,lead_source' },
+  })
+  const row = jsonApiPrimaryOne(response.data)
+  if (!row?.id) throw new Error('Oportunidad no encontrada')
+  return mapOpportunityResource(row, jsonApiIncluded(response.data))
+}
+
+export async function moveOpportunityStage(
+  opportunityId: string,
+  pipelineStageId: string,
+): Promise<void> {
+  await api.post(
+    `/opportunities/${opportunityId}/move_stage`,
+    JSON.stringify({ pipeline_stage_id: pipelineStageId }),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+export async function assignOpportunityOwner(
+  opportunityId: string,
+  ownerUserId: string,
+): Promise<void> {
+  await api.post(
+    `/opportunities/${opportunityId}/assign`,
+    JSON.stringify({ owner_user_id: ownerUserId }),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+export interface RecalculateBantResult {
+  bant_score?: number
+  qualified?: boolean
+  temperature_ai?: {
+    ai_used?: boolean
+    temperature?: string
+    reasoning?: string
+  }
+}
+
+export async function recalculateOpportunityBant(
+  opportunityId: string,
+): Promise<RecalculateBantResult> {
+  const response = await api.post(`/opportunities/${opportunityId}/recalculate_bant`)
+  const data = response.data?.data
+  const attrs = data?.attributes ?? {}
+  const meta = response.data?.meta ?? {}
+  return {
+    bant_score: typeof attrs.bant_score === 'number' ? attrs.bant_score : Number(attrs.bant_score),
+    qualified: attrs.qualified != null ? Boolean(attrs.qualified) : undefined,
+    temperature_ai: meta.temperature_ai,
+  }
+}
+
+export type OpportunityExportFormat = 'csv' | 'xlsx'
+
+/** Filtros Ransack para export (alineado con /exports) */
+export function buildOpportunityExportFilters(filters: {
+  pipeline_id?: string
+  stage_id?: string
+  owner_id?: string
+  temperature?: string
+}): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (filters.pipeline_id) out.pipeline_id_eq = filters.pipeline_id
+  if (filters.stage_id) out.pipeline_stage_id_eq = filters.stage_id
+  if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
+  if (filters.temperature) out.temperature_eq = filters.temperature
+  return out
+}
+
+export async function downloadOpportunitiesExport(
+  format: OpportunityExportFormat,
+  filters: Record<string, string>,
+): Promise<Blob> {
+  const response = await api.get(`/opportunities/export.${format}`, {
+    params: { filters },
+    responseType: 'blob',
+  })
+  return response.data as Blob
+}
+
+export async function enqueueOpportunitiesExport(
+  format: OpportunityExportFormat,
+  filters: Record<string, string>,
+): Promise<void> {
+  await api.post('/exports', {
+    resource: 'opportunities',
+    export_format: format,
+    filters,
+  })
+}
+
+export function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export function opportunityListErrorMessage(err: unknown): string {
+  return formatRailsError(err, 'Error al cargar oportunidades')
 }

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import api from '@/lib/api'
+import { sanitizeLandingCss, sanitizeLandingHtml } from '@/lib/sanitizeLanding'
 
 // ---------------------------------------------------------------------------
 // Ruta
@@ -137,8 +138,8 @@ function PublicLandingPage() {
   const ctaText       = content.cta_text      || 'Enviar solicitud'
   const tyTitle       = content.thank_you_title   || '¡Gracias!'
   const tyMessage     = content.thank_you_message || 'Un asesor te contactará pronto.'
-  const gjsHtml       = content.gjs_html || ''
-  const gjsCss        = content.gjs_css  || ''
+  const gjsHtml       = sanitizeLandingHtml(content.gjs_html || '')
+  const gjsCss        = sanitizeLandingCss(content.gjs_css || '')
 
   if (submitted) {
     return (

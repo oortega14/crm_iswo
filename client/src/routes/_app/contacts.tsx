@@ -1,12 +1,11 @@
 import { createFileRoute, useSearch, useRouter } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Search,
   Upload,
-  Download,
   Building2,
   User,
   Mail,
@@ -17,6 +16,7 @@ import {
   ChevronRight,
   Target,
   RefreshCw,
+  Filter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,16 +54,33 @@ import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
 import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
 import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
+import { ContactsExportMenu } from '@/components/contacts/ContactsExportMenu'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList, jsonApiPrimaryOne } from '@/lib/opportunityApi'
+import {
+  contactListErrorMessage,
+  deleteContact,
+  fetchContactsList,
+  getCompanyLabel,
+  getContactInitials,
+  type ContactSummary,
+} from '@/lib/contactApi'
+import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
 import { queryKeys } from '@/lib/queryClient'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const contactsSearchSchema = z.object({
   selected: z.string().optional(),
+  owner: z.string().optional(),
 })
 
 export const Route = createFileRoute('/_app/contacts')({
@@ -71,94 +88,7 @@ export const Route = createFileRoute('/_app/contacts')({
   component: ContactsPage,
 })
 
-interface ContactRow {
-  id: string
-  fullName: string
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  company: unknown
-  position: string
-  opportunitiesCount: number
-  kind: 'person' | 'company'
-  city?: string
-  country?: string
-  notes?: string
-  documentId?: string
-  ownerName?: string
-  /** Etiqueta de origen / fuente (API: source_label) */
-  sourceLabel?: string
-}
-
-const getInitialsSafe = (value: string | undefined): string => {
-  if (!value) return '--'
-  return value
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
-
-const getCompanyLabel = (company: unknown): string => {
-  if (!company) return '-'
-  if (typeof company === 'string') return company
-  if (typeof company === 'object' && company !== null && 'name' in company) {
-    const name = (company as { name?: unknown }).name
-    return typeof name === 'string' && name.trim() ? name : '-'
-  }
-  return '-'
-}
-
-type ContactAttributes = {
-  kind: 'person' | 'company'
-  first_name?: string
-  last_name?: string
-  full_name?: string
-  email?: string
-  phone_e164?: string
-  phone_display?: string
-  company?: string
-  position?: string
-  city?: string
-  country?: string
-  notes?: string
-  document_id?: string
-  owner_name?: string
-  opportunities_count?: number
-  source_label?: string
-}
-
-type JsonApiContact = {
-  id: string
-  attributes: ContactAttributes
-}
-
-const mapContact = (resource: JsonApiContact): ContactRow => {
-  const attrs = resource.attributes
-  const fallbackName = [attrs.first_name, attrs.last_name].filter(Boolean).join(' ').trim()
-  return {
-    id: resource.id,
-    fullName: attrs.full_name || fallbackName || attrs.email || 'Sin nombre',
-    firstName: attrs.first_name || '',
-    lastName: attrs.last_name || '',
-    email: attrs.email || '-',
-    phone: attrs.phone_display || attrs.phone_e164 || '-',
-    company: attrs.company || '-',
-    position: attrs.position || '-',
-    opportunitiesCount: attrs.opportunities_count || 0,
-    kind: attrs.kind || 'person',
-    city: attrs.city,
-    country: attrs.country,
-    notes: attrs.notes,
-    documentId: attrs.document_id?.trim() || undefined,
-    ownerName: attrs.owner_name?.trim() || undefined,
-    sourceLabel: attrs.source_label?.trim() || undefined,
-  }
-}
+type ContactRow = ContactSummary
 
 function ContactsPage() {
   const queryClient = useQueryClient()
@@ -166,10 +96,10 @@ function ContactsPage() {
   const searchFromUrl = useSearch({ from: '/_app/contacts' })
   const navigate = Route.useNavigate()
   const router = useRouter()
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [activeTab, setActiveTab] = useState<'contacts' | 'companies'>('contacts')
-  const [selectedContact, setSelectedContact] = useState<ContactRow | null>(null)
-  const [isSlideOverOpen, setIsSlideOverOpen] = useState(false)
+  const selectedId = searchFromUrl.selected
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [quickAddContact, setQuickAddContact] = useState<{ id: string; name: string } | null>(null)
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
@@ -188,9 +118,53 @@ function ContactsPage() {
     setRefreshing(false)
   }
 
-  const canExportContacts = userRole === 'admin' || userRole === 'manager'
+  const showOwnerFilter = userRole === 'admin' || userRole === 'manager'
   const canImportContacts =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(searchInput.trim()), 350)
+    return () => window.clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    setCurrentPage(1)
+    setCompanyPage(1)
+  }, [debouncedQ, searchFromUrl.owner])
+
+  const { data: users = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapUserResource)
+    },
+    enabled: showOwnerFilter,
+    staleTime: 60_000,
+  })
+
+  const listFiltersPerson = useMemo(
+    () => ({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      kind: 'person' as const,
+      owner_id: searchFromUrl.owner,
+      page: currentPage,
+      items: pageSize,
+    }),
+    [debouncedQ, searchFromUrl.owner, currentPage],
+  )
+
+  const listFiltersCompany = useMemo(
+    () => ({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      kind: 'company' as const,
+      owner_id: searchFromUrl.owner,
+      page: companyPage,
+      items: pageSize,
+    }),
+    [debouncedQ, searchFromUrl.owner, companyPage],
+  )
 
   const {
     data: contactsData,
@@ -199,31 +173,8 @@ function ContactsPage() {
     error: contactsQueryError,
     refetch: refetchContacts,
   } = useQuery({
-    queryKey: queryKeys.contacts.list({ q: searchTerm, page: currentPage, pageSize, kind: 'person' }),
-    queryFn: async () => {
-      const response = await api.get('/contacts', {
-        params: {
-          q: searchTerm || undefined,
-          kind: 'person',
-          page: currentPage,
-          items: pageSize,
-        },
-      })
-      const rows = jsonApiPrimaryList(response.data)
-      const pagination = (response.data as { meta?: { pagination?: { count?: number; page?: number; pages?: number } } })
-        ?.meta?.pagination
-      const resources = rows.filter((r) => r.id).map((r) => ({
-        id: String(r.id),
-        attributes: (r.attributes ?? {}) as ContactAttributes,
-      }))
-      return {
-        contacts: resources.map(mapContact),
-        total: pagination?.count ?? resources.length,
-        page: pagination?.page ?? currentPage,
-        pageSize,
-        totalPages: pagination?.pages ?? 1,
-      }
-    },
+    queryKey: queryKeys.contacts.list(listFiltersPerson),
+    queryFn: () => fetchContactsList(listFiltersPerson),
   })
 
   const {
@@ -233,81 +184,21 @@ function ContactsPage() {
     error: companiesQueryError,
     refetch: refetchCompanies,
   } = useQuery({
-    queryKey: queryKeys.contacts.list({
-      q: searchTerm,
-      page: companyPage,
-      pageSize,
-      kind: 'company',
-    }),
-    queryFn: async () => {
-      const response = await api.get('/contacts', {
-        params: {
-          q: searchTerm || undefined,
-          kind: 'company',
-          page: companyPage,
-          items: pageSize,
-        },
-      })
-      const rows = jsonApiPrimaryList(response.data)
-      const pagination = (
-        response.data as {
-          meta?: { pagination?: { count?: number; page?: number; pages?: number } }
-        }
-      )?.meta?.pagination
-      const resources = rows.filter((r) => r.id).map((r) => ({
-        id: String(r.id),
-        attributes: (r.attributes ?? {}) as ContactAttributes,
-      }))
-      return {
-        companies: resources.map(mapContact),
-        total: pagination?.count ?? resources.length,
-        page: pagination?.page ?? companyPage,
-        pageSize,
-        totalPages: pagination?.pages ?? 1,
-      }
-    },
+    queryKey: queryKeys.contacts.list(listFiltersCompany),
+    queryFn: () => fetchContactsList(listFiltersCompany),
     enabled: activeTab === 'companies',
   })
 
-  const selectedIdFromUrl = searchFromUrl.selected
-
-  useEffect(() => {
-    if (!selectedIdFromUrl) {
-      return
-    }
-
-    const inList = contactsData?.contacts.find((c) => c.id === selectedIdFromUrl)
-    if (inList) {
-      setSelectedContact(inList)
-      setIsSlideOverOpen(true)
-      return
-    }
-
-    if (contactsData === undefined) return
-
-    let cancelled = false
-    void (async () => {
-      try {
-        const response = await api.get(`/contacts/${selectedIdFromUrl}`)
-        const one = jsonApiPrimaryOne(response.data)
-        if (cancelled || !one) return
-        setSelectedContact(
-          mapContact({ id: one.id, attributes: (one.attributes ?? {}) as ContactAttributes })
-        )
-        setIsSlideOverOpen(true)
-      } catch {
-        toast.error('No se encontró el contacto')
-        void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [selectedIdFromUrl, contactsData, navigate])
+  const selectedPreview = useMemo(() => {
+    if (!selectedId) return null
+    return (
+      contactsData?.contacts.find((c) => c.id === selectedId) ??
+      companiesData?.contacts.find((c) => c.id === selectedId) ??
+      null
+    )
+  }, [selectedId, contactsData, companiesData])
 
   const handleContactClick = (contact: ContactRow) => {
-    setSelectedContact(contact)
-    setIsSlideOverOpen(true)
     void navigate({ search: (prev) => ({ ...prev, selected: contact.id }) })
   }
 
@@ -315,9 +206,6 @@ function ContactsPage() {
   const companyTotalPages = companiesData?.totalPages ?? 1
   const canDeleteContacts = userRole === 'admin'
 
-  useEffect(() => {
-    setCompanyPage(1)
-  }, [searchTerm])
 
   const openEditDialog = (contact: ContactRow) => {
     setEditingContact(contact)
@@ -325,12 +213,10 @@ function ContactsPage() {
   }
 
   const deleteContactMutation = useMutation({
-    mutationFn: async (contact: ContactRow) => api.delete(`/contacts/${contact.id}`),
+    mutationFn: async (contact: ContactRow) => deleteContact(contact.id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
       toast.success('Contacto eliminado')
-      setIsSlideOverOpen(false)
-      setSelectedContact(null)
       setConfirmDeleteContact(null)
       void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
     },
@@ -348,25 +234,7 @@ function ContactsPage() {
   }
 
 
-  const exportContactsMutation = useMutation({
-    mutationFn: async () => {
-      const filters =
-        activeTab === 'companies' ? { kind_eq: 'company' } : { kind_eq: 'person' }
-      return api.post('/contacts/export', {
-        export_format: 'xlsx',
-        filters,
-      })
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.exports.all })
-      toast.success(
-        'Exportación iniciada. Cuando esté lista podrás descargar el archivo en Exportaciones.'
-      )
-    },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'No se pudo iniciar la exportación'))
-    },
-  })
+  const activeKind = activeTab === 'companies' ? 'company' : 'person'
 
   return (
     <AppPageShell contentClassName="gap-8">
@@ -399,20 +267,7 @@ function ContactsPage() {
           <Upload className="mr-2 h-4 w-4" />
           Importar
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!canExportContacts || exportContactsMutation.isPending}
-          title={
-            canExportContacts
-              ? `Exportar ${activeTab === 'companies' ? 'empresas' : 'contactos'} a Excel (asíncrono)`
-              : 'Solo managers y administradores pueden exportar'
-          }
-          onClick={() => exportContactsMutation.mutate()}
-        >
-          <Download className="mr-2 h-4 w-4" />
-          {exportContactsMutation.isPending ? 'Exportando…' : 'Exportar'}
-        </Button>
+        <ContactsExportMenu kind={activeKind} ownerId={searchFromUrl.owner} />
         <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Nuevo contacto
@@ -421,7 +276,7 @@ function ContactsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contacts' | 'companies')}>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <TabsList>
             <TabsTrigger value="contacts" className="gap-2">
               <User className="h-4 w-4" />
@@ -432,15 +287,49 @@ function ContactsPage() {
               Empresas
             </TabsTrigger>
           </TabsList>
-          
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 w-64"
-            />
+
+          <div className="flex flex-wrap items-center gap-2">
+            {showOwnerFilter && (
+              <Select
+                value={searchFromUrl.owner ?? '__all__'}
+                onValueChange={(v) =>
+                  navigate({ search: (prev) => ({ ...prev, owner: v === '__all__' ? undefined : v }) })
+                }
+              >
+                <SelectTrigger className="h-9 w-[150px] text-sm">
+                  <SelectValue placeholder="Consultor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todos</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {searchFromUrl.owner && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 text-xs gap-1"
+                onClick={() => navigate({ search: (prev) => ({ ...prev, owner: undefined }) })}
+              >
+                <Filter className="size-3" />
+                Limpiar filtro
+              </Button>
+            )}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar (mín. 2 letras)..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-9 w-56 sm:w-64"
+              />
+            </div>
           </div>
         </div>
 
@@ -450,7 +339,7 @@ function ContactsPage() {
               {contactsError ? (
                 <div className="p-6 space-y-3">
                   <p className="text-sm text-destructive">
-                    {formatRailsError(contactsQueryError, 'No se pudieron cargar los contactos')}
+                    {contactListErrorMessage(contactsQueryError)}
                   </p>
                   <Button type="button" variant="outline" size="sm" onClick={() => void refetchContacts()}>
                     Reintentar
@@ -484,7 +373,7 @@ function ContactsPage() {
                             <div className="flex items-center gap-3">
                               <Avatar className="h-8 w-8">
                                 <AvatarFallback>
-                                  {getInitialsSafe(contact.fullName)}
+                                  {getContactInitials(contact.fullName)}
                                 </AvatarFallback>
                               </Avatar>
                               <span className="font-medium">
@@ -610,7 +499,7 @@ function ContactsPage() {
               {companiesError ? (
                 <div className="p-6 space-y-3">
                   <p className="text-sm text-destructive">
-                    {formatRailsError(companiesQueryError, 'No se pudieron cargar las empresas')}
+                    {contactListErrorMessage(companiesQueryError)}
                   </p>
                   <Button type="button" variant="outline" size="sm" onClick={() => void refetchCompanies()}>
                     Reintentar
@@ -634,13 +523,13 @@ function ContactsPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                    {(companiesData?.companies.length ?? 0) === 0 ? (
+                    {(companiesData?.contacts.length ?? 0) === 0 ? (
                       <div className="col-span-full flex flex-col items-center justify-center py-12 text-center text-sm text-muted-foreground">
                         <Building2 className="size-10 mb-3 opacity-50" />
                         <p>No hay empresas registradas con los filtros actuales.</p>
                       </div>
                     ) : (
-                      companiesData?.companies.map((company) => {
+                      companiesData?.contacts.map((company) => {
                         const secondaryLine = company.sourceLabel?.trim()
                           ? `Origen: ${company.sourceLabel.trim()}`
                           : [company.city, company.country].filter(Boolean).join(', ') ||
@@ -719,7 +608,7 @@ function ContactsPage() {
                     )}
                   </div>
 
-                  {(companiesData?.companies.length ?? 0) > 0 && (
+                  {(companiesData?.contacts.length ?? 0) > 0 && (
                     <div className="flex items-center justify-between border-t px-4 py-3">
                       <p className="text-sm text-muted-foreground">
                         Mostrando {(companyPage - 1) * pageSize + 1} -{' '}
@@ -758,19 +647,16 @@ function ContactsPage() {
 
       {/* Contact Slide Over */}
       <ContactSlideOver
-        contact={selectedContact}
-        open={isSlideOverOpen}
+        contactId={selectedId}
+        contactPreview={selectedPreview}
+        open={!!selectedId}
         onOpenChange={(open) => {
-          setIsSlideOverOpen(open)
-          if (!open) {
-            setSelectedContact(null)
-            void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
-          }
+          if (!open) void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
         }}
-        onEdit={(c) => openEditDialog(c as unknown as ContactRow)}
-        onDelete={(c) => handleDeleteContact(c as unknown as ContactRow)}
+        onEdit={(c) => openEditDialog(c)}
+        onDelete={(c) => handleDeleteContact(c)}
         onAddOpportunity={(contact) => {
-          setIsSlideOverOpen(false)
+          void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
           setQuickAddContact({ id: contact.id, name: contact.fullName })
           setIsQuickAddOpen(true)
         }}
@@ -793,7 +679,8 @@ function ContactsPage() {
         onOpenChange={setIsCreateDialogOpen}
         onCreated={() => {
           setCurrentPage(1)
-          setSearchTerm('')
+          setSearchInput('')
+          setDebouncedQ('')
         }}
       />
 

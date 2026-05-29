@@ -10,6 +10,8 @@ module Api
     # (reasignar, fusionar, ignorar).
     # ========================================================================
     class DuplicateFlagsController < BaseController
+      include DuplicateFlagAuditable
+
       before_action :set_flag, only: %i[show reassign merge ignore]
 
       # GET /api/v1/duplicate_flags
@@ -32,6 +34,7 @@ module Api
           @flag.duplicate_of_opportunity.update!(owner_user_id: new_owner.id)
           @flag.resolve!(as: "reassigned", by: current_user, note: params[:note])
         end
+        audit_duplicate_flag!("duplicate.reassign", @flag, new_owner_user_id: new_owner.id)
         render_no_content
       end
 
@@ -46,6 +49,7 @@ module Api
           ).call
         end
         @flag.resolve!(as: "merged", by: current_user, note: params[:note])
+        audit_duplicate_flag!("duplicate.merge", @flag)
         render_no_content
       end
 
@@ -53,6 +57,7 @@ module Api
       def ignore
         authorize @flag, :update?
         @flag.resolve!(as: "ignored", by: current_user, note: params[:note])
+        audit_duplicate_flag!("duplicate.ignore", @flag)
         render_no_content
       end
 
@@ -102,6 +107,8 @@ module Api
             next
           end
         end
+
+        audit_duplicate_scan!(scanned: contact_ids.size, created: created) if created.positive?
 
         render json: { scanned: contact_ids.size, created: created }, status: :ok
       end

@@ -60,6 +60,7 @@ module Api
         # dejamos pasar (útil en dev). En prod DEBE estar seteado.
         def verify_signature!
           secret = ENV["META_APP_SECRET"].to_s
+          return head :forbidden if secret.blank? && Rails.env.production?
           return if secret.blank?
 
           signature = request.headers["X-Hub-Signature-256"].to_s

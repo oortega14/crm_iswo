@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
+import { refreshAccessToken } from '@/lib/authSession'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiError } from '@/types'
 import { getSubdomain } from './utils'
@@ -28,7 +29,16 @@ api.interceptors.request.use(
     if (!config.headers['X-Tenant-Slug']) {
       config.headers['X-Tenant-Slug'] = getSubdomain()
     }
-    
+
+    // FormData: quitar Content-Type para que el navegador añada boundary (importaciones, uploads)
+    if (config.data instanceof FormData) {
+      if (typeof config.headers.delete === 'function') {
+        config.headers.delete('Content-Type')
+      } else {
+        delete config.headers['Content-Type']
+      }
+    }
+
     return config
   },
   (error) => Promise.reject(error)
@@ -60,7 +70,9 @@ api.interceptors.response.use(
     }
     const requestUrl = originalRequest?.url || ''
     const isAuthEndpoint =
-      requestUrl.includes('/sessions') || requestUrl.includes('/password/')
+      requestUrl.includes('/password/') ||
+      requestUrl.endsWith('/sessions') ||
+      requestUrl.endsWith('/sessions/refresh')
 
     // Handle 401 - try to refresh token
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
@@ -79,23 +91,17 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        const response = await axios.post(
-          `${apiBaseUrl}/sessions/refresh`,
-          {},
-          {
-            withCredentials: true,
-            headers: {
-              'X-Tenant-Slug': getSubdomain(),
-            },
-          }
-        )
-        
-        const { access_token } = response.data
-        useAuthStore.getState().setAccessToken(access_token)
-        
-        processQueue(null, access_token)
-        
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
+        const session = await refreshAccessToken()
+        if (!session) {
+          throw new Error('No se pudo renovar la sesión')
+        }
+
+        const { token, user } = session
+        useAuthStore.getState().login(user, token)
+
+        processQueue(null, token)
+
+        originalRequest.headers.Authorization = `Bearer ${token}`
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError as Error, null)
@@ -144,6 +150,9 @@ export function formatRailsError(err: unknown, fallback = 'Error en la petición
       const slug = (d as { error?: string }).error
       const msg = (d as { message?: string }).message
       if (typeof msg === 'string' && msg.trim()) return msg
+      if (slug === 'tenant_not_found' || slug === 'tenant_missing' || slug === 'tenant_inactive') {
+        return msg || 'No se pudo identificar la empresa. Revisa el identificador o contacta al administrador.'
+      }
       if (slug === 'connection_failed') {
         return 'La prueba de conexión falló. Revisa las credenciales o variables del servidor (p. ej. Google OAuth).'
       }

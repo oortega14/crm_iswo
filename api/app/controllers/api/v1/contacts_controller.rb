@@ -6,6 +6,9 @@ module Api
     # ContactsController — CRUD + chequeo de duplicados + export async
     # ========================================================================
     class ContactsController < BaseController
+      include ExportAuditable
+      include ExportDownloadable
+
       before_action :set_contact, only: %i[show update destroy]
 
       # GET /api/v1/contacts
@@ -17,9 +20,10 @@ module Api
         scope = scope.where.not(phone_normalized: nil)          if params[:has_phone] == "true"
 
         if (q = params[:q]).present?
-          like = "%#{q}%"
+          like = "%#{ActiveRecord::Base.sanitize_sql_like(q.to_s.strip)}%"
           scope = scope.where(
-            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR email ILIKE :q OR phone_normalized ILIKE :q",
+            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR " \
+            "email ILIKE :q OR phone_normalized ILIKE :q OR document_id ILIKE :q",
             q: like
           )
         end
@@ -72,6 +76,11 @@ module Api
           email:     params[:email],
           full_name: params[:full_name]
         ).call
+
+        if current_user.role_consultant?
+          allowed_ids = policy_scope(Contact).pluck(:id).to_set
+          matches = matches.select { |m| allowed_ids.include?(m.contact.id) }
+        end
 
         if matches.empty?
           return render json: { data: { exists: false } }, status: :ok
@@ -147,17 +156,24 @@ module Api
         }, status: :ok
       end
 
-      # POST /api/v1/contacts/export
-      # body: { export_format|file_format|"format" si csv/xlsx, filters }
+      # GET /api/v1/contacts/export.csv | export.xlsx — RFC §6.7 (descarga directa)
+      def export_download
+        export_download_for("contacts")
+      end
+
+      # POST /api/v1/contacts/export — exportación asíncrona (grandes volúmenes)
       def export
         authorize Contact, :export?
+        file_format = resolve_export_file_format
+        filters     = normalize_export_filters_param
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: "contacts",
-          format:   resolve_export_file_format,
-          filters:  normalize_export_filters_param
+          format:   file_format,
+          filters:  filters
         )
         safe_enqueue_export_generation_job(export.id)
+        record_export_audit!(resource: "contacts", format: file_format, filters: filters, sync: false)
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
@@ -205,6 +221,9 @@ module Api
           :owner_user_id, :source_kind, :source_label,
           custom_fields: {}
         )
+        unless current_user.role_admin? || current_user.role_manager?
+          permitted = permitted.except(:owner_user_id)
+        end
         permitted[:company_name] = permitted.delete(:company) if permitted.key?(:company)
         permitted[:job_title] = permitted.delete(:position) if permitted.key?(:position)
         permitted

@@ -10,7 +10,7 @@
 # ============================================================================
 class ContactPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff?
+  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned?)
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner_or_assigned?
   def destroy?          = admin?

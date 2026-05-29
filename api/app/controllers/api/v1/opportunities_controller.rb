@@ -6,7 +6,10 @@ module Api
     # OpportunitiesController — CRUD + acciones de dominio + Kanban + export
     # ========================================================================
     class OpportunitiesController < BaseController
-      before_action :set_opportunity, only: %i[show update destroy move_stage assign merge recalculate_bant classify]
+      include ExportAuditable
+      include ExportDownloadable
+
+      before_action :set_opportunity, only: %i[show update destroy move_stage assign merge recalculate_bant classify sync_temperature]
 
       # GET /api/v1/opportunities
       def index
@@ -21,8 +24,18 @@ module Api
         end
         scope = scope.where(contact_id: params[:contact_id])               if params[:contact_id].present?
         scope = scope.where(owner_user_id: params[:owner_id])              if params[:owner_id].present?
-        scope = scope.where("title ILIKE ?", "%#{params[:q]}%")            if params[:q].present?
+        if params[:q].present?
+          like = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
+          scope = scope.left_joins(:contact).where(
+            "opportunities.title ILIKE :q OR contacts.first_name ILIKE :q OR " \
+            "contacts.last_name ILIKE :q OR contacts.company_name ILIKE :q OR contacts.email ILIKE :q",
+            q: like
+          )
+        end
         scope = scope.stale(params[:stale_days].to_i)                      if params[:stale_days].present?
+        if params[:temperature].present? && Opportunity::TEMPERATURES.include?(params[:temperature].to_s)
+          scope = scope.where(temperature: params[:temperature])
+        end
 
         render_collection(
           scope.order(last_activity_at: :desc),
@@ -72,6 +85,9 @@ module Api
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
           flag_duplicates_for!(@opportunity, contact)
+          if defined?(Opportunities::TemperatureCalculator)
+            Opportunities::TemperatureCalculator.new(@opportunity.reload).apply!
+          end
           render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
         else
           render_unprocessable(@opportunity)
@@ -88,7 +104,9 @@ module Api
         authorize @opportunity
         before = @opportunity.attributes.dup
         bant_in = params.dig(:opportunity, :bant_data).present?
-        if @opportunity.update(update_params)
+        attrs = update_params.to_h
+        apply_stage_status!(attrs)
+        if @opportunity.update(attrs)
           if bant_in && defined?(Opportunities::BantScorer)
             Opportunities::BantScorer.new(@opportunity).call_and_persist!
             @opportunity.reload
@@ -156,26 +174,51 @@ module Api
       def recalculate_bant
         authorize @opportunity, :recalculate_bant?
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+        @opportunity.reload
+        payload = OpportunitySerializer.new(
+          @opportunity,
+          include: [:owner_user, :lead_source]
+        ).serializable_hash
+        ai_meta = maybe_auto_classify_with_claude!
+        payload[:meta] = ai_meta if ai_meta.present?
+        render json: payload, status: :ok
       end
 
-      # POST /api/v1/opportunities/:id/classify
-      def classify
+      # POST /api/v1/opportunities/:id/sync_temperature — reglas BANT + actividad (sin IA)
+      def sync_temperature
         authorize @opportunity, :update?
-        result = Opportunities::AiClassifier.new(@opportunity).call
-        @opportunity.update!(temperature: result.temperature)
-        @opportunity.touch_activity!
-        log_action!("classify", { temperature: result.temperature, ai_used: result.ai_used? })
+        calc = Opportunities::TemperatureCalculator.new(@opportunity).apply!
+        log_action!("classify", { temperature: calc.temperature, ai_used: false, source: "rules" })
 
         render json: {
-          data:       OpportunitySerializer.new(@opportunity, include: [:owner_user, :lead_source]).serializable_hash[:data],
-          ai_result:  {
-            temperature: result.temperature,
-            reasoning:   result.reasoning,
-            next_action: result.next_action,
-            ai_used:     result.ai_used?
+          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source]).serializable_hash[:data],
+          ai_result: {
+            temperature: calc.temperature,
+            reasoning:   calc.reasoning,
+            next_action: calc.next_action,
+            ai_used:     false
           }
         }, status: :ok
+      end
+
+      # POST /api/v1/opportunities/:id/classify — Claude (Anthropic) o reglas si no hay API key
+      def classify
+        authorize @opportunity, :update?
+        classifier = Opportunities::AiClassifier.new(@opportunity.reload)
+        result = classifier.call
+        @opportunity.update!(temperature: result.temperature, last_activity_at: Time.current)
+        log_action!(
+          "classify",
+          {
+            temperature:     result.temperature,
+            ai_used:         result.ai_used?,
+            model:           result.ai_used? ? Opportunities::AiClassifier.model_name : nil,
+            fallback_reason: result.fallback_reason,
+            anthropic_error: classifier.last_error
+          }.compact
+        )
+
+        render json: classify_response_payload(result, classifier), status: :ok
       end
 
       # GET /api/v1/opportunities/kanban?pipeline_id=...
@@ -198,15 +241,23 @@ module Api
       end
 
       # POST /api/v1/opportunities/export
+      # GET /api/v1/opportunities/export.csv | export.xlsx — RFC §6.7
+      def export_download
+        export_download_for("opportunities")
+      end
+
       def export
         authorize Opportunity, :export?
+        file_format = resolve_export_file_format
+        filters     = normalize_export_filters_param
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: "opportunities",
-          format:   resolve_export_file_format,
-          filters:  normalize_export_filters_param
+          format:   file_format,
+          filters:  filters
         )
         safe_enqueue_export_generation_job(export.id)
+        record_export_audit!(resource: "opportunities", format: file_format, filters: filters, sync: false)
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
@@ -292,6 +343,69 @@ module Api
             timeline:  [:score, :answer]
           }
         )
+      end
+
+      # Misma lógica que move_stage: al cambiar etapa vía PATCH, sincronizar status.
+      def apply_stage_status!(attrs)
+        stage_id = attrs["pipeline_stage_id"] || attrs[:pipeline_stage_id]
+        return if stage_id.blank?
+
+        stage = current_tenant.pipeline_stages.find_by(id: stage_id)
+        return unless stage
+
+        if stage.closed_won
+          attrs["status"] = "won"
+        elsif stage.closed_lost
+          attrs["status"] = "lost"
+        end
+      end
+
+      def maybe_auto_classify_with_claude!
+        return {} unless Opportunities::AiClassifier.auto_classify_on_bant?
+
+        result = Opportunities::AiClassifier.new(@opportunity).call
+        return { temperature_ai: { ai_used: false, fallback_reason: result.fallback_reason } } unless result.ai_used?
+
+        @opportunity.update!(temperature: result.temperature)
+        log_action!(
+          "classify",
+          {
+            temperature: result.temperature,
+            ai_used:     true,
+            model:       Opportunities::AiClassifier.model_name,
+            source:      "auto_bant"
+          }
+        )
+
+        {
+          temperature_ai: {
+            ai_used:     true,
+            temperature: result.temperature,
+            reasoning:   result.reasoning,
+            next_action: result.next_action,
+            model:       Opportunities::AiClassifier.model_name
+          }
+        }
+      end
+
+      def classify_response_payload(result, classifier = nil)
+        {
+          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source]).serializable_hash[:data],
+          ai_result: {
+            temperature:     result.temperature,
+            reasoning:       result.reasoning,
+            next_action:     result.next_action,
+            ai_used:         result.ai_used?,
+            fallback_reason: result.fallback_reason
+          },
+          meta:      {
+            claude_configured: Opportunities::AiClassifier.configured?,
+            model:             result.ai_used? ? Opportunities::AiClassifier.model_name : nil,
+            ai_used:           result.ai_used?,
+            anthropic_status:  classifier&.last_status,
+            anthropic_error:   classifier&.last_error
+          }.compact
+        }
       end
 
       def log_action!(action, changes_data)

@@ -13,7 +13,9 @@ module Api
       # GET /api/v1/opportunities/:opportunity_id/reminders
       def index
         scope = if params[:opportunity_id].present?
-                  current_tenant.opportunities.find(params[:opportunity_id]).reminders
+                  opp = current_tenant.opportunities.find(params[:opportunity_id])
+                  authorize opp, :show?
+                  opp.reminders
                 else
                   policy_scope(Reminder).where(user: current_user)
                 end

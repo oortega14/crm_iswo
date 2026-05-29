@@ -114,11 +114,20 @@ module Api
         new_stage = current_tenant.pipeline_stages.find(params.require(:pipeline_stage_id))
         from = @opportunity.pipeline_stage_id
 
-        @opportunity.update!(pipeline_stage_id: new_stage.id)
-        @opportunity.update!(status: "won")  if new_stage.closed_won
-        @opportunity.update!(status: "lost") if new_stage.closed_lost
-        @opportunity.touch_activity!
-        log_action!("stage_change", { from_stage_id: from, to_stage_id: new_stage.id })
+        new_status = if new_stage.closed_won  then "won"
+                     elsif new_stage.closed_lost then "lost"
+                     else @opportunity.status
+                     end
+
+        ActiveRecord::Base.transaction do
+          @opportunity.update!(
+            pipeline_stage_id: new_stage.id,
+            pipeline_id:       new_stage.pipeline_id,
+            status:            new_status
+          )
+          @opportunity.touch_activity!
+          log_action!("stage_change", { from_stage_id: from, to_stage_id: new_stage.id })
+        end
 
         render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
       end
@@ -272,8 +281,8 @@ module Api
 
       def update_params
         params.require(:opportunity).permit(
-          :title, :notes, :estimated_value, :status, :temperature,
-          :expected_close_date, :bant_score, :lost_reason, :lead_source_id,
+          :title, :notes, :estimated_value, :temperature,
+          :expected_close_date, :lost_reason, :lead_source_id,
           :pipeline_stage_id,
           custom_fields: {},
           bant_data: {
@@ -312,8 +321,9 @@ module Api
                                       .where.not(status: %w[won lost merged])
 
         existing_opps.find_each do |existing|
-          next if DuplicateFlag.exists?(opportunity_id: opportunity.id, duplicate_of_opportunity_id: existing.id)
-          next if DuplicateFlag.exists?(opportunity_id: existing.id, duplicate_of_opportunity_id: opportunity.id)
+          flags = DuplicateFlag.where(tenant_id: current_tenant.id)
+          next if flags.exists?(opportunity_id: opportunity.id, duplicate_of_opportunity_id: existing.id)
+          next if flags.exists?(opportunity_id: existing.id, duplicate_of_opportunity_id: opportunity.id)
 
           matched = if contact.email.present? && contact.phone_e164.present?
                       "both"

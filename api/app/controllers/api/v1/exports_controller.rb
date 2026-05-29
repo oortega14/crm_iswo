@@ -50,9 +50,16 @@ module Api
       # POST /api/v1/exports  { resource: "contacts"|"opportunities", export_format, filters }
       def create
         authorize Export, :create?
+        resource = params.require(:resource)
+        unless Export::RESOURCES.include?(resource)
+          return render json: { error: "invalid_resource",
+                                message: "resource debe ser uno de: #{Export::RESOURCES.join(', ')}" },
+                        status: :unprocessable_entity
+        end
+
         export = current_tenant.exports.create!(
           user:     current_user,
-          resource: params.require(:resource),
+          resource: resource,
           format:   resolve_export_file_format,
           filters:  normalize_export_filters_param
         )

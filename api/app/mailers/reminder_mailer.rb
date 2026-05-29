@@ -11,7 +11,7 @@ class ReminderMailer < ApplicationMailer
     @reminder    = params[:reminder]
     @user        = @reminder.user
     @opportunity = @reminder.opportunity
-    @contact     = @opportunity&.contact || @reminder.contact
+    @contact     = @opportunity&.contact
 
     return if @user&.email.blank?
 

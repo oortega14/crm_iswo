@@ -10,7 +10,7 @@ Rails.application.routes.draw do
   # En producción se protege con HTTP Basic (ver ApplicationController de
   # Sidekiq Web) o detrás de VPN. En desarrollo queda abierto.
   # ==========================================================================
-  if Rails.env.production?
+  unless Rails.env.development?
     Sidekiq::Web.use Rack::Auth::Basic do |user, pass|
       ActiveSupport::SecurityUtils.secure_compare(user, ENV.fetch("SIDEKIQ_WEB_USERNAME", "")) &
         ActiveSupport::SecurityUtils.secure_compare(pass, ENV.fetch("SIDEKIQ_WEB_PASSWORD", ""))

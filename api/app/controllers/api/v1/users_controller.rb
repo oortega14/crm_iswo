@@ -100,7 +100,10 @@ module Api
       end
 
       def user_params
-        params.require(:user).permit(:name, :first_name, :last_name, :email, :phone, :role, :active, :avatar_url)
+        base = params.require(:user).permit(:name, :first_name, :last_name, :email, :phone, :avatar_url)
+        return base unless current_user&.role_admin?
+
+        base.merge(params.require(:user).permit(:role, :active))
       end
 
       def cast_bool(v)

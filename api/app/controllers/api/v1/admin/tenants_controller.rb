@@ -54,7 +54,7 @@ module Api
           token = request.headers["X-Admin-Token"].to_s
           expected = ENV.fetch("SUPER_ADMIN_TOKEN", nil)
 
-          if expected.blank? || token != expected
+          unless expected.present? && ActiveSupport::SecurityUtils.secure_compare(token, expected)
             render json: { error: "unauthorized", message: "Token de administrador inválido" },
                    status: :unauthorized
           end

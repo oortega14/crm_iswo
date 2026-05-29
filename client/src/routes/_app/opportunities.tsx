@@ -1,9 +1,19 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { LayoutGrid, Table as TableIcon, Plus, Search, Flame, Sun, Snowflake, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  LayoutGrid,
+  Table as TableIcon,
+  Plus,
+  Search,
+  Flame,
+  Sun,
+  Snowflake,
+  RefreshCw,
+  Clock,
+  Filter,
+} from 'lucide-react'
 import { z } from 'zod'
-import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -19,15 +29,21 @@ import { KanbanBoard } from '@/components/opportunities/KanbanBoard'
 import { OpportunitiesTable } from '@/components/opportunities/OpportunitiesTable'
 import { OpportunitySlideOver } from '@/components/opportunities/OpportunitySlideOver'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
+import { OpportunitiesExportMenu } from '@/components/opportunities/OpportunitiesExportMenu'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  jsonApiIncluded,
+  fetchOpportunities,
   jsonApiPrimaryList,
-  mapOpportunityResource,
   mapPipelineResource,
+  opportunityListErrorMessage,
 } from '@/lib/opportunityApi'
+import api from '@/lib/api'
+import { useAuthStore } from '@/stores/auth'
+import { toast } from 'sonner'
+import { formatStatusLabel } from '@/lib/utils'
+import type { OpportunityStatus } from '@/types'
 
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
@@ -36,7 +52,19 @@ const opportunitiesSearchSchema = z.object({
   selected: z.string().optional(),
   contact: z.string().optional(),
   temperature: z.enum(['cold', 'warm', 'hot']).optional(),
+  owner: z.string().optional(),
+  status: z.string().optional(),
+  stale: z.coerce.boolean().optional(),
 })
+
+const STATUS_OPTIONS: OpportunityStatus[] = [
+  'new_lead',
+  'contacted',
+  'qualified',
+  'proposal',
+  'won',
+  'lost',
+]
 
 export const Route = createFileRoute('/_app/opportunities')({
   validateSearch: opportunitiesSearchSchema,
@@ -47,12 +75,22 @@ function OpportunitiesPage() {
   const search = useSearch({ from: '/_app/opportunities' })
   const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
+  const userRole = useAuthStore((s) => s.user?.role)
+  const tenant = useAuthStore((s) => s.tenant)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [refreshing, setRefreshing] = useState(false)
 
   const view = search.view || 'kanban'
   const selectedId = search.selected
+  const showOwnerFilter = userRole === 'admin' || userRole === 'manager'
+  const staleDays = tenant?.settings?.stale_days ?? 7
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(searchInput.trim()), 350)
+    return () => window.clearTimeout(t)
+  }, [searchInput])
 
   const { data: pipelines, isLoading: pipelinesLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
@@ -63,55 +101,85 @@ function OpportunitiesPage() {
     },
   })
 
-  const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
+  const { data: users = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map((r) => ({
+          id: String(r.id),
+          name: String(r.attributes?.name ?? r.attributes?.email ?? 'Usuario'),
+        }))
+    },
+    enabled: showOwnerFilter,
+    staleTime: 60_000,
+  })
 
-  // Usa el pipeline del search param, o cae al por defecto
+  const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
   const activePipelineId = search.pipeline || defaultPipeline?.id
   const activePipeline = pipelines?.find((p) => p.id === activePipelineId) || defaultPipeline
 
-  const { data: opportunities, isLoading: opportunitiesLoading } = useQuery({
-    queryKey: queryKeys.opportunities.list({
+  const listFilters = useMemo(
+    () => ({
       pipeline_id: search.contact ? undefined : activePipelineId,
-      stage: search.stage,
+      stage_id: search.stage,
       contact_id: search.contact,
+      owner_id: search.owner,
+      status: search.status,
+      temperature: search.temperature,
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      stale_days: search.stale ? staleDays : undefined,
     }),
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      if (search.contact) {
-        params.append('contact_id', search.contact)
-      } else {
-        if (activePipelineId) params.append('pipeline_id', activePipelineId)
-        if (search.stage) params.append('stage_id', search.stage)
-      }
-      const response = await api.get(`/opportunities?${params.toString()}`)
-      const rows = jsonApiPrimaryList(response.data)
-      const included = jsonApiIncluded(response.data)
-      return rows
-        .filter((r) => r.id)
-        .map((r) => mapOpportunityResource(r, included))
-        .filter((o) => o.id.length > 0)
-    },
+    [
+      activePipelineId,
+      search.contact,
+      search.stage,
+      search.owner,
+      search.status,
+      search.temperature,
+      search.stale,
+      debouncedQ,
+      staleDays,
+    ],
+  )
+
+  const listQueryKey = queryKeys.opportunities.list(listFilters)
+
+  const {
+    data: opportunities,
+    isLoading: opportunitiesLoading,
+    isError: opportunitiesError,
+    error: opportunitiesErr,
+  } = useQuery({
+    queryKey: listQueryKey,
+    queryFn: () => fetchOpportunities(listFilters),
     enabled: !pipelinesLoading && (!!activePipelineId || !!search.contact),
-    refetchInterval: 15000,
+    refetchInterval: 15_000,
   })
+
+  useEffect(() => {
+    if (opportunitiesError) {
+      toast.error(opportunityListErrorMessage(opportunitiesErr))
+    }
+  }, [opportunitiesError, opportunitiesErr])
 
   const filteredOpportunities = useMemo(() => {
     let all = opportunities ?? []
-    if (search.temperature) {
-      all = all.filter((o) => o.temperature === search.temperature)
+    const q = searchInput.trim().toLowerCase()
+    if (q.length > 0 && q.length < 2) {
+      return all.filter(
+        (o) =>
+          o.contact_name?.toLowerCase().includes(q) ||
+          o.company_name?.toLowerCase().includes(q) ||
+          o.contact_email?.toLowerCase().includes(q) ||
+          o.contact_phone?.includes(q),
+      )
     }
-    if (!searchTerm.trim()) return all
-    const q = searchTerm.trim().toLowerCase()
-    return all.filter(
-      (o) =>
-        o.contact_name?.toLowerCase().includes(q) ||
-        o.company_name?.toLowerCase().includes(q) ||
-        o.contact_email?.toLowerCase().includes(q) ||
-        o.contact_phone?.includes(q)
-    )
-  }, [opportunities, searchTerm, search.temperature])
+    return all
+  }, [opportunities, searchInput])
 
-  const selectedOpportunity = opportunities?.find((o) => o.id === selectedId)
+  const selectedPreview = opportunities?.find((o) => o.id === selectedId)
 
   const handleViewChange = (newView: string) => {
     navigate({ search: (prev) => ({ ...prev, view: newView as 'kanban' | 'table' }) })
@@ -132,42 +200,46 @@ function OpportunitiesPage() {
   }
 
   const isLoading = pipelinesLoading || (!!activePipelineId && opportunitiesLoading)
-
-  const oppCount = opportunities?.length ?? 0
+  const oppCount = filteredOpportunities.length
   const subtitle =
     oppCount === 1 ? '1 oportunidad' : `${oppCount} oportunidades`
+
+  const activeFiltersCount = [
+    search.temperature,
+    search.owner,
+    search.status,
+    search.stage,
+    search.stale,
+    debouncedQ.length >= 2 ? debouncedQ : null,
+  ].filter(Boolean).length
 
   return (
     <AppPageShell
       className="h-full min-h-0"
       contentClassName="flex h-full min-h-0 flex-col gap-6 p-4 lg:p-6"
     >
-      <PageHeader
-        title="Oportunidades"
-        description={subtitle}
-      >
-        {/* Buscador por nombre de contacto */}
+      <PageHeader title="Oportunidades" description={subtitle}>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
           <Input
-            placeholder="Buscar contacto..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="h-8 pl-8 w-[180px] text-sm"
+            placeholder="Buscar contacto (mín. 2 letras)..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="h-8 pl-8 w-[200px] text-sm"
           />
         </div>
 
-        {/* Filtro de temperatura */}
         <div className="flex items-center gap-1">
           {(
             [
-              { value: 'hot',  icon: Flame,     cls: 'text-red-600 hover:bg-red-50 data-[active=true]:bg-red-100 data-[active=true]:text-red-700' },
-              { value: 'warm', icon: Sun,       cls: 'text-amber-600 hover:bg-amber-50 data-[active=true]:bg-amber-100 data-[active=true]:text-amber-700' },
+              { value: 'hot', icon: Flame, cls: 'text-red-600 hover:bg-red-50 data-[active=true]:bg-red-100 data-[active=true]:text-red-700' },
+              { value: 'warm', icon: Sun, cls: 'text-amber-600 hover:bg-amber-50 data-[active=true]:bg-amber-100 data-[active=true]:text-amber-700' },
               { value: 'cold', icon: Snowflake, cls: 'text-sky-600 hover:bg-sky-50 data-[active=true]:bg-sky-100 data-[active=true]:text-sky-700' },
             ] as const
           ).map(({ value, icon: Icon, cls }) => (
             <button
               key={value}
+              type="button"
               data-active={search.temperature === value}
               onClick={() =>
                 navigate({
@@ -185,7 +257,81 @@ function OpportunitiesPage() {
           ))}
         </div>
 
-        {/* Selector de pipeline */}
+        <Button
+          type="button"
+          size="sm"
+          variant={search.stale ? 'secondary' : 'outline'}
+          className="h-8 gap-1 px-2"
+          title={`Sin actividad hace más de ${staleDays} días`}
+          onClick={() =>
+            navigate({ search: (prev) => ({ ...prev, stale: !prev.stale || undefined }) })
+          }
+        >
+          <Clock className="size-3.5" />
+          <span className="hidden md:inline">Inactivas</span>
+        </Button>
+
+        {showOwnerFilter && (
+          <Select
+            value={search.owner ?? '__all__'}
+            onValueChange={(v) =>
+              navigate({ search: (prev) => ({ ...prev, owner: v === '__all__' ? undefined : v }) })
+            }
+          >
+            <SelectTrigger className="h-8 w-[150px] text-sm">
+              <SelectValue placeholder="Consultor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todos</SelectItem>
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        <Select
+          value={search.status ?? '__all__'}
+          onValueChange={(v) =>
+            navigate({ search: (prev) => ({ ...prev, status: v === '__all__' ? undefined : v }) })
+          }
+        >
+          <SelectTrigger className="h-8 w-[130px] text-sm">
+            <SelectValue placeholder="Estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">Todos los estados</SelectItem>
+            {STATUS_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {formatStatusLabel(s)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {activePipeline && activePipeline.stages.length > 0 && (
+          <Select
+            value={search.stage ?? '__all__'}
+            onValueChange={(v) =>
+              navigate({ search: (prev) => ({ ...prev, stage: v === '__all__' ? undefined : v }) })
+            }
+          >
+            <SelectTrigger className="h-8 w-[150px] text-sm">
+              <SelectValue placeholder="Etapa" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todas las etapas</SelectItem>
+              {activePipeline.stages.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         {pipelines && pipelines.length > 1 && (
           <Select
             value={activePipelineId}
@@ -206,6 +352,30 @@ function OpportunitiesPage() {
           </Select>
         )}
 
+        {activeFiltersCount > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs gap-1"
+            onClick={() =>
+              navigate({
+                search: (prev) => ({
+                  ...prev,
+                  temperature: undefined,
+                  owner: undefined,
+                  status: undefined,
+                  stage: undefined,
+                  stale: undefined,
+                }),
+              })
+            }
+          >
+            <Filter className="size-3" />
+            Limpiar ({activeFiltersCount})
+          </Button>
+        )}
+
         <Tabs value={view} onValueChange={handleViewChange}>
           <TabsList>
             <TabsTrigger value="kanban" className="gap-1.5">
@@ -218,6 +388,14 @@ function OpportunitiesPage() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        <OpportunitiesExportMenu
+          pipelineId={activePipelineId}
+          stageId={search.stage}
+          ownerId={search.owner}
+          temperature={search.temperature}
+          disabled={!activePipelineId}
+        />
 
         <Button
           size="sm"
@@ -253,6 +431,15 @@ function OpportunitiesPage() {
               ))}
             </div>
           </div>
+        ) : opportunitiesError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              {opportunityListErrorMessage(opportunitiesErr)}
+            </p>
+            <Button variant="outline" size="sm" onClick={handleRefresh}>
+              Reintentar
+            </Button>
+          </div>
         ) : !activePipeline ? (
           <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
             {pipelines && pipelines.length === 0
@@ -278,7 +465,9 @@ function OpportunitiesPage() {
       </div>
 
       <OpportunitySlideOver
-        opportunity={selectedOpportunity}
+        opportunityId={selectedId}
+        opportunityPreview={selectedPreview}
+        pipeline={activePipeline}
         open={!!selectedId}
         onOpenChange={(open) => {
           if (!open) handleSelectOpportunity(null)

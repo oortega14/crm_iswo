@@ -54,6 +54,19 @@ RSpec.describe LandingPage, type: :model do
       page.update!(published: false)
       expect(page.published_at).to be_nil
     end
+
+    it "sanitiza gjs_html y gjs_css al guardar" do
+      page = create(
+        :landing_page,
+        tenant: tenant,
+        content: {
+          "gjs_html" => '<p>Hola</p><script>evil()</script>',
+          "gjs_css"  => "p { color: red; } javascript:evil()"
+        }
+      )
+      expect(page.content["gjs_html"]).not_to include("script")
+      expect(page.content["gjs_css"]).not_to include("javascript:")
+    end
   end
 
   describe "scopes" do

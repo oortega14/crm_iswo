@@ -52,6 +52,7 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
 
   describe "POST /api/v1/password/reset" do
     it "restablece la contraseña con token válido" do
+      with_tenant(tenant) { user.update_column(:refresh_token_jti, SecureRandom.uuid) }
       raw = Users::PasswordResetIssuer.new(user: user).call
       ActionMailer::Base.deliveries.clear
 
@@ -66,6 +67,7 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
 
       expect(response).to have_http_status(:no_content)
       expect(user.reload.valid_password?("Newsecret12")).to be(true)
+      expect(user.refresh_token_jti).to be_nil
     end
 
     it "422 si el token es inválido" do
@@ -81,6 +83,49 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       json = response.parsed_body
       expect(json["error"]).to eq("invalid_token")
+    end
+  end
+
+  describe "POST /api/v1/password/change" do
+    let(:auth) do
+      auth_headers(user, tenant: tenant).merge("X-Tenant-Slug" => tenant.slug)
+    end
+
+    before do
+      with_tenant(tenant) { user.update_column(:refresh_token_jti, SecureRandom.uuid) }
+    end
+
+    it "cambia la contraseña e invalida el refresh token" do
+      post "/api/v1/password/change",
+           params: {
+             user: {
+               current_password:      "Oldsecret12",
+               password:              "Newsecret12",
+               password_confirmation: "Newsecret12"
+             }
+           },
+           headers: auth,
+           as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(user.reload.valid_password?("Newsecret12")).to be(true)
+      expect(user.refresh_token_jti).to be_nil
+    end
+
+    it "422 si la contraseña actual es incorrecta" do
+      post "/api/v1/password/change",
+           params: {
+             user: {
+               current_password:      "wrong",
+               password:              "Newsecret12",
+               password_confirmation: "Newsecret12"
+             }
+           },
+           headers: auth,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(user.reload.refresh_token_jti).to be_present
     end
   end
 end

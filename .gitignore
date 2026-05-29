@@ -3,8 +3,12 @@
 # Ignore bundler config.
 /api/.bundle
 
-# Ignore all environment files.
-/api/.env*
+# Ignore local env (secrets); versionamos plantillas y .env.test
+/api/.env
+/api/.env.local
+/api/.env.*.local
+!/api/.env.example
+!/api/.env.test
 
 # Ignore all logfiles and tempfiles.
 /api/log/*

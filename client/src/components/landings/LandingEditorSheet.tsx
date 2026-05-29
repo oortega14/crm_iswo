@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
@@ -22,7 +22,9 @@ import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import { jsonApiPrimaryOne } from '@/lib/opportunityApi'
-import { LandingVisualEditorModal } from './LandingVisualEditorModal'
+const LandingVisualEditorModal = lazy(() =>
+  import('./LandingVisualEditorModal').then((m) => ({ default: m.LandingVisualEditorModal }))
+)
 
 // ---------------------------------------------------------------------------
 // Tipos internos
@@ -439,13 +441,15 @@ export function LandingEditorSheet({
       </SheetContent>
     </Sheet>
 
-    {landingId && (
-      <LandingVisualEditorModal
-        open={visualEditorOpen}
-        onOpenChange={setVisualEditorOpen}
-        landingId={landingId}
-        landingTitle={landingTitle}
-      />
+    {landingId && visualEditorOpen && (
+      <Suspense fallback={null}>
+        <LandingVisualEditorModal
+          open={visualEditorOpen}
+          onOpenChange={setVisualEditorOpen}
+          landingId={landingId}
+          landingTitle={landingTitle}
+        />
+      </Suspense>
     )}
     </>
   )

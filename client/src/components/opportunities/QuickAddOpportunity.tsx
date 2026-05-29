@@ -231,8 +231,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
     onSuccess: () => {
       toast.success('Oportunidad creada exitosamente')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.pipeline })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.activity })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       reset()
       onOpenChange(false)
     },

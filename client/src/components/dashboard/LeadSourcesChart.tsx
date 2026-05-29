@@ -14,6 +14,7 @@ import { formatCurrency } from '@/lib/utils'
 import type { DashboardLeadSourceRow } from '@/lib/dashboardApi'
 
 interface LeadSourcesChartProps {
+  currency?: string
   data?: DashboardLeadSourceRow[]
   isLoading?: boolean
   isError?: boolean
@@ -37,7 +38,12 @@ function getColor(kind: string | null, index: number): string {
 const shell =
   'overflow-hidden border-border/70 shadow-sm transition-shadow duration-300 hover:shadow-md'
 
-export function LeadSourcesChart({ data = [], isLoading, isError }: LeadSourcesChartProps) {
+export function LeadSourcesChart({
+  currency = 'COP',
+  data = [],
+  isLoading,
+  isError,
+}: LeadSourcesChartProps) {
   if (isLoading) {
     return (
       <Card className={shell}>
@@ -132,7 +138,7 @@ export function LeadSourcesChart({ data = [], isLoading, isError }: LeadSourcesC
                       <p className="font-semibold text-foreground">{row.name}</p>
                       <p className="mt-1 text-muted-foreground">
                         <span className="font-medium text-foreground">{row.count}</span> op. ·{' '}
-                        <span className="text-primary">{formatCurrency(row.value, 'COP')}</span>
+                        <span className="text-primary">{formatCurrency(row.value, currency)}</span>
                       </p>
                     </div>
                   )

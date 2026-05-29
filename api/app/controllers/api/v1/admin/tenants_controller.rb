@@ -12,6 +12,22 @@ module Api
       class TenantsController < ApplicationController
         before_action :authenticate_super_admin!
 
+        # GET /api/v1/admin/tenants — listado para onboarding (super-admin)
+        def index
+          tenants = Tenant.kept.order(:name).select(:id, :slug, :name, :active, :created_at)
+          render json: {
+            data: tenants.map { |t|
+              {
+                id:         t.id,
+                slug:       t.slug,
+                name:       t.name,
+                active:     t.active,
+                created_at: t.created_at
+              }
+            }
+          }, status: :ok
+        end
+
         # POST /api/v1/admin/tenants
         # Body: { tenant: { slug, name, currency, timezone, locale, logo_url, primary_color,
         #                   admin_email, admin_name, admin_password } }

@@ -2,17 +2,41 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History, Pencil, Trash2, Sparkles, Loader2 } from 'lucide-react'
+import {
+  X,
+  Building,
+  MessageSquare,
+  FileText,
+  Bell,
+  History,
+  Pencil,
+  Trash2,
+  Sparkles,
+  Loader2,
+  Gauge,
+  RefreshCw,
+  UserRound,
+} from 'lucide-react'
 import api from '@/lib/api'
 import { useUserRole } from '@/stores/auth'
 import {
+  assignOpportunityOwner,
+  fetchOpportunityDetail,
   jsonApiIncluded,
   jsonApiPrimaryList,
   mapOpportunityLogResource,
-  mapOpportunityReminderResource,
+  mapUserResource,
+  moveOpportunityStage,
+  recalculateOpportunityBant,
   toOpportunityUpdatePayload,
 } from '@/lib/opportunityApi'
+import { fetchOpportunityReminders } from '@/lib/reminderApi'
 import { queryKeys } from '@/lib/queryClient'
+import {
+  fetchAiCapabilities,
+  classifyOpportunityTemperature,
+  describeClassifyFallback,
+} from '@/lib/aiApi'
 import {
   cn,
   formatCurrency,
@@ -33,21 +57,26 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BantSliders } from './BantSliders'
 import { TemperatureSelector } from './TemperatureSelector'
+import { TemperatureBadge } from './TemperatureBadge'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { ContactActionButtons } from './ContactActionButtons'
 import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import type { Opportunity, OpportunityTemperature, TenantFieldDefinition } from '@/types'
+import type { Opportunity, OpportunityTemperature, Pipeline, TenantFieldDefinition } from '@/types'
 
 interface OpportunitySlideOverProps {
-  opportunity?: Opportunity
+  opportunityId?: string
+  opportunityPreview?: Opportunity
+  pipeline?: Pipeline
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function OpportunitySlideOver({
-  opportunity,
+  opportunityId,
+  opportunityPreview,
+  pipeline,
   open,
   onOpenChange,
 }: OpportunitySlideOverProps) {
@@ -56,16 +85,52 @@ export function OpportunitySlideOver({
   const [editContactOpen, setEditContactOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
-  const [aiResult, setAiResult] = useState<{ reasoning: string; next_action: string; ai_used: boolean } | null>(null)
-  const [notesValue, setNotesValue] = useState(opportunity?.notes ?? '')
+  const [aiResult, setAiResult] = useState<{
+    temperature?: string
+    reasoning: string
+    next_action: string
+    ai_used: boolean
+    fallback_reason?: string | null
+    anthropic_error?: string | null
+  } | null>(null)
+  const [notesValue, setNotesValue] = useState('')
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const role = useUserRole()
+
+  const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
+    queryKey: queryKeys.opportunities.detail(opportunityId || ''),
+    queryFn: () => fetchOpportunityDetail(opportunityId!),
+    enabled: open && !!opportunityId,
+    staleTime: 0,
+  })
+
+  const opportunity = opportunityDetail ?? opportunityPreview
+
+  const { data: aiCaps } = useQuery({
+    queryKey: queryKeys.ai.capabilities,
+    queryFn: fetchAiCapabilities,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const claudeAvailable = aiCaps?.available ?? false
+
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapUserResource)
+    },
+    enabled: open && (role === 'admin' || role === 'manager'),
+    staleTime: 60_000,
+  })
 
   useEffect(() => {
     setNotesValue(opportunity?.notes ?? '')
     setAiResult(null)
-    setActiveTab('overview')
-  }, [opportunity?.id, opportunity?.notes])
+    if (open) setActiveTab('overview')
+  }, [opportunity?.id, opportunity?.notes, open])
 
   useEffect(() => {
     if (editingNotes) notesRef.current?.focus()
@@ -83,13 +148,9 @@ export function OpportunitySlideOver({
     enabled: !!opportunity?.id && activeTab === 'activity',
   })
 
-  // Fetch reminders (JSON:API)
   const { data: reminders, isLoading: remindersLoading } = useQuery({
     queryKey: queryKeys.reminders.byOpportunity(opportunity?.id || ''),
-    queryFn: async () => {
-      const response = await api.get(`/opportunities/${opportunity?.id}/reminders`)
-      return jsonApiPrimaryList(response.data).map(mapOpportunityReminderResource)
-    },
+    queryFn: () => fetchOpportunityReminders(opportunity!.id),
     enabled: !!opportunity?.id && activeTab === 'reminders',
   })
 
@@ -156,6 +217,10 @@ export function OpportunitySlideOver({
     onSuccess: () => {
       toast.success('Oportunidad actualizada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
@@ -176,21 +241,96 @@ export function OpportunitySlideOver({
     },
   })
 
-  const classifyMutation = useMutation({
+  const parseClassifyResponse = (data: {
+    ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
+  }) => data.ai_result
+
+  const syncTemperatureMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post(`/opportunities/${opportunity?.id}/classify`)
-      return response.data as {
-        data: unknown
-        ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
-      }
+      const response = await api.post(`/opportunities/${opportunity?.id}/sync_temperature`)
+      return parseClassifyResponse(response.data)
     },
-    onSuccess: (data) => {
-      setAiResult(data.ai_result)
+    onSuccess: (ai_result) => {
+      setAiResult(ai_result)
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      toast.success(data.ai_result.ai_used ? 'Clasificado con IA ✨' : 'Clasificado con reglas')
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      toast.success('Temperatura actualizada según BANT y actividad')
     },
     onError: () => {
-      toast.error('No se pudo clasificar la oportunidad')
+      toast.error('No se pudo recalcular la temperatura')
+    },
+  })
+
+  const moveStageMutation = useMutation({
+    mutationFn: async (stageId: string) => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      await moveOpportunityStage(opportunity.id, stageId)
+    },
+    onSuccess: () => {
+      toast.success('Etapa actualizada')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+    onError: () => toast.error('No se pudo cambiar la etapa'),
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: async (ownerUserId: string) => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      await assignOpportunityOwner(opportunity.id, ownerUserId)
+    },
+    onSuccess: () => {
+      toast.success('Consultor asignado')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+    },
+    onError: () => toast.error('No se pudo reasignar'),
+  })
+
+  const recalculateBantMutation = useMutation({
+    mutationFn: async () => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      return recalculateOpportunityBant(opportunity.id)
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      if (result.temperature_ai?.ai_used) {
+        toast.success('BANT recalculado y temperatura actualizada con Claude')
+      } else {
+        toast.success('Puntuación BANT recalculada')
+      }
+    },
+    onError: () => toast.error('No se pudo recalcular BANT'),
+  })
+
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      return classifyOpportunityTemperature(opportunity.id)
+    },
+    onSuccess: (res) => {
+      const ai_result = res.ai_result
+      setAiResult({
+        ...ai_result,
+        anthropic_error: res.meta?.anthropic_error ?? null,
+      })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
+      if (usedAi) {
+        toast.success(`Clasificado con Claude (${res.meta?.model ?? aiCaps?.model ?? 'IA'})`)
+      } else {
+        toast.warning(
+          describeClassifyFallback(ai_result.fallback_reason, res.meta?.anthropic_error),
+          { duration: 8000 },
+        )
+      }
+    },
+    onError: () => {
+      toast.error('No se pudo clasificar con Claude')
     },
   })
 
@@ -210,7 +350,20 @@ export function OpportunitySlideOver({
     updateMutation.mutate({ bant_data: { [dim]: { score } } })
   }
 
+  if (!open || !opportunityId) return null
+
+  if (!opportunity && detailLoading) {
+    return (
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l bg-background p-6">
+        <Skeleton className="h-8 w-48 mb-4" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    )
+  }
+
   if (!opportunity) return null
+
+  const pipelineStages = pipeline?.stages ?? []
 
   return (
     <>
@@ -244,6 +397,7 @@ export function OpportunitySlideOver({
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
+                  <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} />
                   {opportunity.contact_id && (
                     <Button
                       variant="ghost"
@@ -364,6 +518,61 @@ export function OpportunitySlideOver({
 
                     <Separator />
 
+                    {/* Etapa y propietario (RFC: move_stage, assign) */}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                          Etapa del pipeline
+                        </label>
+                        {role === 'viewer' || pipelineStages.length === 0 ? (
+                          <p className="text-sm">{opportunity.stage?.name ?? '—'}</p>
+                        ) : (
+                          <Select
+                            value={opportunity.stage_id || undefined}
+                            onValueChange={(stageId) => moveStageMutation.mutate(stageId)}
+                            disabled={moveStageMutation.isPending}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Seleccionar etapa" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pipelineStages.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                      {(role === 'admin' || role === 'manager') && (
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                            <UserRound className="inline size-3 mr-1" />
+                            Consultor asignado
+                          </label>
+                          <Select
+                            value={opportunity.owner_id || opportunity.owner?.id || undefined}
+                            onValueChange={(uid) => assignMutation.mutate(uid)}
+                            disabled={assignMutation.isPending}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Asignar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {assignableUsers.map((u) => (
+                                <SelectItem key={u.id} value={u.id}>
+                                  {u.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+
+                    <Separator />
+
                     {/* Value */}
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -383,27 +592,87 @@ export function OpportunitySlideOver({
                           Temperatura del lead
                         </label>
                         {role !== 'viewer' && (
-                          <button
-                            type="button"
-                            onClick={() => { setAiResult(null); classifyMutation.mutate() }}
-                            disabled={classifyMutation.isPending}
-                            className="flex items-center gap-1 text-[11px] font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
-                          >
-                            {classifyMutation.isPending
-                              ? <Loader2 className="size-3 animate-spin" />
-                              : <Sparkles className="size-3" />
-                            }
-                            {classifyMutation.isPending ? 'Clasificando...' : 'Clasificar con IA'}
-                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1 px-2 text-xs"
+                              onClick={() => { setAiResult(null); syncTemperatureMutation.mutate() }}
+                              disabled={syncTemperatureMutation.isPending || classifyMutation.isPending}
+                              title="Reglas BANT + actividad (sin Claude)"
+                            >
+                              {syncTemperatureMutation.isPending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Gauge className="size-3" />
+                              )}
+                              Reglas
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={claudeAvailable ? 'default' : 'outline'}
+                              className={cn(
+                                'h-7 gap-1 px-2.5 text-xs',
+                                claudeAvailable && 'bg-violet-600 text-white hover:bg-violet-700',
+                              )}
+                              onClick={() => { setAiResult(null); classifyMutation.mutate() }}
+                              disabled={
+                                classifyMutation.isPending || syncTemperatureMutation.isPending
+                              }
+                              title={
+                                claudeAvailable
+                                  ? `Clasificar con Claude (${aiCaps?.model})`
+                                  : 'Clasificar con Claude AI (sin API key usará reglas locales)'
+                              }
+                            >
+                              {classifyMutation.isPending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Sparkles className="size-3" />
+                              )}
+                              Clasificar con Claude AI
+                            </Button>
+                          </div>
                         )}
                       </div>
                       <TemperatureSelector
                         value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
-                        disabled={updateMutation.isPending || classifyMutation.isPending || role === 'viewer'}
+                        disabled={
+                          updateMutation.isPending ||
+                          classifyMutation.isPending ||
+                          syncTemperatureMutation.isPending ||
+                          role === 'viewer'
+                        }
                         onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
                       />
+                      <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                        {claudeAvailable ? (
+                          <>
+                            <strong className="text-foreground">Claude AI</strong> analiza BANT, etapa,
+                            origen y actividad. «Reglas» usa solo umbrales locales.
+                            {aiCaps?.auto_on_bant_recalc ? ' Auto-clasifica al recalcular BANT.' : ''}
+                          </>
+                        ) : (
+                          <>
+                            Sin <code className="text-[10px]">ANTHROPIC_API_KEY</code> en el API — solo
+                            reglas locales. Añádela en <code className="text-[10px]">api/.env</code>.
+                          </>
+                        )}
+                      </p>
                       {aiResult && (
-                        <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 dark:bg-violet-950/20 dark:border-violet-800 p-2.5 text-xs space-y-1.5">
+                        <div
+                          className={cn(
+                            'mt-2 rounded-lg border p-2.5 text-xs space-y-1.5',
+                            aiResult.ai_used
+                              ? 'border-violet-300 bg-violet-50/80 dark:bg-violet-950/30 dark:border-violet-700'
+                              : 'border-border bg-muted/40',
+                          )}
+                        >
+                          {aiResult.ai_used && (
+                            <Badge className="bg-violet-600 text-white text-[10px]">Claude</Badge>
+                          )}
                           <p className="text-foreground/80 leading-relaxed">{aiResult.reasoning}</p>
                           {aiResult.next_action && (
                             <p className="font-medium text-violet-700 dark:text-violet-400">
@@ -412,7 +681,10 @@ export function OpportunitySlideOver({
                           )}
                           {!aiResult.ai_used && (
                             <p className="text-muted-foreground italic text-[10px]">
-                              Clasificado con reglas (configura ANTHROPIC_API_KEY para usar IA)
+                              {describeClassifyFallback(
+                                aiResult.fallback_reason,
+                                aiResult.anthropic_error,
+                              )}
                             </p>
                           )}
                         </div>
@@ -426,7 +698,7 @@ export function OpportunitySlideOver({
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
                         Puntuación BANT
                       </label>
-                      <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center justify-between mb-4 gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm">Total</span>
                           {opportunity.qualified != null && (
@@ -435,14 +707,34 @@ export function OpportunitySlideOver({
                             </Badge>
                           )}
                         </div>
-                        <Badge
-                          className={cn(
-                            'text-lg font-mono',
-                            getBantScoreColor(opportunity.bant_score)
+                        <div className="flex items-center gap-2">
+                          {role !== 'viewer' && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 text-xs"
+                              onClick={() => recalculateBantMutation.mutate()}
+                              disabled={recalculateBantMutation.isPending}
+                              title="Recalcula según criterios BANT del tenant (RFC)"
+                            >
+                              {recalculateBantMutation.isPending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="size-3" />
+                              )}
+                              Recalcular
+                            </Button>
                           )}
-                        >
-                          {opportunity.bant_score}
-                        </Badge>
+                          <Badge
+                            className={cn(
+                              'text-lg font-mono',
+                              getBantScoreColor(opportunity.bant_score),
+                            )}
+                          >
+                            {opportunity.bant_score}
+                          </Badge>
+                        </div>
                       </div>
                       <BantSliders
                         budget={opportunity.bant_budget}

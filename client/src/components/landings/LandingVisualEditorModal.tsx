@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { lazy, Suspense, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Dialog,
@@ -14,7 +14,11 @@ import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
 import { jsonApiPrimaryOne } from '@/lib/opportunityApi'
-import { GrapeJsEditor, type GrapeJsHandle } from './GrapeJsEditor'
+import type { GrapeJsHandle } from './GrapeJsEditor'
+
+const GrapeJsEditor = lazy(() =>
+  import('./GrapeJsEditor').then((m) => ({ default: m.GrapeJsEditor }))
+)
 
 interface Props {
   open:          boolean
@@ -87,10 +91,18 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
               ))}
             </div>
           ) : (
-            <GrapeJsEditor
-              ref={editorRef}
-              initialProjectData={initialProjectData}
-            />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Spinner className="size-8" />
+                </div>
+              }
+            >
+              <GrapeJsEditor
+                ref={editorRef}
+                initialProjectData={initialProjectData}
+              />
+            </Suspense>
           )}
         </div>
 

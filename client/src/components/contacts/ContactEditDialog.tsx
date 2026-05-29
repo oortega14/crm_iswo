@@ -90,6 +90,9 @@ export function ContactEditDialog({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all }),
+        contactId
+          ? queryClient.invalidateQueries({ queryKey: queryKeys.contacts.detail(contactId) })
+          : Promise.resolve(),
       ])
       toast.success('Contacto actualizado')
       onOpenChange(false)

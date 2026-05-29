@@ -6,6 +6,8 @@ module Api
     # ExportsController — historial y creación de exportaciones async
     # ========================================================================
     class ExportsController < BaseController
+      include ExportAuditable
+
       before_action :set_export, only: %i[show download]
 
       def index
@@ -64,7 +66,12 @@ module Api
           filters:  normalize_export_filters_param
         )
         safe_enqueue_export_generation_job(export.id)
-        audit_export!(export)
+        record_export_audit!(
+          resource: export.resource,
+          format:   export.format,
+          filters:  export.filters || {},
+          sync:     false
+        )
 
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
@@ -94,22 +101,6 @@ module Api
         end
       end
 
-      def audit_export!(export)
-        current_tenant.opportunity_logs.create!(
-          user:         current_user,
-          action:       "export",
-          ip_address:   request.remote_ip,
-          user_agent:   request.user_agent,
-          changes_data: {
-            export_id: export.id,
-            resource:  export.resource,
-            format:    export.format,
-            filters:   export.filters.presence
-          }.compact
-        )
-      rescue StandardError => e
-        Rails.logger.warn("[OpportunityLog] No se pudo registrar export=#{export.id}: #{e.message}")
-      end
     end
   end
 end

@@ -163,17 +163,14 @@ export function hasPermission(
 // Get subdomain from hostname
 export function getSubdomain(): string {
   if (typeof window === 'undefined') return ''
-  const envTenant = import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase()
-  if (envTenant) return envTenant
   const selectedTenant = window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase()
   if (selectedTenant) return selectedTenant
   const hostname = window.location.hostname
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return ''
-  const parts = hostname.split('.')
-  if (parts.length >= 3) {
-    return parts[0]
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    const parts = hostname.split('.')
+    if (parts.length >= 3) return parts[0]
   }
-  return ''
+  return import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() || ''
 }
 
 // Debounce function

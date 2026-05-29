@@ -82,11 +82,16 @@ function ResetPasswordForm({ token, tenantSlug }: { token: string; tenantSlug: s
 
   const mutation = useMutation({
     mutationFn: async (data: FormValues) => {
-      await api.post('/password/reset', {
-        reset_password_token: token,
-        password: data.password,
-        password_confirmation: data.password_confirmation,
-      })
+      const slug = tenantSlug.trim().toLowerCase()
+      await api.post(
+        '/password/reset',
+        {
+          reset_password_token: token,
+          password: data.password,
+          password_confirmation: data.password_confirmation,
+        },
+        { headers: { 'X-Tenant-Slug': slug } },
+      )
     },
     onSuccess: () => {
       toast.success('Contraseña actualizada. Ya puedes iniciar sesión.')

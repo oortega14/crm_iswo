@@ -251,4 +251,23 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(response).to have_http_status(:forbidden)
     end
   end
+
+  describe "GET /api/v1/contacts/export.csv (RFC §6.7)" do
+    let!(:contact_row) { create(:contact, tenant: tenant) }
+
+    it "manager descarga CSV directamente" do
+      get "/api/v1/contacts/export.csv", headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("text/csv")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      expect(response.body).to include("email").or include(contact_row.email.to_s)
+      expect(AuditEvent.where(action: "export", tenant: tenant).count).to be >= 1
+    end
+
+    it "consultant no puede descargar (403)" do
+      get "/api/v1/contacts/export.csv", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
 end

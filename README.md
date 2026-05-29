@@ -87,6 +87,11 @@ WHATSAPP_PROVIDER=twilio   # twilio | cloud_api
 
 POSTMARK_API_TOKEN=
 MAIL_FROM=no-reply@crm.iswo.com.co
+
+# Claude — temperatura de leads (POST /opportunities/:id/classify)
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_AUTO_CLASSIFY_TEMPERATURE=false
 ```
 
 ---

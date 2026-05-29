@@ -83,6 +83,7 @@ gem "postmark-rails", "~> 0.22"
 # ============================================================================
 # Utilidades
 # ============================================================================
+# Carga api/.env en desarrollo/test; en producción usar variables del host (Kamal, etc.)
 gem "dotenv-rails", "~> 3.1", groups: %i[development test]
 gem "kaminari", require: false      # compat
 

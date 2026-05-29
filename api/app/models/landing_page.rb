@@ -18,6 +18,7 @@ class LandingPage < ApplicationRecord
 
   before_validation :normalize_slug
   before_save :set_published_at
+  before_save :sanitize_grapejs_content
 
   scope :published, -> { where(published: true) }
 
@@ -40,5 +41,11 @@ class LandingPage < ApplicationRecord
   def set_published_at
     self.published_at ||= Time.current if published && published_at.blank?
     self.published_at = nil unless published
+  end
+
+  def sanitize_grapejs_content
+    return unless content.is_a?(Hash)
+
+    self.content = LandingContentSanitizer.sanitize_content!(content)
   end
 end

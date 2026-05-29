@@ -38,11 +38,12 @@ function ForgotPasswordPage() {
   const { tenant: tenantFromUrl } = Route.useSearch()
 
   const defaultTenant =
-    import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
     tenantFromUrl?.trim().toLowerCase() ||
     (typeof window !== 'undefined'
       ? window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() ?? ''
-      : '')
+      : '') ||
+    import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
+    ''
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -64,7 +65,11 @@ function ForgotPasswordPage() {
     mutationFn: async (data: FormValues) => {
       const slug = data.tenantSlug.trim().toLowerCase()
       window.localStorage.setItem('crm-tenant-slug', slug)
-      await api.post('/password/forgot', { email: data.email.trim().toLowerCase() })
+      await api.post(
+        '/password/forgot',
+        { email: data.email.trim().toLowerCase() },
+        { headers: { 'X-Tenant-Slug': slug } },
+      )
     },
     onSuccess: () => {
       toast.success(

@@ -1,5 +1,19 @@
 # CRM ISWO — Guía de desarrollo
 
+## Comandos interactivos (Claude Code)
+
+| Comando | Qué hace |
+|---|---|
+| `/analizar-pipeline` | Análisis profundo del pipeline con BANT, temperaturas, cuellos de botella y recomendaciones |
+| `/agregar-lead` | Agregar un lead conversacionalmente — describe al prospecto y se crea contacto + oportunidad |
+| `/resumen-diario` | Briefing ejecutivo del día: recordatorios vencidos, leads calientes, movimiento de hoy |
+| `/diagnostico` | Verificar que Rails, Vite, PostgreSQL, Redis y Sidekiq estén funcionando |
+| `/nuevo-tenant` | Crear y configurar un tenant nuevo con pipeline y usuarios según su vertical |
+
+Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
+
+---
+
 ## Decisiones de arquitectura
 
 ### AiClassifier — clasificación de temperatura (RFC §3.2)

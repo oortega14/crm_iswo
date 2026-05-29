@@ -142,7 +142,6 @@ function DashboardPage() {
       <PageHeader
         title="Panel principal"
         belowTitle={<DashboardDateLine />}
-        description="Vista del pipeline comercial (RFC): embudo, BANT, orígenes de lead y seguimiento de hoy — según tu rol y el embudo seleccionado."
       >
         <Button variant="outline" size="sm" className="gap-2" asChild>
           <Link to="/opportunities" search={{ view: 'kanban' }}>
@@ -160,7 +159,6 @@ function DashboardPage() {
 
       <DashboardSection
         title="Briefing del día"
-        subtitle="Prioridades de hoy: recordatorios vencidos, leads calientes y oportunidades sin seguimiento — según tu rol."
         icon={Sparkles}
         accent="brand"
       >
@@ -175,11 +173,7 @@ function DashboardPage() {
 
       <DashboardSection
         title="Pipeline y cierres"
-        subtitle={
-          pipelines.length > 1
-            ? `Métricas de «${activePipelineName}». Cambia el embudo en el gráfico para comparar verticales.`
-            : 'Valor en pipeline, cierres del mes, embudo y ranking — todo lo que cuenta para ingresos.'
-        }
+        subtitle={pipelines.length > 1 ? activePipelineName : undefined}
         icon={TrendingUp}
         accent="brand"
       >
@@ -241,7 +235,6 @@ function DashboardPage() {
 
       <DashboardSection
         title="Seguimiento comercial"
-        subtitle="Recordatorios para hoy y movimiento en oportunidades (RFC §6.4). Prioriza el seguimiento."
         icon={CalendarDays}
         accent="sky"
         action={

@@ -8,11 +8,13 @@ import {
   fetchDashboardBriefing,
   fetchDashboardKpis,
   fetchDashboardPipeline,
+  fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
 import { jsonApiPrimaryList, mapPipelineResource } from '@/lib/opportunityApi'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
+import { TopConsultants } from '@/components/dashboard/TopConsultants'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { DailyBriefing } from '@/components/dashboard/DailyBriefing'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
@@ -32,6 +34,7 @@ function DashboardPage() {
   const tenant = useAuthStore((s) => s.tenant)
   const user = useAuthStore((s) => s.user)
   const currency = tenant?.currency ?? 'COP'
+  const isManagerOrAbove = user?.role === 'admin' || user?.role === 'manager'
 
   const { data: pipelines = [], isPending: pipelinesLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
@@ -68,6 +71,12 @@ function DashboardPage() {
   const pipelineQ = useQuery({
     queryKey: queryKeys.dashboard.pipeline(activePipelineId),
     queryFn: () => fetchDashboardPipeline(activePipelineId),
+  })
+
+  const consultantsQ = useQuery({
+    queryKey: queryKeys.dashboard.topConsultants(pipelineFilterKey),
+    queryFn: () => fetchDashboardTopConsultants(activePipelineId),
+    enabled: isManagerOrAbove,
   })
 
   const activityQ = useQuery({
@@ -138,15 +147,27 @@ function DashboardPage() {
           lostCount={kpisQ.data?.lost_count ?? 0}
           loadingKpis={kpisQ.isPending || kpisQ.isFetching}
         />
-        <PipelineFunnel
-          currency={currency}
-          data={pipelineQ.data}
-          isLoading={pipelineQ.isPending}
-          isError={pipelineQ.isError}
-          pipelines={pipelineOptions}
-          selectedPipelineId={activePipelineId}
-          onPipelineChange={setSelectedPipelineId}
-        />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="xl:col-span-2">
+            <PipelineFunnel
+              currency={currency}
+              data={pipelineQ.data}
+              isLoading={pipelineQ.isPending}
+              isError={pipelineQ.isError}
+              pipelines={pipelineOptions}
+              selectedPipelineId={activePipelineId}
+              onPipelineChange={setSelectedPipelineId}
+            />
+          </div>
+          {isManagerOrAbove && (
+            <TopConsultants
+              currency={currency}
+              data={consultantsQ.data}
+              isLoading={consultantsQ.isPending}
+              isError={consultantsQ.isError}
+            />
+          )}
+        </div>
       </DashboardSection>
 
       {/* ── Seguimiento — RFC §6.4: actividad del día + recordatorios ─── */}

@@ -1,22 +1,18 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   AlertTriangle,
+  Briefcase,
+  CheckCircle2,
+  Clock,
   Flame,
   Snowflake,
-  Sparkles,
+  TrendingUp,
 } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
 import type { DashboardBriefing } from '@/lib/dashboardApi'
-import {
-  cn,
-  formatCurrency,
-  formatDate,
-  formatRelativeTime,
-  type TemperatureLevel,
-} from '@/lib/utils'
+import { cn, formatCurrency, formatRelativeTime, type TemperatureLevel } from '@/lib/utils'
 
 interface DailyBriefingProps {
   data?: DashboardBriefing
@@ -26,36 +22,14 @@ interface DailyBriefingProps {
   isError?: boolean
 }
 
-function BriefingSkeleton() {
-  return (
-    <Card className="overflow-hidden border-violet-400/25 bg-gradient-to-br from-violet-500/[0.08] via-background to-background">
-      <CardContent className="space-y-4 p-5 sm:p-6">
-        <Skeleton className="h-6 w-48" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 rounded-xl" />
-          ))}
-        </div>
-        <Skeleton className="h-24 w-full rounded-xl" />
-      </CardContent>
-    </Card>
-  )
-}
-
-export function DailyBriefing({
-  data,
-  userName,
-  currency,
-  isLoading,
-  isError,
-}: DailyBriefingProps) {
+export function DailyBriefing({ data, currency, isLoading, isError }: DailyBriefingProps) {
   const navigate = useNavigate()
 
   if (isLoading) return <BriefingSkeleton />
 
   if (isError || !data) {
     return (
-      <Card className="border-destructive/30 bg-destructive/5">
+      <Card>
         <CardContent className="p-5 text-sm text-muted-foreground">
           No se pudo cargar el briefing de hoy. Recarga la página.
         </CardContent>
@@ -63,214 +37,246 @@ export function DailyBriefing({
     )
   }
 
-  const { kpis, hot_leads, overdue_reminders, stale_leads, generated_at } = data
+  const { kpis, hot_leads, overdue_reminders, stale_leads } = data
   const displayCurrency = kpis.currency || currency
-  const greeting = userName?.trim() || 'equipo'
-  const hasLists =
-    hot_leads.length > 0 || overdue_reminders.length > 0 || stale_leads.length > 0
+  const hasItems = hot_leads.length > 0 || overdue_reminders.length > 0 || stale_leads.length > 0
 
-  const openOpportunity = (id: string) => {
+  const openOpportunity = (id: string) =>
     navigate({ to: '/opportunities', search: { selected: id } })
-  }
 
-  const kpiTiles = [
-    { label: 'Abiertas', value: kpis.total_open, className: 'bg-muted/50' },
-    { label: 'Calientes', value: kpis.hot_count, className: 'bg-red-500/10 text-red-700 dark:text-red-300' },
-    { label: 'Vencidos', value: kpis.overdue_count, className: 'bg-amber-500/10 text-amber-800 dark:text-amber-300' },
-    { label: 'Nuevas (7d)', value: kpis.new_this_week, className: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' },
+  const kpiCards = [
+    {
+      title: 'Oportunidades abiertas',
+      value: kpis.total_open,
+      icon: Briefcase,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50 dark:bg-blue-950/40',
+    },
+    {
+      title: 'Leads calientes',
+      value: kpis.hot_count,
+      icon: Flame,
+      color: 'text-red-600',
+      bg: 'bg-red-50 dark:bg-red-950/40',
+    },
+    {
+      title: 'Recordatorios vencidos',
+      value: kpis.overdue_count,
+      icon: Clock,
+      color: 'text-amber-600',
+      bg: 'bg-amber-50 dark:bg-amber-950/40',
+    },
+    {
+      title: 'Nuevas esta semana',
+      value: kpis.new_this_week,
+      icon: TrendingUp,
+      color: 'text-green-600',
+      bg: 'bg-green-50 dark:bg-green-950/40',
+    },
   ]
 
   return (
-    <Card
-      className={cn(
-        'overflow-hidden border-violet-400/25 shadow-sm',
-        'bg-gradient-to-br from-violet-500/[0.1] via-background to-background',
-      )}
-    >
-      <CardContent className="space-y-5 p-5 sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-600/15 text-violet-600 ring-2 ring-violet-500/25">
-              <Sparkles className="size-5" aria-hidden />
-            </span>
+    <div className="space-y-4">
+
+      {/* ── KPI Cards ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {kpiCards.map((card) => (
+          <Card key={card.title}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                {card.title}
+              </CardTitle>
+              <div className={cn('rounded-lg p-2', card.bg)}>
+                <card.icon className={cn('size-4', card.color)} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold tabular-nums">{card.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* ── Listas de prioridades ──────────────────────────────────────── */}
+      {!hasItems ? (
+        <Card>
+          <CardContent className="flex items-center gap-3 p-5">
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-500" />
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">
-                Buenos días, {greeting}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Tu briefing del día
-                {generated_at ? ` · ${formatDate(generated_at)}` : ''}
+              <p className="text-sm font-medium">
+                {kpis.total_open === 0
+                  ? 'Sin oportunidades abiertas. Buen momento para captar leads.'
+                  : 'Todo al día — sin recordatorios vencidos ni leads sin seguimiento.'}
               </p>
+              {kpis.total_open > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Tienes {kpis.total_open} oportunidad{kpis.total_open !== 1 ? 'es' : ''} activa{kpis.total_open !== 1 ? 's' : ''}.
+                </p>
+              )}
             </div>
-          </div>
-          {kpis.pipeline_value > 0 ? (
-            <p className="text-sm text-muted-foreground sm:text-right">
-              Pipeline:{' '}
-              <span className="font-semibold font-mono text-foreground">
-                {formatCurrency(kpis.pipeline_value, displayCurrency)}
-              </span>
-            </p>
-          ) : null}
-        </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="divide-y divide-border p-0">
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {kpiTiles.map((tile) => (
-            <div
-              key={tile.label}
-              className={cn('rounded-xl border border-border/60 px-3 py-2.5 text-center', tile.className)}
-            >
-              <p className="text-xl font-semibold tabular-nums">{tile.value}</p>
-              <p className="text-[10px] font-medium uppercase tracking-wide opacity-80">
-                {tile.label}
-              </p>
-            </div>
-          ))}
-        </div>
+            {/* Recordatorios vencidos */}
+            {overdue_reminders.length > 0 && (
+              <Section
+                icon={AlertTriangle}
+                title="Recordatorios vencidos"
+                iconColor="text-amber-500"
+                action={<Link to="/reminders" className="text-xs text-primary hover:underline">Ver todos</Link>}
+              >
+                {overdue_reminders.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => r.opportunity_id && openOpportunity(r.opportunity_id)}
+                    className="flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                  >
+                    <div className="mt-0.5 rounded-full bg-amber-100 p-1.5 dark:bg-amber-950/60 shrink-0">
+                      <Clock className="size-3 text-amber-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">{r.subject}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {r.opportunity_title && `${r.opportunity_title} · `}
+                        Vencía {formatRelativeTime(r.remind_at)}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </Section>
+            )}
 
-        {!hasLists && kpis.total_open === 0 ? (
-          <p className="rounded-xl border border-dashed p-4 text-center text-sm text-muted-foreground">
-            Sin oportunidades abiertas ni tareas vencidas. Buen momento para captar leads.
-          </p>
-        ) : null}
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          {overdue_reminders.length > 0 ? (
-            <BriefingList
-              title="Recordatorios vencidos"
-              icon={AlertTriangle}
-              accent="amber"
-              count={kpis.overdue_count}
-              footer={
-                <Button variant="outline" size="sm" className="w-full" asChild>
-                  <Link to="/reminders">Ver recordatorios</Link>
-                </Button>
-              }
-            >
-              {overdue_reminders.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => r.opportunity_id && openOpportunity(r.opportunity_id)}
-                  className="w-full rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-left text-sm transition-colors hover:bg-amber-100/80 dark:border-amber-800/50 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
-                >
-                  <p className="font-medium">{r.subject}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Vencía {formatRelativeTime(r.remind_at)}
-                    {r.opportunity_title ? ` · ${r.opportunity_title}` : ''}
-                  </p>
-                </button>
-              ))}
-            </BriefingList>
-          ) : null}
-
-          {hot_leads.length > 0 ? (
-            <BriefingList
-              title="Leads calientes"
-              icon={Flame}
-              accent="red"
-              count={kpis.hot_count}
-              footer={
-                <Button variant="outline" size="sm" className="w-full" asChild>
-                  <Link to="/opportunities" search={{ temperature: 'hot', view: 'kanban' }}>
-                    Ver calientes
+            {/* Leads calientes */}
+            {hot_leads.length > 0 && (
+              <Section
+                icon={Flame}
+                title="Leads calientes"
+                iconColor="text-red-500"
+                action={
+                  <Link
+                    to="/opportunities"
+                    search={{ temperature: 'hot', view: 'kanban' }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Ver kanban
                   </Link>
-                </Button>
-              }
-            >
-              {hot_leads.map((lead) => (
-                <button
-                  key={lead.id}
-                  type="button"
-                  onClick={() => openOpportunity(lead.id)}
-                  className="w-full rounded-lg border border-red-200/80 bg-red-50/80 px-3 py-2 text-left text-sm transition-colors hover:bg-red-100/80 dark:border-red-900/50 dark:bg-red-950/30 dark:hover:bg-red-950/50"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium truncate">
-                      {lead.contact_name || lead.title}
-                    </p>
+                }
+              >
+                {hot_leads.map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onClick={() => openOpportunity(lead.id)}
+                    className="flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                  >
+                    <div className="mt-0.5 rounded-full bg-red-100 p-1.5 dark:bg-red-950/60 shrink-0">
+                      <Flame className="size-3 text-red-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{lead.contact_name || lead.title}</p>
+                      <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        {lead.stage_name}
+                        {lead.estimated_value > 0 &&
+                          ` · ${formatCurrency(lead.estimated_value, lead.currency || displayCurrency)}`}
+                        <TemperatureBadge temperature={lead.temperature as TemperatureLevel} className="scale-90" />
+                      </p>
+                    </div>
                     <span className="shrink-0 font-mono text-xs font-semibold text-red-600 dark:text-red-400">
                       BANT {lead.bant_score}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
-                    {lead.stage_name}
-                    {lead.estimated_value > 0
-                      ? ` · ${formatCurrency(lead.estimated_value, lead.currency || displayCurrency)}`
-                      : null}
-                    <TemperatureBadge
-                      temperature={lead.temperature as TemperatureLevel}
-                      className="scale-90"
-                    />
-                  </p>
-                </button>
-              ))}
-            </BriefingList>
-          ) : null}
+                  </button>
+                ))}
+              </Section>
+            )}
 
-          {stale_leads.length > 0 ? (
-            <BriefingList
-              title="Sin actividad reciente"
-              icon={Snowflake}
-              accent="muted"
-              count={stale_leads.length}
-            >
-              {stale_leads.map((lead) => (
-                <button
-                  key={lead.id}
-                  type="button"
-                  onClick={() => openOpportunity(lead.id)}
-                  className="w-full rounded-lg border bg-muted/40 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/70"
-                >
-                  <p className="font-medium truncate">{lead.contact_name || lead.title}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Última actividad:{' '}
-                    {lead.last_activity_at
-                      ? formatRelativeTime(lead.last_activity_at)
-                      : '—'}
-                  </p>
-                </button>
-              ))}
-            </BriefingList>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+            {/* Sin actividad reciente */}
+            {stale_leads.length > 0 && (
+              <Section icon={Snowflake} title="Sin actividad reciente" iconColor="text-slate-400">
+                {stale_leads.map((lead) => (
+                  <button
+                    key={lead.id}
+                    type="button"
+                    onClick={() => openOpportunity(lead.id)}
+                    className="flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+                  >
+                    <div className="mt-0.5 rounded-full bg-muted p-1.5 shrink-0">
+                      <Snowflake className="size-3 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm">{lead.contact_name || lead.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Última actividad:{' '}
+                        {lead.last_activity_at ? formatRelativeTime(lead.last_activity_at) : '—'}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </Section>
+            )}
+
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 
-function BriefingList({
-  title,
-  icon: Icon,
-  accent,
-  count,
-  children,
-  footer,
-}: {
-  title: string
-  icon: typeof Flame
-  accent: 'amber' | 'red' | 'muted'
-  count?: number
-  children: React.ReactNode
-  footer?: React.ReactNode
-}) {
-  const titleColor =
-    accent === 'amber'
-      ? 'text-amber-700 dark:text-amber-400'
-      : accent === 'red'
-        ? 'text-red-700 dark:text-red-400'
-        : 'text-muted-foreground'
+/* ── Sub-componentes ─────────────────────────────────────────────────────── */
 
+function Section({
+  icon: Icon,
+  title,
+  iconColor,
+  action,
+  children,
+}: {
+  icon: typeof Flame
+  title: string
+  iconColor: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Icon className={cn('size-4', titleColor)} aria-hidden />
-        <h3 className={cn('text-xs font-semibold uppercase tracking-wide', titleColor)}>
-          {title}
-          {count != null && count > 0 ? ` (${count})` : ''}
-        </h3>
+    <div className="p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon className={cn('size-4', iconColor)} aria-hidden />
+          <h3 className="text-sm font-semibold">{title}</h3>
+        </div>
+        {action}
       </div>
-      <div className="space-y-2">{children}</div>
-      {footer}
+      <div className="space-y-1">{children}</div>
+    </div>
+  )
+}
+
+function BriefingSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i}>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-8 w-8 rounded-lg" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-8 w-12" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-10 w-full rounded-md" />
+          <Skeleton className="h-10 w-full rounded-md" />
+        </CardContent>
+      </Card>
     </div>
   )
 }

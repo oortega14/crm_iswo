@@ -1,37 +1,20 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import {
-  ArrowRight,
-  CalendarDays,
-  LayoutGrid,
-  Plus,
-  Sparkles,
-  TrendingUp,
-} from 'lucide-react'
+import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '@/lib/queryClient'
 import {
   fetchDashboardActivity,
   fetchDashboardBriefing,
-  fetchDashboardBantDistribution,
   fetchDashboardKpis,
-  fetchDashboardLeadSources,
   fetchDashboardPipeline,
-  fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
-import {
-  jsonApiPrimaryList,
-  mapPipelineResource,
-} from '@/lib/opportunityApi'
+import { jsonApiPrimaryList, mapPipelineResource } from '@/lib/opportunityApi'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
-import { BantDistribution } from '@/components/dashboard/BantDistribution'
-import { TopConsultants } from '@/components/dashboard/TopConsultants'
-import { LeadSourcesChart } from '@/components/dashboard/LeadSourcesChart'
 import { DailyBriefing } from '@/components/dashboard/DailyBriefing'
-import { LeadTemperatureStrip } from '@/components/dashboard/LeadTemperatureStrip'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
@@ -48,9 +31,7 @@ function DashboardPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const tenant = useAuthStore((s) => s.tenant)
   const user = useAuthStore((s) => s.user)
-  const userRole = user?.role
   const currency = tenant?.currency ?? 'COP'
-  const showTeamRanking = userRole === 'admin' || userRole === 'manager'
 
   const { data: pipelines = [], isPending: pipelinesLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
@@ -79,8 +60,6 @@ function DashboardPage() {
     staleTime: 2 * 60 * 1000,
   })
 
-  // KPIs en su propio useQuery para preservar el tipo DashboardKpis exacto.
-  // useQueries infiere una unión de todos los queryFn returns, perdiendo el tipo específico.
   const kpisQ = useQuery({
     queryKey: queryKeys.dashboard.kpis(pipelineFilterKey),
     queryFn: () => fetchDashboardKpis(activePipelineId),
@@ -97,36 +76,10 @@ function DashboardPage() {
     refetchInterval: 30_000,
   })
 
-  const bantQ = useQuery({
-    queryKey: queryKeys.dashboard.bantDistribution(pipelineFilterKey),
-    queryFn: () => fetchDashboardBantDistribution(activePipelineId),
-  })
-
-  const consultantsQ = useQuery({
-    queryKey: queryKeys.dashboard.topConsultants(pipelineFilterKey),
-    queryFn: () => fetchDashboardTopConsultants(activePipelineId),
-    enabled: showTeamRanking,
-  })
-
-  const leadSourcesQ = useQuery({
-    queryKey: queryKeys.dashboard.leadSources(pipelineFilterKey),
-    queryFn: () => fetchDashboardLeadSources(activePipelineId),
-  })
-
   const initialLoading =
     pipelinesLoading || (kpisQ.isPending && !kpisQ.data) || (pipelineQ.isPending && !pipelineQ.data)
 
-  if (initialLoading) {
-    return <DashboardSkeleton />
-  }
-
-  const totalInPipeline = kpisQ.data?.total_in_pipeline ?? 0
-  const pipelineValue = kpisQ.data?.pipeline_value ?? 0
-  const monthClosedValue = kpisQ.data?.month_closed_value ?? 0
-  const bantAverage = kpisQ.data?.bant_average ?? null
-  const winRate = kpisQ.data?.win_rate ?? null
-  const wonCount = kpisQ.data?.won_count ?? 0
-  const lostCount = kpisQ.data?.lost_count ?? 0
+  if (initialLoading) return <DashboardSkeleton />
 
   const pipelineOptions = pipelines.map((p) => ({
     id: p.id,
@@ -139,10 +92,9 @@ function DashboardPage() {
 
   return (
     <AppPageShell contentClassName="space-y-10">
-      <PageHeader
-        title="Panel principal"
-        belowTitle={<DashboardDateLine />}
-      >
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <PageHeader title="Panel principal" belowTitle={<DashboardDateLine />}>
         <Button variant="outline" size="sm" className="gap-2" asChild>
           <Link to="/opportunities" search={{ view: 'kanban' }}>
             <LayoutGrid className="size-4" />
@@ -157,11 +109,8 @@ function DashboardPage() {
         </Button>
       </PageHeader>
 
-      <DashboardSection
-        title="Briefing del día"
-        icon={Sparkles}
-        accent="brand"
-      >
+      {/* ── Briefing del día — RFC §6.4: recordatorios, leads calientes ── */}
+      <DashboardSection title="Briefing del día" icon={Sparkles} accent="brand">
         <DailyBriefing
           data={briefing}
           userName={user?.name}
@@ -171,68 +120,36 @@ function DashboardPage() {
         />
       </DashboardSection>
 
+      {/* ── Pipeline — RFC §3.1: embudo configurable + KPIs BANT ──────── */}
       <DashboardSection
-        title="Pipeline y cierres"
+        title="Pipeline"
         subtitle={pipelines.length > 1 ? activePipelineName : undefined}
         icon={TrendingUp}
         accent="brand"
       >
         <DashboardKpiStrip
           currency={currency}
-          totalInPipeline={totalInPipeline}
-          pipelineValue={pipelineValue}
-          bantAverage={bantAverage}
-          monthClosedValue={monthClosedValue}
-          winRate={winRate}
-          wonCount={wonCount}
-          lostCount={lostCount}
+          totalInPipeline={kpisQ.data?.total_in_pipeline ?? 0}
+          pipelineValue={kpisQ.data?.pipeline_value ?? 0}
+          bantAverage={kpisQ.data?.bant_average ?? null}
+          monthClosedValue={kpisQ.data?.month_closed_value ?? 0}
+          winRate={kpisQ.data?.win_rate ?? null}
+          wonCount={kpisQ.data?.won_count ?? 0}
+          lostCount={kpisQ.data?.lost_count ?? 0}
           loadingKpis={kpisQ.isPending || kpisQ.isFetching}
         />
-
-        <LeadTemperatureStrip
-          hotCount={kpisQ.data?.hot_count ?? 0}
-          warmCount={kpisQ.data?.warm_count ?? 0}
-          coldCount={kpisQ.data?.cold_count ?? 0}
-          loading={kpisQ.isPending}
+        <PipelineFunnel
+          currency={currency}
+          data={pipelineQ.data}
+          isLoading={pipelineQ.isPending}
+          isError={pipelineQ.isError}
+          pipelines={pipelineOptions}
+          selectedPipelineId={activePipelineId}
+          onPipelineChange={setSelectedPipelineId}
         />
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:gap-8 xl:items-start">
-          <div className="flex flex-col gap-6 xl:col-span-7 2xl:col-span-8">
-            <PipelineFunnel
-              currency={currency}
-              data={pipelineQ.data}
-              isLoading={pipelineQ.isPending}
-              isError={pipelineQ.isError}
-              pipelines={pipelineOptions}
-              selectedPipelineId={activePipelineId}
-              onPipelineChange={setSelectedPipelineId}
-            />
-            <LeadSourcesChart
-              currency={currency}
-              data={leadSourcesQ.data}
-              isLoading={leadSourcesQ.isPending}
-              isError={leadSourcesQ.isError}
-            />
-          </div>
-
-          <div className="flex flex-col gap-6 xl:col-span-5 2xl:col-span-4">
-            <BantDistribution
-              data={bantQ.data}
-              isLoading={bantQ.isPending}
-              isError={bantQ.isError}
-            />
-            {showTeamRanking ? (
-              <TopConsultants
-                currency={currency}
-                data={consultantsQ.data}
-                isLoading={consultantsQ.isPending}
-                isError={consultantsQ.isError}
-              />
-            ) : null}
-          </div>
-        </div>
       </DashboardSection>
 
+      {/* ── Seguimiento — RFC §6.4: actividad del día + recordatorios ─── */}
       <DashboardSection
         title="Seguimiento comercial"
         icon={CalendarDays}

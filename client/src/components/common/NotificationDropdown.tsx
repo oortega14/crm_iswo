@@ -76,6 +76,7 @@ export function NotificationDropdown() {
       return (res.data.data ?? []).map(mapNotification)
     },
     refetchInterval: 30_000,
+    refetchIntervalInBackground: true,
   })
 
   const readMutation = useMutation({

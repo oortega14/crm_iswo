@@ -37,10 +37,11 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=email" do
         let(:reminder) { reminder_email }
 
-        it "encola ReminderMailer.due_notification y marca como sent" do
-          mailer = double("ActionMailer::MessageDelivery", deliver_later: true)
+        it "entrega con deliver_now y marca como sent" do
+          mailer = double("ActionMailer::MessageDelivery", deliver_now: true)
           chain  = double("Mailer", due_notification: mailer)
           allow(ReminderMailer).to receive(:with).with(reminder: reminder).and_return(chain)
+          expect(mailer).to receive(:deliver_now)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end

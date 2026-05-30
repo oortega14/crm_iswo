@@ -18,7 +18,7 @@ class WhatsappDeliveryJob < ApplicationJob
 
   # Single-job uniqueness por message_id (evita doble envío en reintentos
   # duplicados de Sidekiq).
-  def perform(message_id)
+  def perform(message_id, reminder_id = nil)
     # without_tenant: necesario porque el job no conoce el tenant a priori.
     # Una vez cargado el mensaje, se ejecuta dentro del scope correcto.
     msg = ActsAsTenant.without_tenant { WhatsappMessage.find_by(id: message_id) }
@@ -28,5 +28,20 @@ class WhatsappDeliveryJob < ApplicationJob
     ActsAsTenant.with_tenant(msg.tenant) do
       WhatsApp::MessageSender.new(msg).deliver
     end
+
+    msg.reload
+    finalize_reminder!(reminder_id, msg) if reminder_id.present?
   end
-end
+
+  private
+
+  def finalize_reminder!(reminder_id, msg)
+    reminder = ActsAsTenant.without_tenant { Reminder.find_by(id: reminder_id) }
+    return unless reminder&.status_pending?
+
+    if msg.status.in?(%w[sent delivered read])
+      reminder.mark_sent!
+    elsif msg.status == "failed"
+      reminder.mark_failed!(msg.error_message.presence || "whatsapp_delivery_failed")
+    end
+  end

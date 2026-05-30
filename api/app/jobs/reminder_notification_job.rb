@@ -33,19 +33,23 @@ class ReminderNotificationJob < ApplicationJob
   def dispatch(reminder)
     case reminder.channel
     when "email"
-      ReminderMailer.with(reminder: reminder).due_notification.deliver_later if defined?(ReminderMailer)
+      unless defined?(ReminderMailer)
+        return reminder.mark_failed!("reminder_mailer_unavailable")
+      end
+
+      ReminderMailer.with(reminder: reminder).due_notification.deliver_now
       reminder.mark_sent!
     when "whatsapp"
       enqueue_whatsapp(reminder)
     when "in_app"
-      create_in_app_notification(reminder)
+      create_in_app_notification!(reminder)
       reminder.mark_sent!
     else
       reminder.mark_failed!("channel_unknown:#{reminder.channel}")
     end
   end
 
-  def create_in_app_notification(reminder)
+  def create_in_app_notification!(reminder)
     Notification.create!(
       tenant:        reminder.tenant,
       user:          reminder.user,
@@ -55,8 +59,6 @@ class ReminderNotificationJob < ApplicationJob
       resource_type: "Opportunity",
       resource_id:   reminder.opportunity_id
     )
-  rescue StandardError => e
-    Rails.logger.warn("[ReminderNotificationJob] in_app notification fallida reminder=#{reminder.id}: #{e.message}")
   end
 
   def enqueue_whatsapp(reminder)
@@ -77,7 +79,6 @@ class ReminderNotificationJob < ApplicationJob
       body:        reminder.message.presence || reminder.subject,
       status:      "queued"
     )
-    WhatsappDeliveryJob.perform_later(msg.id)
-    reminder.mark_sent!
+    WhatsappDeliveryJob.perform_later(msg.id, reminder.id)
   end
 end

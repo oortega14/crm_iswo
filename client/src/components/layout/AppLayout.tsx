@@ -86,7 +86,26 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { setTheme, resolvedTheme } = useTheme()
   const user = useUser()
   const tenant = useTenant()
-  const logout = useAuthStore((s) => s.logout)
+  const logoutStore = useAuthStore((s) => s.logout)
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const logoutTenant = useTenant()
+
+  const logout = async () => {
+    try {
+      if (accessToken) {
+        await api.delete('/sessions', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Tenant-Slug': logoutTenant?.subdomain ?? '',
+          },
+        })
+      }
+    } catch {
+      // Si el server falla igualmente limpiamos el estado local
+    } finally {
+      logoutStore()
+    }
+  }
 
   // Fetch overdue reminders count
   const { data: overdueCount } = useQuery({

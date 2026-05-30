@@ -82,6 +82,13 @@ class User < ApplicationRecord
     role_admin? || role_manager?
   end
 
+  # devise-jwt llama este método para buscar el usuario al revocar el token.
+  # Necesitamos bypasear el scope de acts_as_tenant porque el contexto de tenant
+  # puede no estar disponible en ese punto del middleware de Warden.
+  def self.find_for_jwt_authentication(sub)
+    ActsAsTenant.without_tenant { find(sub) }
+  end
+
   # Devuelve los IDs de usuarios en la red de referidos hasta `depth` niveles.
   # Usa WITH RECURSIVE para evitar N+1. El resultado NO incluye al usuario mismo.
   def network_user_ids(depth: 3)

@@ -234,7 +234,7 @@ module Api
           data: stages.map do |stage|
             {
               stage:         PipelineStageSerializer.new(stage).serializable_hash[:data],
-              opportunities: OpportunitySerializer.new(grouped[stage.id] || []).serializable_hash[:data]
+              opportunities: OpportunitySerializer.new(grouped[stage.id] || []).serializable_hash[:data] || []
             }
           end
         }, status: :ok

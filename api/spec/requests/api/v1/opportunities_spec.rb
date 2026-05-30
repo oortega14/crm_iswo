@@ -161,6 +161,52 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
     end
   end
 
+  describe "red de referidos (RFC F2)" do
+    let(:referred) { create(:user, :consultant, tenant: tenant) }
+
+    before do
+      create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
+    end
+
+    let!(:network_opp) do
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: stage,
+             contact: foreign_contact,
+             owner_user: referred,
+             title: "Red referido")
+    end
+
+    it "consultant ve opps de su red en index y kanban" do
+      get "/api/v1/opportunities", headers: auth_headers(consultant)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to match_array([own_opp.id, network_opp.id])
+
+      get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(consultant)
+      opp_ids = json["data"].flat_map { |col| Array(col["opportunities"]).map { |o| o["id"].to_i } }
+      expect(opp_ids).to include(network_opp.id)
+    end
+
+    it "consultant puede abrir detalle de opp de su red (GET show)" do
+      get "/api/v1/opportunities/#{network_opp.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "id").to_i).to eq(network_opp.id)
+    end
+
+    it "consultant no puede editar opp de su red (403)" do
+      patch "/api/v1/opportunities/#{network_opp.id}",
+            params: { opportunity: { title: "Hack red" } }.to_json,
+            headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "consultant sigue sin ver opps fuera de su red" do
+      get "/api/v1/opportunities/#{foreign_opp.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   describe "DELETE /api/v1/opportunities/:id" do
     it "admin soft-deleta (discard)" do
       admin = create(:user, :admin, tenant: tenant)

@@ -104,7 +104,7 @@ function DashboardPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        title={user?.role === 'consultant' ? <WelcomeGreeting name={user.name} /> : 'Panel principal'}
+        title={user?.role === 'consultant' ? <WelcomeGreeting name={user.name} /> : 'Panel de control'}
         belowTitle={<DashboardDateLine />}
       >
         <Button variant="outline" size="sm" className="gap-2" asChild>

@@ -29,7 +29,18 @@ class LandingPage < ApplicationRecord
   end
 
   def public_url
-    "https://#{tenant.slug}.crm.iswo.com.co/#{slug}"
+    "#{public_base_url}/#{slug}"
+  end
+
+  def public_base_url
+    if ENV["LANDING_PUBLIC_HOST"].present?
+      ENV["LANDING_PUBLIC_HOST"].strip.chomp("/")
+    elsif Rails.env.production?
+      "https://#{tenant.slug}.crm.iswo.com.co"
+    else
+      port = ENV.fetch("VITE_FRONTEND_PORT", "3001")
+      "http://#{tenant.slug}.localhost:#{port}"
+    end
   end
 
   private

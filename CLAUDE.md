@@ -193,3 +193,21 @@ sensible en `audit_events`.
 - Export sync (`ExportDownloadable`) sigue siendo stream directo sin persistir disco.
 
 Variables: `AWS_S3_BUCKET`, `AWS_REGION`, opcional `AWS_KMS_KEY_ID`, `LOCKBOX_MASTER_KEY`.
+
+---
+
+### Landings públicas — subdominio por tenant (RFC §6.5)
+
+**Producción:** `https://{tenant}.crm.iswo.com.co/{slug}` — tenant por subdominio,
+sin prefijo `/l/`.
+
+**Desarrollo:** mismo modelo con `{tenant}.localhost:3001/{slug}` (Vite `host: true`).
+Fallback legacy: `http://localhost:3001/l/{slug}?tenant={tenant}`.
+
+| Capa | Comportamiento |
+|------|----------------|
+| **SPA** | Ruta `/$slug` en subdominio; redirige a `/l/$slug` en localhost plano |
+| **API** | `TenantResolver` + header `X-Tenant-Slug`; CORS acepta `*.localhost` |
+| **Admin** | `LandingPage#public_url` y UI copian URL con subdominio |
+
+Opcional: `LANDING_PUBLIC_HOST` / `VITE_LANDING_PUBLIC_HOST` para override (ngrok, staging).

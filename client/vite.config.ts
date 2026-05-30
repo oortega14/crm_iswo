@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: frontendPort,
       strictPort: true,
+      host: true, // {tenant}.localhost en dev (landings RFC)
       proxy: {
         '/api': {
           target: backendOrigin,

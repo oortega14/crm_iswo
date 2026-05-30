@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getTenantFromHostname } from '@/lib/landingUrls'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -160,16 +161,16 @@ export function hasPermission(
   return requiredRoles.includes(userRole)
 }
 
-// Get subdomain from hostname
+// Get subdomain from hostname (app CRM) or session fallback on flat localhost
 export function getSubdomain(): string {
   if (typeof window === 'undefined') return ''
+
+  const fromHost = getTenantFromHostname()
+  if (fromHost) return fromHost
+
   const selectedTenant = window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase()
   if (selectedTenant) return selectedTenant
-  const hostname = window.location.hostname
-  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-    const parts = hostname.split('.')
-    if (parts.length >= 3) return parts[0]
-  }
+
   return import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() || ''
 }
 

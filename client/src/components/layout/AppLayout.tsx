@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -89,6 +89,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const logoutStore = useAuthStore((s) => s.logout)
   const accessToken = useAuthStore((s) => s.accessToken)
   const logoutTenant = useTenant()
+  const router = useRouter()
 
   const logout = async () => {
     try {
@@ -104,6 +105,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       // Si el server falla igualmente limpiamos el estado local
     } finally {
       logoutStore()
+      void router.navigate({ to: '/login' })
     }
   }
 

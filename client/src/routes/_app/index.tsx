@@ -204,7 +204,7 @@ function WelcomeGreeting({ name }: { name?: string }) {
   const firstName = name?.split(' ')[0] ?? ''
   return (
     <span>
-      {greeting}{firstName ? ', ' : ''}<span className="text-primary">{firstName}</span>
+      {greeting}{firstName ? ', ' : ''}<span className="text-primary dark:text-blue-400">{firstName}</span>
     </span>
   )
 }

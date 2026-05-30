@@ -72,9 +72,18 @@ VERTICALS = [
       { name: "Observador ISWO",   email: "viewer@iswo.local",    role: "viewer",     password: "Password123!" }
     ],
     demo_contacts: [
-      { first_name: "Marcela",  last_name: "Torres",   email: "marcela@ejemplo.co",  phone_e164: "+573001234001", company_name: "Constructora Omega" },
-      { first_name: "Ricardo",  last_name: "Patiño",   email: "ricardo@ejemplo.co",  phone_e164: "+573001234002", company_name: "Clínica San Rafael" },
-      { first_name: "Valentina",last_name: "Herrera",  email: "valentina@ejemplo.co",phone_e164: "+573001234003", company_name: "Alimentos del Valle" }
+      { first_name: "Marcela",   last_name: "Torres",    email: "marcela@ejemplo.co",   phone_e164: "+573001234001", company_name: "Constructora Omega" },
+      { first_name: "Ricardo",   last_name: "Patiño",    email: "ricardo@ejemplo.co",   phone_e164: "+573001234002", company_name: "Clínica San Rafael" },
+      { first_name: "Valentina", last_name: "Herrera",   email: "valentina@ejemplo.co", phone_e164: "+573001234003", company_name: "Alimentos del Valle" },
+      { first_name: "Andrés",    last_name: "Gómez",     email: "andres.g@ejemplo.co",  phone_e164: "+573001234004", company_name: "Industrias Gómez" },
+      { first_name: "Sofía",     last_name: "Restrepo",  email: "sofia.r@ejemplo.co",   phone_e164: "+573001234005", company_name: "Logística CR SAS" },
+      { first_name: "Camilo",    last_name: "Arango",    email: "camilo.a@ejemplo.co",  phone_e164: "+573001234006", company_name: "Ferretería Nacional" },
+      { first_name: "Lucía",     last_name: "Montoya",   email: "lucia.m@ejemplo.co",   phone_e164: "+573001234007", company_name: "Hospital del Norte" },
+      { first_name: "Sebastián", last_name: "Vargas",    email: "sebas.v@ejemplo.co",   phone_e164: "+573001234008", company_name: "Minería Sur" },
+      { first_name: "Natalia",   last_name: "Ospina",    email: "natalia.o@ejemplo.co", phone_e164: "+573001234009", company_name: "Distribuidora Ospina" },
+      { first_name: "Felipe",    last_name: "Jiménez",   email: "felipe.j@ejemplo.co",  phone_e164: "+573001234010", company_name: "Textiles FJ" },
+      { first_name: "Alejandra", last_name: "Castillo",  email: "ale.c@ejemplo.co",     phone_e164: "+573001234011", company_name: "Salud Total EPS" },
+      { first_name: "Miguel",    last_name: "Ríos",      email: "miguel.r@ejemplo.co",  phone_e164: "+573001234012", company_name: "Agropecuaria Ríos" }
     ]
   },
 
@@ -138,9 +147,18 @@ VERTICALS = [
       { name: "Felipe Guzmán",      email: "felipe@micasita.local",   role: "consultant", password: "Password123!" }
     ],
     demo_contacts: [
-      { first_name: "Jorge",    last_name: "Salcedo",   email: "jorge@ejemplo.co",   phone_e164: "+573101234001", company_name: nil, document_id: "12345678" },
-      { first_name: "Patricia", last_name: "Villamizar",email: "patricia@ejemplo.co",phone_e164: "+573101234002", company_name: nil, document_id: "87654321" },
-      { first_name: "Sergio",   last_name: "Córdoba",   email: "sergio@ejemplo.co",  phone_e164: "+573101234003", company_name: nil, document_id: "11223344" }
+      { first_name: "Jorge",     last_name: "Salcedo",    email: "jorge@ejemplo.co",    phone_e164: "+573101234001", document_id: "12345678" },
+      { first_name: "Patricia",  last_name: "Villamizar", email: "patricia@ejemplo.co", phone_e164: "+573101234002", document_id: "87654321" },
+      { first_name: "Sergio",    last_name: "Córdoba",    email: "sergio@ejemplo.co",   phone_e164: "+573101234003", document_id: "11223344" },
+      { first_name: "Carolina",  last_name: "Méndez",     email: "caro.m@ejemplo.co",   phone_e164: "+573101234004", document_id: "22334455" },
+      { first_name: "Jhon",      last_name: "Ramírez",    email: "jhon.r@ejemplo.co",   phone_e164: "+573101234005", document_id: "33445566" },
+      { first_name: "Tatiana",   last_name: "Guerrero",   email: "tatiana.g@ejemplo.co",phone_e164: "+573101234006", document_id: "44556677" },
+      { first_name: "Gustavo",   last_name: "Pineda",     email: "gus.p@ejemplo.co",    phone_e164: "+573101234007", document_id: "55667788" },
+      { first_name: "Liliana",   last_name: "Cano",       email: "lili.c@ejemplo.co",   phone_e164: "+573101234008", document_id: "66778899" },
+      { first_name: "Rodrigo",   last_name: "Bermúdez",   email: "rodri.b@ejemplo.co",  phone_e164: "+573101234009", document_id: "77889900" },
+      { first_name: "Mónica",    last_name: "Sandoval",   email: "monica.s@ejemplo.co", phone_e164: "+573101234010", document_id: "88990011" },
+      { first_name: "Iván",      last_name: "Agudelo",    email: "ivan.a@ejemplo.co",   phone_e164: "+573101234011", document_id: "99001122" },
+      { first_name: "Yesenia",   last_name: "Bedoya",     email: "yese.b@ejemplo.co",   phone_e164: "+573101234012", document_id: "10112233" }
     ]
   },
 
@@ -202,9 +220,18 @@ VERTICALS = [
       { name: "Sandra Ospina",       email: "sandra@libranzas.local",   role: "consultant", password: "Password123!" }
     ],
     demo_contacts: [
-      { first_name: "Hernando", last_name: "Roa",      email: "hernando@ejemplo.co", phone_e164: "+573201234001", company_name: "Empresa Pública Departamental", document_id: "55667788" },
-      { first_name: "Carmen",   last_name: "Duarte",   email: "carmen@ejemplo.co",   phone_e164: "+573201234002", company_name: "Hospital Universitario",         document_id: "99887766" },
-      { first_name: "Nelson",   last_name: "Jiménez",  email: "nelson@ejemplo.co",   phone_e164: "+573201234003", company_name: "Ministerio de Educación",        document_id: "44332211" }
+      { first_name: "Hernando", last_name: "Roa",       email: "hernando@ejemplo.co",  phone_e164: "+573201234001", company_name: "Gobernación del Valle",      document_id: "55667788" },
+      { first_name: "Carmen",   last_name: "Duarte",    email: "carmen@ejemplo.co",    phone_e164: "+573201234002", company_name: "Hospital Universitario",     document_id: "99887766" },
+      { first_name: "Nelson",   last_name: "Jiménez",   email: "nelson@ejemplo.co",    phone_e164: "+573201234003", company_name: "Ministerio de Educación",    document_id: "44332211" },
+      { first_name: "Gloria",   last_name: "Peñaloza",  email: "gloria.p@ejemplo.co",  phone_e164: "+573201234004", company_name: "Alcaldía de Medellín",       document_id: "12348765" },
+      { first_name: "Oswaldo",  last_name: "Muñoz",     email: "oswal.m@ejemplo.co",   phone_e164: "+573201234005", company_name: "Banco Popular",              document_id: "23456789" },
+      { first_name: "Beatriz",  last_name: "Lozano",    email: "bea.l@ejemplo.co",     phone_e164: "+573201234006", company_name: "SENA Regional",              document_id: "34567890" },
+      { first_name: "Jairo",    last_name: "Trujillo",  email: "jairo.t@ejemplo.co",   phone_e164: "+573201234007", company_name: "Secretaría de Salud",        document_id: "45678901" },
+      { first_name: "Esperanza",last_name: "Morales",   email: "espe.m@ejemplo.co",    phone_e164: "+573201234008", company_name: "Universidad Nacional",       document_id: "56789012" },
+      { first_name: "Álvaro",   last_name: "Serrano",   email: "alvaro.s@ejemplo.co",  phone_e164: "+573201234009", company_name: "Ejército Nacional",          document_id: "67890123" },
+      { first_name: "Pilar",    last_name: "Gutiérrez", email: "pilar.g@ejemplo.co",   phone_e164: "+573201234010", company_name: "Contraloría Departamental",  document_id: "78901234" },
+      { first_name: "Fabio",    last_name: "Valencia",  email: "fabio.v@ejemplo.co",   phone_e164: "+573201234011", company_name: "Policía Nacional",           document_id: "89012345" },
+      { first_name: "Rocío",    last_name: "Cardona",   email: "rocio.c@ejemplo.co",   phone_e164: "+573201234012", company_name: "Personería Municipal",       document_id: "90123456" }
     ]
   }
 ].freeze
@@ -382,44 +409,133 @@ rescue ActiveRecord::RecordInvalid => e
   puts "     [referral] skip: #{e.message}"
 end
 
-def seed_demo_opportunities(tenant, contacts, pipeline, owner_user)
-  stage_list = pipeline.pipeline_stages.order(:position).to_a
-  won_stage  = stage_list.find(&:closed_won)
-  open_stage = stage_list.reject { |s| s.closed_won || s.closed_lost }
-
-  configs = [
-    { status: "won",      stage: won_stage  || stage_list.last, value: 8_000_000,  bant: 82, closed: true,  days_ago: 5  },
-    { status: "proposal", stage: open_stage[2] || stage_list[2], value: 3_500_000, bant: 65, closed: false, days_ago: 2  },
-    { status: "new_lead", stage: open_stage[0] || stage_list[0], value: 1_200_000, bant: 40, closed: false, days_ago: 0  },
+OPPORTUNITY_TEMPLATES = {
+  "iswo" => [
+    { value: 22_000_000, bant: 88, temp: "hot",  status: "won",       days_ago: 10, stage_pos: :won,  note: "Contrato firmado. Implementación ISO 9001 para 3 sedes." },
+    { value: 15_500_000, bant: 75, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 3,     note: "Propuesta enviada. Esperan respuesta del gerente." },
+    { value: 9_800_000,  bant: 68, temp: "warm", status: "qualified", days_ago: 3,  stage_pos: 2,     note: "Diagnóstico completado. Interés en ISO 14001." },
+    { value: 7_200_000,  bant: 60, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 1,     note: "Reunión inicial exitosa. Solicitan cotización." },
+    { value: 4_500_000,  bant: 45, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Lead desde LinkedIn. Sin contacto previo." },
+    { value: 18_000_000, bant: 80, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 3,     note: "Negociación avanzada. Piden ajuste en plazo." },
+    { value: 6_000_000,  bant: 52, temp: "cold", status: "new_lead",  days_ago: 8,  stage_pos: 0,     note: nil },
+    { value: 11_000_000, bant: 71, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 2,     note: "Calificado BANT. Presupuesto aprobado para Q3." },
+    { value: 3_500_000,  bant: 38, temp: "cold", status: "lost",      days_ago: 15, stage_pos: :lost, note: "Decidieron con la competencia por precio." },
+    { value: 25_000_000, bant: 92, temp: "hot",  status: "won",       days_ago: 7,  stage_pos: :won,  note: "Proyecto corporativo multisite. Mejor cierre del mes." },
+    { value: 8_500_000,  bant: 63, temp: "warm", status: "contacted", days_ago: 6,  stage_pos: 1,     note: "Segunda reunión agendada para la semana." },
+    { value: 5_000_000,  bant: 47, temp: "cold", status: "new_lead",  days_ago: 1,  stage_pos: 0,     note: "Referido por cliente existente." }
+  ],
+  "micasita" => [
+    { value: 380_000_000, bant: 85, temp: "hot",  status: "won",       days_ago: 8,  stage_pos: :won,  note: "Escritura firmada. Apartamento en El Poblado." },
+    { value: 220_000_000, bant: 72, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 4,     note: "En proceso de escrituración. Todo listo." },
+    { value: 450_000_000, bant: 78, temp: "hot",  status: "qualified", days_ago: 3,  stage_pos: 3,     note: "Oferta presentada. Casa en Envigado." },
+    { value: 180_000_000, bant: 61, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 2,     note: "Visita realizada. Le gustó el inmueble." },
+    { value: 290_000_000, bant: 55, temp: "warm", status: "new_lead",  days_ago: 1,  stage_pos: 1,     note: "Visita agendada para el sábado." },
+    { value: 160_000_000, bant: 42, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Llegó por Meta Ads. Sin contactar." },
+    { value: 520_000_000, bant: 90, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 4,     note: "Penthouse. Financiación aprobada." },
+    { value: 195_000_000, bant: 65, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 3,     note: "Segunda visita. Pendiente carta de crédito." },
+    { value: 140_000_000, bant: 35, temp: "cold", status: "lost",      days_ago: 20, stage_pos: :lost, note: "No obtuvo crédito hipotecario." },
+    { value: 310_000_000, bant: 83, temp: "hot",  status: "won",       days_ago: 12, stage_pos: :won,  note: "Casa en Laureles. Cierre exitoso." },
+    { value: 255_000_000, bant: 58, temp: "warm", status: "contacted", days_ago: 6,  stage_pos: 2,     note: "Visita realizada. Esperando decisión." },
+    { value: 170_000_000, bant: 48, temp: "cold", status: "new_lead",  days_ago: 2,  stage_pos: 0,     note: "Referido por cliente anterior." }
+  ],
+  "libranzas" => [
+    { value: 18_000_000, bant: 84, temp: "hot",  status: "won",       days_ago: 6,  stage_pos: :won,  note: "Desembolsado. Descuento nómina activo." },
+    { value: 12_500_000, bant: 76, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 3,     note: "Aprobado por la entidad. Firma pendiente." },
+    { value: 8_000_000,  bant: 65, temp: "warm", status: "qualified", days_ago: 3,  stage_pos: 2,     note: "En estudio de crédito. Historial limpio." },
+    { value: 5_500_000,  bant: 55, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 1,     note: "Documentación completa enviada." },
+    { value: 22_000_000, bant: 88, temp: "hot",  status: "won",       days_ago: 9,  stage_pos: :won,  note: "Monto alto. Empleado Gobernación." },
+    { value: 4_000_000,  bant: 40, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Ingresó por WhatsApp. Pendiente contacto." },
+    { value: 15_000_000, bant: 79, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 3,     note: "Entidad aprobó. Esperando firma del empleador." },
+    { value: 7_000_000,  bant: 60, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 2,     note: "Estudio aprobado con observaciones." },
+    { value: 3_000_000,  bant: 30, temp: "cold", status: "lost",      days_ago: 14, stage_pos: :lost, note: "Rechazado. Nivel de endeudamiento alto." },
+    { value: 28_000_000, bant: 91, temp: "hot",  status: "won",       days_ago: 11, stage_pos: :won,  note: "Funcionario público. Mejor libranza del mes." },
+    { value: 9_500_000,  bant: 62, temp: "warm", status: "contacted", days_ago: 7,  stage_pos: 1,     note: "Documentos enviados. Revisando con RRHH." },
+    { value: 6_000_000,  bant: 50, temp: "cold", status: "new_lead",  days_ago: 1,  stage_pos: 0,     note: "Call center. Primera llamada realizada." }
   ]
+}.freeze
 
-  contacts.each_with_index do |contact, i|
-    cfg   = configs[i] || configs.last
-    stage = cfg[:stage] || stage_list.first
-    opp   = Opportunity.find_or_initialize_by(tenant: tenant, contact: contact, title: "Oportunidad #{contact.first_name}")
+def seed_demo_opportunities(tenant, contacts, pipeline, users)
+  stage_list  = pipeline.pipeline_stages.order(:position).to_a
+  won_stage   = stage_list.find(&:closed_won)
+  lost_stage  = stage_list.find(&:closed_lost)
+  open_stages = stage_list.reject { |s| s.closed_won || s.closed_lost }
+
+  templates = OPPORTUNITY_TEMPLATES[tenant.slug] || OPPORTUNITY_TEMPLATES["iswo"]
+  consultants = users.select { |u| u.role == "consultant" }
+  default_owner = consultants.first || users.find { |u| u.role == "admin" } || users.first
+
+  contacts.first(templates.size).each_with_index do |contact, i|
+    tmpl  = templates[i]
+    stage = case tmpl[:stage_pos]
+            when :won  then won_stage  || stage_list.last
+            when :lost then lost_stage || stage_list.last
+            when Integer then open_stages[tmpl[:stage_pos]] || open_stages.last || stage_list.first
+            else open_stages.first || stage_list.first
+            end
+
+    owner = consultants[i % [consultants.size, 1].max] || default_owner
+
+    opp = Opportunity.find_or_initialize_by(
+      tenant:  tenant,
+      contact: contact,
+      title:   "#{contact.first_name} #{contact.last_name} — #{pipeline.name}"
+    )
     opp.assign_attributes(
-      pipeline:          pipeline,
-      pipeline_stage:    stage,
-      owner_user:        owner_user,
-      status:            cfg[:status],
-      estimated_value:   cfg[:value],
-      bant_score:        cfg[:bant],
-      last_activity_at:  cfg[:days_ago].days.ago,
-      closed_at:         cfg[:closed] ? cfg[:days_ago].days.ago : nil
+      pipeline:         pipeline,
+      pipeline_stage:   stage,
+      owner_user:       owner,
+      status:           tmpl[:status],
+      temperature:      tmpl[:temp],
+      estimated_value:  tmpl[:value],
+      bant_score:       tmpl[:bant],
+      notes:            tmpl[:note],
+      last_activity_at: tmpl[:days_ago].days.ago,
+      closed_at:        (tmpl[:status] == "won" || tmpl[:status] == "lost") ? tmpl[:days_ago].days.ago : nil,
+      currency:         tenant.currency
     )
     opp.save!
 
-    # Log de creación para que aparezca en el activity feed de hoy
-    if cfg[:days_ago] == 0
-      OpportunityLog.find_or_create_by(
-        tenant:      tenant,
-        opportunity: opp,
-        action:      "create",
-        user:        owner_user
-      ) do |log|
-        log.changes_data = { title: opp.title, pipeline_stage_id: stage.id }
+    # Logs de actividad
+    OpportunityLog.find_or_create_by(tenant: tenant, opportunity: opp, action: "create", user: owner) do |log|
+      log.changes_data = { stage: stage.name }
+      log.ip_address   = "127.0.0.1"
+    end
+
+    if tmpl[:days_ago] <= 2 && %w[won proposal].include?(tmpl[:status])
+      OpportunityLog.find_or_create_by(tenant: tenant, opportunity: opp, action: "stage_change", user: owner) do |log|
+        log.note         = "Avance a #{stage.name}"
         log.ip_address   = "127.0.0.1"
+        log.changes_data = { stage: stage.name }
       end
+    end
+
+    # Recordatorio en oportunidades activas
+    if %w[new_lead contacted qualified proposal].include?(tmpl[:status]) && i.even?
+      due = tmpl[:days_ago] == 0 ? 2.days.from_now : 1.day.from_now
+      Reminder.find_or_create_by(tenant: tenant, opportunity: opp, user: owner) do |r|
+        r.remind_at = due
+        r.channel   = %w[email whatsapp in_app][i % 3]
+        r.message   = "Seguimiento con #{contact.first_name}"
+        r.status    = "pending"
+      end
+    end
+
+    # Campos custom para verticales
+    if tenant.slug == "micasita" && opp.custom_fields.blank?
+      opp.update_column(:custom_fields, {
+        "tipo_inmueble"     => %w[Apartamento Casa Lote Oficina][i % 4],
+        "ciudad"            => %w[Medellín Bogotá Cali Barranquilla][i % 4],
+        "estrato"           => (3 + (i % 3)).to_s,
+        "credito_hipotecario" => [true, false][i % 2]
+      })
+    end
+
+    if tenant.slug == "libranzas" && opp.custom_fields.blank?
+      opp.update_column(:custom_fields, {
+        "tipo_libranza" => %w[Libre\ inversión Consolidación Educación Vivienda][i % 4],
+        "plazo_meses"   => [24, 36, 48, 60][i % 4].to_s,
+        "empleador"     => contact.company_name
+      })
     end
   end
 end
@@ -446,14 +562,14 @@ VERTICALS.each do |config|
     users = seed_users(tenant, config[:users])
     puts "     #{users.size} usuarios (#{config[:users].map { |u| u[:role] }.join(', ')})"
 
-    # Usar el primer consultant como propietario del demo; si no hay, usar el admin
     demo_owner = users.find { |u| u.role == "consultant" } || users.first
 
     contacts = seed_demo_contacts(tenant, config[:demo_contacts], demo_owner)
     puts "     #{contacts.size} contactos de demo"
 
-    seed_demo_opportunities(tenant, contacts, pipeline, demo_owner)
-    puts "     #{contacts.size} oportunidades de demo"
+    seed_demo_opportunities(tenant, contacts, pipeline, users)
+    opp_count = Opportunity.where(tenant: tenant).count
+    puts "     #{opp_count} oportunidades de demo"
 
     seed_duplicate_flags(tenant, contacts, pipeline, users.find { |u| u.role == 'admin' } || users.first)
     puts "     #{DuplicateFlag.where(tenant: tenant).count} flag(s) de duplicados de demo"
@@ -476,6 +592,8 @@ ActsAsTenant.without_tenant do
   puts "Lead sources:  #{LeadSource.count}"
   puts "Contactos:     #{Contact.count}"
   puts "Oportunidades: #{Opportunity.count}"
+  puts "Recordatorios: #{Reminder.count}"
+  puts "Actividad:     #{OpportunityLog.count} logs"
 end
 puts "\nCredenciales de prueba (password: Password123!):"
 puts "  admin@iswo.local       → ISWO"

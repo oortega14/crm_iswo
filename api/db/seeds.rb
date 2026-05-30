@@ -68,7 +68,8 @@ VERTICALS = [
       { name: "Admin ISWO",       email: "admin@iswo.local",      role: "admin",      password: "Password123!" },
       { name: "Gerente Comercial", email: "gerente@iswo.local",   role: "manager",    password: "Password123!" },
       { name: "Laura Ríos",        email: "laura@iswo.local",     role: "consultant", password: "Password123!" },
-      { name: "Carlos Mejía",      email: "carlos@iswo.local",    role: "consultant", password: "Password123!" }
+      { name: "Carlos Mejía",      email: "carlos@iswo.local",    role: "consultant", password: "Password123!" },
+      { name: "Observador ISWO",   email: "viewer@iswo.local",    role: "viewer",     password: "Password123!" }
     ],
     demo_contacts: [
       { first_name: "Marcela",  last_name: "Torres",   email: "marcela@ejemplo.co",  phone_e164: "+573001234001", company_name: "Constructora Omega" },

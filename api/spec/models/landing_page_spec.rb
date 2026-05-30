@@ -80,9 +80,24 @@ RSpec.describe LandingPage, type: :model do
   end
 
   describe "#public_url" do
-    it "arma URL con slug del tenant y del landing" do
-      page = build(:landing_page, tenant: tenant, slug: "black-friday")
+    let(:page) { build(:landing_page, tenant: tenant, slug: "black-friday") }
+
+    it "en production usa subdominio crm.iswo.com.co" do
+      allow(Rails.env).to receive(:production?).and_return(true)
       expect(page.public_url).to eq("https://#{tenant.slug}.crm.iswo.com.co/black-friday")
+    end
+
+    it "en development simula subdominio .localhost" do
+      allow(Rails.env).to receive(:production?).and_return(false)
+      expect(page.public_url).to eq("http://#{tenant.slug}.localhost:3001/black-friday")
+    end
+
+    it "respeta LANDING_PUBLIC_HOST si está definido" do
+      original = ENV["LANDING_PUBLIC_HOST"]
+      ENV["LANDING_PUBLIC_HOST"] = "https://landings.test"
+      expect(page.public_url).to eq("https://landings.test/black-friday")
+    ensure
+      ENV["LANDING_PUBLIC_HOST"] = original
     end
   end
 end

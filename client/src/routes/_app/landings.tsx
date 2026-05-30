@@ -50,6 +50,8 @@ import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { LandingEditorSheet } from '@/components/landings/LandingEditorSheet'
 import { LandingMetricsSheet } from '@/components/landings/LandingMetricsSheet'
+import { resolveLandingPublicUrl } from '@/lib/landingUrls'
+import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/landings')({
   component: LandingsPage,
@@ -98,6 +100,7 @@ function mapLanding(resource: JsonApiResource): LandingPage | null {
 
 function LandingsPage() {
   const queryClient = useQueryClient()
+  const tenantSlug = useAuthStore((s) => s.tenant?.subdomain ?? '')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newLanding, setNewLanding] = useState({
     title: '',
@@ -203,7 +206,7 @@ function LandingsPage() {
       .slice(0, 80)
 
   const getPublicUrl = (landing: LandingPage) =>
-    `${window.location.origin}/l/${landing.slug}`
+    resolveLandingPublicUrl(tenantSlug, landing.slug, landing.publicUrl)
 
   const copyUrl = (landing: LandingPage) => {
     navigator.clipboard.writeText(getPublicUrl(landing))
@@ -375,8 +378,8 @@ function LandingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                  <code className="px-1.5 py-0.5 bg-muted rounded text-xs">
-                    /l/{landing.slug}
+                  <code className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[220px]">
+                    {getPublicUrl(landing).replace(/^https?:\/\/[^/]+/, '')}
                   </code>
                   <Button 
                     variant="ghost" 
@@ -583,7 +586,9 @@ function LandingsPage() {
             <div className="space-y-2">
               <Label htmlFor="slug">URL (slug)</Label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">/l/</span>
+                <span className="text-sm text-muted-foreground truncate">
+                  {tenantSlug ? `${tenantSlug}.localhost/` : '/l/'}
+                </span>
                 <Input
                   id="slug"
                   value={newLanding.slug}

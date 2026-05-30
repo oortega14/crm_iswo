@@ -5,7 +5,8 @@
 # ============================================================================
 # Prioridad:
 #   1. Header `X-Tenant-Slug` (SPA, login, tests).
-#   2. Subdominio (`micasita.crm.iswo.com.co` → slug "micasita") si no hay header.
+#   2. Subdominio (`micasita.crm.iswo.com.co` → slug "micasita") o
+#      `{tenant}.localhost` en dev/test si no hay header.
 #
 # Si no resuelve, responde 400 para evitar caer en `ActsAsTenant::NoTenantSet`
 # más profundo con un mensaje poco útil.
@@ -34,8 +35,20 @@ module TenantResolver
   end
 
   def tenant_slug_from_subdomain
-    subdomain = request.subdomains.reject { |s| RESERVED_SUBDOMAINS.include?(s) || s == "crm" }.first
-    subdomain.presence
+    slug = request.subdomains.reject { |s| RESERVED_SUBDOMAINS.include?(s) || s == "crm" }.first
+    slug.presence || tenant_slug_from_localhost_host
+  end
+
+  # Dev/test: {tenant}.localhost no siempre aparece en request.subdomains.
+  def tenant_slug_from_localhost_host
+    host = request.host.to_s.downcase
+    return nil unless host.end_with?(".localhost")
+
+    label = host.delete_suffix(".localhost")
+    return nil if label.blank? || label.include?(".")
+    return nil if RESERVED_SUBDOMAINS.include?(label) || label == "crm"
+
+    label
   end
 
   def tenant_slug_from_header

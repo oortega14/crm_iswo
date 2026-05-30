@@ -13,6 +13,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -49,6 +50,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SlugRoute = SlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -144,6 +150,7 @@ const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/$slug': typeof SlugRoute
   '/': typeof AppIndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/settings/users': typeof AppSettingsUsersRoute
 }
 export interface FileRoutesByTo {
+  '/$slug': typeof SlugRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -191,6 +199,7 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/$slug': typeof SlugRoute
   '/_app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -217,6 +226,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/$slug'
     | '/'
     | '/forgot-password'
     | '/login'
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
     | '/settings/users'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/$slug'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/settings/users'
   id:
     | '__root__'
+    | '/$slug'
     | '/_app'
     | '/forgot-password'
     | '/login'
@@ -288,6 +300,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  SlugRoute: typeof SlugRoute
   AppRoute: typeof AppRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -323,6 +336,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$slug': {
+      id: '/$slug'
+      path: '/$slug'
+      fullPath: '/$slug'
+      preLoaderRoute: typeof SlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -507,6 +527,7 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
+  SlugRoute: SlugRoute,
   AppRoute: AppRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,

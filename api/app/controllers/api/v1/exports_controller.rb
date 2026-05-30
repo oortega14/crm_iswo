@@ -34,15 +34,21 @@ module Api
                         status: :gone
         end
 
-        local_path = local_export_path(@export)
+        payload = Exports::Storage.download_payload(@export)
 
-        if File.exist?(local_path)
-          send_file local_path,
-                    filename:    "export_#{@export.resource}_#{@export.id}.#{@export.format}",
-                    type:        mime_for(@export.format),
+        case payload&.dig(:type)
+        when :redirect
+          redirect_to payload[:url], allow_other_host: true, status: :found
+        when :file
+          send_file payload[:path],
+                    filename:    payload[:filename],
+                    type:        payload[:content_type],
                     disposition: "attachment"
-        elsif @export.file_url&.start_with?("https://")
-          redirect_to @export.file_url, allow_other_host: true, status: :found
+        when :data
+          send_data payload[:data],
+                    filename:    payload[:filename],
+                    type:        payload[:content_type],
+                    disposition: "attachment"
         else
           render json: { error: "file_not_found", message: "Archivo no encontrado." },
                  status: :not_found
@@ -80,25 +86,6 @@ module Api
 
       def set_export
         @export = current_tenant.exports.find(params[:id])
-      end
-
-      # Busca primero en storage/ (nuevos exports), luego en public/ (legados).
-      def local_export_path(export)
-        storage = Rails.root.join("storage", "exports",
-                                  export.tenant_id.to_s,
-                                  "#{export.id}.#{export.format}").to_s
-        return storage if File.exist?(storage)
-
-        Rails.root.join("public", "exports",
-                        export.tenant_id.to_s,
-                        "#{export.id}.#{export.format}").to_s
-      end
-
-      def mime_for(format)
-        case format
-        when "xlsx" then "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        else             "text/csv; charset=utf-8"
-        end
       end
 
     end

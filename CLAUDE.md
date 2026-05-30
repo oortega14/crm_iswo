@@ -175,3 +175,21 @@ aún — desviación aceptada para MVP; latencia máxima ~15s visible para el us
 `LogSanitizer.redact` enmascara email, teléfonos y credenciales en
 `opportunity_logs.changes_data`. `Auditable` y `AuditLogger` redactan metadata
 sensible en `audit_events`.
+
+---
+
+### Exportaciones — cifrado en reposo (RFC §6.7 / ISO A.7.10)
+
+`Exports::Storage` centraliza la persistencia de archivos async:
+
+| Entorno | Almacenamiento | Acceso |
+|---------|----------------|--------|
+| **Producción** | S3 privado + SSE (`AES256` o `aws:kms` con `AWS_KMS_KEY_ID`) | Presigned URL **bajo demanda** (15 min) vía `GET /exports/:id/download` |
+| **Desarrollo** | `storage/exports/` cifrado con **Lockbox** (`.enc`) | Solo endpoint autenticado; descifra en memoria |
+
+- `file_url` en DB guarda referencia interna (`s3://…` o `local://encrypted`), no URLs públicas.
+- `ExportSerializer` siempre expone `/api/v1/exports/:id/download` al SPA.
+- `CleanupExportsJob` borra objetos S3 y archivos `.enc` al expirar (7 días).
+- Export sync (`ExportDownloadable`) sigue siendo stream directo sin persistir disco.
+
+Variables: `AWS_S3_BUCKET`, `AWS_REGION`, opcional `AWS_KMS_KEY_ID`, `LOCKBOX_MASTER_KEY`.

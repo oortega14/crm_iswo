@@ -36,6 +36,6 @@ Lockbox.master_key = ENV["LOCKBOX_MASTER_KEY"] if ENV["LOCKBOX_MASTER_KEY"].pres
 
 if ENV["LOCKBOX_MASTER_KEY"].blank?
   Rails.logger.warn(
-    "[Lockbox] LOCKBOX_MASTER_KEY ausente: las integraciones publicitarias fallarán al guardar credenciales."
+    "[Lockbox] LOCKBOX_MASTER_KEY ausente: integraciones y exports cifrados fallarán."
   )
 end

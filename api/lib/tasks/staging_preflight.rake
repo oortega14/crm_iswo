@@ -56,6 +56,14 @@ namespace :staging do
     report.call("DEVISE_JWT_SECRET_KEY", ENV["DEVISE_JWT_SECRET_KEY"].present? || Rails.application.credentials.devise_jwt_secret_key.present?)
     report.call("LOCKBOX_MASTER_KEY", ENV["LOCKBOX_MASTER_KEY"].present? || Rails.application.credentials.lockbox_master_key.present?)
 
+    if production_check
+      if ENV["AWS_S3_BUCKET"].present?
+        report.call("AWS_S3_BUCKET (exports cifrados en S3)", true, ENV["AWS_S3_BUCKET"])
+      else
+        warn_item.call("AWS_S3_BUCKET", "vacío — exports async usan disco cifrado Lockbox (OK dev, revisar prod)")
+      end
+    end
+
     # --- Sidekiq / jobs RFC §6.4, §9 ----------------------------------------
     schedule = YAML.load_file(Rails.root.join("config/sidekiq.yml")).dig(:scheduler, :schedule) || {}
     reminder_cron = schedule.dig("reminder_notification_job", "cron")

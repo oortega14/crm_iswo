@@ -103,7 +103,10 @@ function DashboardPage() {
     <AppPageShell contentClassName="space-y-10">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <PageHeader title={<WelcomeGreeting name={user?.name} />} belowTitle={<DashboardDateLine />}>
+      <PageHeader
+        title={user?.role === 'consultant' ? <WelcomeGreeting name={user.name} /> : 'Panel principal'}
+        belowTitle={<DashboardDateLine />}
+      >
         <Button variant="outline" size="sm" className="gap-2" asChild>
           <Link to="/opportunities" search={{ view: 'kanban' }}>
             <LayoutGrid className="size-4" />

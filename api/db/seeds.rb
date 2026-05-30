@@ -454,6 +454,230 @@ OPPORTUNITY_TEMPLATES = {
   ]
 }.freeze
 
+LANDING_TEMPLATES = {
+  "iswo" => [
+    {
+      title:           "Diagnóstico ISO Gratuito",
+      slug:            "diagnostico-iso-gratuito",
+      seo_title:       "Diagnóstico ISO Gratuito — ISWO",
+      seo_description: "Agenda tu diagnóstico ISO sin costo. Evaluamos el estado de tu sistema de gestión.",
+      published:       true,
+      view_count:      142,
+      lead_count:      18,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#0F172A;font-size:2rem;margin-bottom:16px">Diagnóstico ISO <span style="color:#2563EB">Gratuito</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Evaluamos el estado de tu sistema de gestión sin costo. Cupos limitados.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Tu nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="email" name="email" placeholder="Correo empresarial" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="WhatsApp de contacto" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem"/>
+            <button type="submit" style="background:#2563EB;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Quiero mi diagnóstico gratis</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Certificación ISO 9001 — 2026",
+      slug:            "iso-9001-2026",
+      seo_title:       "Certifícate en ISO 9001 con ISWO",
+      seo_description: "Acompaña tu proceso de certificación ISO 9001:2015 con expertos ISWO.",
+      published:       true,
+      view_count:      89,
+      lead_count:      11,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#0F172A;font-size:2rem;margin-bottom:16px">Certifícate en <span style="color:#2563EB">ISO 9001</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Proceso guiado de 4 meses. Más de 200 empresas certificadas con ISWO.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Nombre y empresa" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="email" name="email" placeholder="Email corporativo" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <button type="submit" style="background:#2563EB;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Solicitar información</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Webinar: ISO para PYMEs",
+      slug:            "webinar-iso-pymes",
+      seo_title:       "Webinar Gratuito ISO para PYMEs — ISWO",
+      seo_description: "Aprende cómo implementar ISO en tu PYME sin grandes inversiones.",
+      published:       false,
+      view_count:      0,
+      lead_count:      0,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#0F172A;font-size:2rem;margin-bottom:16px">Webinar Gratuito<br/><span style="color:#2563EB">ISO para PYMEs</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Jueves 12 de junio · 6:00 pm Colombia. Cupos limitados.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Tu nombre" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="email" name="email" placeholder="Email de registro" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <button type="submit" style="background:#2563EB;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Reservar mi cupo</button>
+          </form>
+        </section>
+      HTML
+    }
+  ],
+  "micasita" => [
+    {
+      title:           "Tu Casa en Medellín",
+      slug:            "tu-casa-medellin",
+      seo_title:       "Encuentra tu hogar en Medellín — Mi Casita",
+      seo_description: "Casas y apartamentos nuevos en Medellín con la asesoría de Mi Casita.",
+      published:       true,
+      view_count:      310,
+      lead_count:      42,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#1e293b;font-size:2rem;margin-bottom:16px">Encuentra tu <span style="color:#1D4ED8">hogar ideal</span><br/>en Medellín</h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Más de 500 inmuebles disponibles. Asesoría personalizada sin costo.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Tu nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="Celular / WhatsApp" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <select name="budget" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem">
+              <option value="">¿Cuánto puedes invertir?</option>
+              <option>Menos de $200M</option>
+              <option>$200M – $350M</option>
+              <option>$350M – $500M</option>
+              <option>Más de $500M</option>
+            </select>
+            <button type="submit" style="background:#1D4ED8;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Quiero ver opciones</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Simulador de Crédito Hipotecario",
+      slug:            "simulador-credito",
+      seo_title:       "Simula tu crédito hipotecario — Mi Casita",
+      seo_description: "Calcula tu cuota mensual y conoce cuánto puedes pedir para comprar vivienda.",
+      published:       true,
+      view_count:      215,
+      lead_count:      29,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#1e293b;font-size:2rem;margin-bottom:16px">Simula tu <span style="color:#1D4ED8">crédito hipotecario</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Sin compromiso. Te llamamos con las mejores opciones del mercado.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="email" name="email" placeholder="Tu correo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="WhatsApp" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem"/>
+            <button type="submit" style="background:#1D4ED8;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Ver mi simulación</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Feria Inmobiliaria Junio 2026",
+      slug:            "feria-inmobiliaria-junio",
+      seo_title:       "Feria Inmobiliaria Junio 2026 — Mi Casita",
+      seo_description: "Regístrate y accede a descuentos exclusivos en la Feria Inmobiliaria de Mi Casita.",
+      published:       false,
+      view_count:      0,
+      lead_count:      0,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#1e293b;font-size:2rem;margin-bottom:16px">Feria Inmobiliaria<br/><span style="color:#1D4ED8">Junio 2026</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">21 y 22 de junio · Centro de Convenciones. Entrada gratis pre-registrando.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="Celular" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <button type="submit" style="background:#1D4ED8;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Pre-registrarme</button>
+          </form>
+        </section>
+      HTML
+    }
+  ],
+  "libranzas" => [
+    {
+      title:           "Crédito por Libranza — Rápido y Fácil",
+      slug:            "credito-libranza",
+      seo_title:       "Crédito por Libranza sin trámites — Libranzas ISWO",
+      seo_description: "Solicita tu crédito por libranza. Aprobación en 24 horas para empleados públicos.",
+      published:       true,
+      view_count:      487,
+      lead_count:      63,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#14532d;font-size:2rem;margin-bottom:16px">Crédito por Libranza<br/><span style="color:#166534">rápido y seguro</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Aprobación en 24 horas. Para empleados públicos y privados. Sin codeudor.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="WhatsApp" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="text" name="employer" placeholder="Empresa donde trabajas" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <select name="amount" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem">
+              <option value="">¿Cuánto necesitas?</option>
+              <option>$2M – $5M</option>
+              <option>$5M – $10M</option>
+              <option>$10M – $20M</option>
+              <option>Más de $20M</option>
+            </select>
+            <button type="submit" style="background:#166534;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Solicitar ahora</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Consolida tus Deudas con Libranza",
+      slug:            "consolidacion-deudas",
+      seo_title:       "Consolida deudas con libranza — Libranzas ISWO",
+      seo_description: "Unifica todas tus deudas en una sola cuota mensual descontada de nómina.",
+      published:       true,
+      view_count:      198,
+      lead_count:      27,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#14532d;font-size:2rem;margin-bottom:16px">Consolida tus deudas<br/><span style="color:#166534">una sola cuota</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Reduce tu carga financiera. Descuento directo de nómina. Tasa preferencial.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="email" name="email" placeholder="Correo electrónico" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="Celular / WhatsApp" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <button type="submit" style="background:#166534;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Quiero consolidar</button>
+          </form>
+        </section>
+      HTML
+    },
+    {
+      title:           "Libranza para Pensionados",
+      slug:            "libranza-pensionados",
+      seo_title:       "Crédito por libranza para pensionados — Libranzas ISWO",
+      seo_description: "Accede a crédito con descuento directo de tu mesada pensional.",
+      published:       false,
+      view_count:      0,
+      lead_count:      0,
+      gjs_html: <<~HTML.strip
+        <section style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;text-align:center">
+          <h1 style="color:#14532d;font-size:2rem;margin-bottom:16px">Libranza<br/><span style="color:#166534">para Pensionados</span></h1>
+          <p style="color:#64748B;font-size:1.1rem;margin-bottom:32px">Descuento de tu mesada pensional. Sin fiadores. Proceso 100% digital.</p>
+          <form data-gjs-type="form" method="post">
+            <input type="text" name="name" placeholder="Tu nombre completo" style="width:100%;padding:12px;margin-bottom:12px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <input type="tel" name="phone" placeholder="WhatsApp" style="width:100%;padding:12px;margin-bottom:20px;border:1px solid #CBD5E1;border-radius:8px;font-size:1rem" required/>
+            <button type="submit" style="background:#166534;color:white;padding:14px 32px;border:none;border-radius:8px;font-size:1rem;cursor:pointer;width:100%">Solicitar crédito</button>
+          </form>
+        </section>
+      HTML
+    }
+  ]
+}.freeze
+
+def seed_landing_pages(tenant)
+  templates = LANDING_TEMPLATES[tenant.slug] || []
+  templates.each do |t|
+    lp = LandingPage.find_or_initialize_by(tenant: tenant, slug: t[:slug])
+    lp.assign_attributes(
+      title:           t[:title],
+      seo_title:       t[:seo_title],
+      seo_description: t[:seo_description],
+      published:       t[:published],
+      view_count:      t[:view_count],
+      lead_count:      t[:lead_count],
+      content:         { "gjs_html" => t[:gjs_html], "gjs_css" => "" }
+    )
+    lp.save!
+  end
+end
+
 def seed_demo_opportunities(tenant, contacts, pipeline, users)
   stage_list  = pipeline.pipeline_stages.order(:position).to_a
   won_stage   = stage_list.find(&:closed_won)
@@ -576,6 +800,9 @@ VERTICALS.each do |config|
 
     seed_referral_networks(tenant, users)
     puts "     Red de referidos sembrada (#{ReferralNetwork.where(tenant: tenant).count} relaciones)"
+
+    seed_landing_pages(tenant)
+    puts "     #{LandingPage.where(tenant: tenant).count} landing pages (#{LandingPage.where(tenant: tenant, published: true).count} publicadas)"
   end
 end
 
@@ -594,6 +821,7 @@ ActsAsTenant.without_tenant do
   puts "Oportunidades: #{Opportunity.count}"
   puts "Recordatorios: #{Reminder.count}"
   puts "Actividad:     #{OpportunityLog.count} logs"
+  puts "Landings:      #{LandingPage.count} (#{LandingPage.where(published: true).count} publicadas)"
 end
 puts "\nCredenciales de prueba (password: Password123!):"
 puts "  admin@iswo.local       → ISWO"

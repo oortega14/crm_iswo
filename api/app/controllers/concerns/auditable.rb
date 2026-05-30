@@ -8,7 +8,6 @@
 # de solo lectura / ya auditadas manualmente.
 #
 # Uso por defecto (ivar == controller_name.singularize):
-#   ContactsController  → @contact     ✅
 #   UsersController     → @user        ✅
 #   LeadSourcesController → @lead_source ✅
 #
@@ -33,12 +32,6 @@ module Auditable
     opportunity_logs
     landing_form_submissions
     duplicate_flags
-  ].freeze
-
-  SENSITIVE_KEYS = %w[
-    email phone phone_e164 phone_normalized
-    password encrypted_password reset_password_token
-    credentials credentials_ciphertext
   ].freeze
 
   included do
@@ -72,19 +65,14 @@ module Auditable
     record = auditable_record
     return unless record.is_a?(ApplicationRecord)
 
-    AuditEvent.create!(
-      tenant:      current_tenant,
-      user:        current_user,
-      action:      action_name,
-      entity_type: record.class.name,
-      entity_id:   record.id,
-      ip_address:  request.remote_ip,
-      user_agent:  request.user_agent,
-      metadata:    build_audit_metadata(record)
-    )
-  rescue StandardError => e
-    Rails.logger.warn(
-      "[Auditable] #{action_name} #{auditable_ivar_name}##{auditable_record&.id}: #{e.message}"
+    AuditLogger.record_entity!(
+      tenant:     current_tenant,
+      user:       current_user,
+      action:     action_name,
+      entity:     record,
+      metadata:   build_audit_metadata(record),
+      ip_address: request.remote_ip,
+      user_agent: request.user_agent
     )
   end
 
@@ -93,12 +81,8 @@ module Auditable
     when "create"
       { name: audit_display_name(record) }
     when "update"
-      changes = (record.previous_changes || {})
-                  .except("updated_at", "created_at")
-                  .each_with_object({}) do |(k, vals), h|
-                    h[k] = SENSITIVE_KEYS.include?(k.to_s) ? %w[[REDACTED] [REDACTED]] : vals
-                  end
-      { changes: changes.presence }.compact
+      changes = (record.previous_changes || {}).except("updated_at", "created_at")
+      { changes: LogSanitizer.redact(changes).presence }.compact
     when "destroy"
       { name: audit_display_name(record) }
     else

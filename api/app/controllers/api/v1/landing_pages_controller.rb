@@ -27,6 +27,7 @@ module Api
         authorize LandingPage
         landing = current_tenant.landing_pages.new(permitted)
         if landing.save
+          @landing = landing
           render_created(landing, with: LandingPageSerializer)
         else
           render_unprocessable(landing)

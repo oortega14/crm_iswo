@@ -46,6 +46,7 @@ module Api
           user:   current_user
         ))
         if reminder.save
+          @reminder = reminder
           render_created(reminder, with: ReminderSerializer)
         else
           render_unprocessable(reminder)

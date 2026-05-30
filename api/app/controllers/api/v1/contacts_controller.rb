@@ -197,34 +197,32 @@ module Api
       end
 
       def audit_contact!(action, contact, extra = {})
-        AuditEvent.create!(
-          tenant:      current_tenant,
-          user:        current_user,
-          action:      action,
-          entity_type: "Contact",
-          entity_id:   contact.id,
-          metadata:    { ip: request.remote_ip, ua: request.user_agent }.merge(extra)
+        AuditLogger.record_entity!(
+          tenant:       current_tenant,
+          user:         current_user,
+          action:       action,
+          entity:       contact,
+          metadata:     { name: contact.display_name }.merge(extra),
+          ip_address:   request.remote_ip,
+          user_agent:   request.user_agent
         )
-      rescue StandardError => e
-        Rails.logger.warn("[AuditEvent] No se pudo registrar #{action}: #{e.message}")
       end
 
       def audit_contact_import!(result, filename)
-        AuditEvent.create!(
-          tenant:      current_tenant,
-          user:        current_user,
-          action:      "contact.import",
-          entity_type: "Contact",
-          metadata:    {
-            ip:            request.remote_ip,
-            ua:            request.user_agent,
+        AuditLogger.record!(
+          tenant:       current_tenant,
+          user:         current_user,
+          action:       "contact.import",
+          entity_type:  "Contact",
+          metadata:     {
             filename:      filename,
             created_count: result.created_count,
-            skipped_count: result.skipped_count
-          }
+            skipped_count: result.skipped_count,
+            error_count:   result.errors.size
+          },
+          ip_address:   request.remote_ip,
+          user_agent:   request.user_agent
         )
-      rescue StandardError => e
-        Rails.logger.warn("[AuditEvent] No se pudo registrar contact.import: #{e.message}")
       end
 
       def contact_params

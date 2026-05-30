@@ -18,7 +18,7 @@ module ExportAuditable
       ip:         request.remote_ip
     }.compact
 
-    AuditEvent.create!(
+    AuditLogger.record!(
       tenant:      current_tenant,
       user:        current_user,
       action:      "export",
@@ -26,7 +26,7 @@ module ExportAuditable
       entity_id:   nil,
       metadata:    meta,
       ip_address:  request.remote_ip,
-      user_agent:  request.user_agent.to_s.truncate(255)
+      user_agent:  request.user_agent
     )
 
     OpportunityLog.create!(
@@ -36,7 +36,7 @@ module ExportAuditable
       action:       "export",
       ip_address:   request.remote_ip,
       user_agent:   request.user_agent,
-      changes_data: meta
+      changes_data: LogSanitizer.redact(meta)
     )
   rescue StandardError => e
     Rails.logger.warn("[ExportAuditable] #{resource}/#{format}: #{e.message}")

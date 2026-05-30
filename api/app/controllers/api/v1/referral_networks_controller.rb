@@ -20,6 +20,7 @@ module Api
         authorize ReferralNetwork
         edge = current_tenant.referral_networks.new(edge_params)
         if edge.save
+          @edge = edge
           render_created(edge, with: ReferralNetworkSerializer)
         else
           render_unprocessable(edge)

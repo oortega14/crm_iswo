@@ -252,6 +252,7 @@ function LandingForm({
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<FormValues>({ resolver: zodResolver(schema) })
 
@@ -262,7 +263,10 @@ function LandingForm({
         ...utmParams,
       }, { headers: tenantHeaders })
     },
-    onSuccess,
+    onSuccess: () => {
+      reset()
+      onSuccess()
+    },
   })
 
   return (
@@ -272,7 +276,7 @@ function LandingForm({
         Un asesor te contactará a la brevedad.
       </p>
 
-      <form onSubmit={handleSubmit((data) => submitMutation.mutate(data))} className="space-y-4">
+      <form onSubmit={handleSubmit((data) => submitMutation.mutate(data))} className="space-y-4" autoComplete="off">
         {fields.map((field) => (
           <div key={field.name} className="space-y-1.5">
             <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">

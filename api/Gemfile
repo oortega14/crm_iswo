@@ -68,6 +68,7 @@ gem "ransack", "~> 4.2"             # Filtros seguros
 gem "caxlsx_rails", "~> 0.6"
 gem "csv"
 gem "roo", "~> 3.0"
+gem "aws-sdk-s3", "~> 1.0", require: false # Exports::Storage (prod: S3 privado + SSE)
 
 # ============================================================================
 # HTTP client para integraciones (Meta, Google, Twilio)

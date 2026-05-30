@@ -10,8 +10,8 @@
 #   1. Marca el export como status="running" (enum Export).
 #   2. Construye el scope respetando filters (Ransack-friendly hash).
 #   3. Genera archivo en /tmp/exports/<tenant>/<export_id>.<format>.
-#   4. Sube a S3 (si AWS_S3_BUCKET está seteado) o copia a public/exports/.
-#   5. Setea file_url, expires_at = 7 días, status="succeeded".
+#   4. Persiste vía Exports::Storage (S3 privado+SSE o disco cifrado Lockbox).
+#   5. Setea file_url (referencia interna), expires_at = 7 días, status="succeeded".
 #   6. Notifica al usuario (in_app o email).
 # ============================================================================
 class ExportGenerationJob < ApplicationJob
@@ -32,7 +32,7 @@ class ExportGenerationJob < ApplicationJob
                         else raise "Formato no soportado: #{export.format}"
                         end
 
-      url = upload_or_persist(export, path)
+      url = Exports::Storage.persist!(export, path)
 
       export.update!(
         status:      "succeeded",
@@ -103,24 +103,5 @@ class ExportGenerationJob < ApplicationJob
     dir = Rails.root.join("tmp", "exports", export.tenant_id.to_s)
     FileUtils.mkdir_p(dir)
     dir.join("#{export.id}.#{ext}").to_s
-  end
-
-  # S3: sube con ACL privada y devuelve presigned URL.
-  # Local: mueve a storage/exports/ (fuera de public/) y devuelve la URL
-  #        del endpoint autenticado /api/v1/exports/:id/download.
-  def upload_or_persist(export, path)
-    if ENV["AWS_S3_BUCKET"].present? && defined?(Aws::S3::Resource)
-      key    = "exports/#{export.tenant_id}/#{export.id}.#{export.format}"
-      bucket = Aws::S3::Resource.new(region: ENV.fetch("AWS_REGION", "us-east-1"))
-                                 .bucket(ENV["AWS_S3_BUCKET"])
-      bucket.object(key).upload_file(path, acl: "private")
-      bucket.object(key).presigned_url(:get, expires_in: EXPIRY.to_i)
-    else
-      storage_dir = Rails.root.join("storage", "exports", export.tenant_id.to_s)
-      FileUtils.mkdir_p(storage_dir)
-      dest = storage_dir.join("#{export.id}.#{export.format}")
-      FileUtils.cp(path, dest)
-      "#{ENV.fetch('APP_HOST', 'http://localhost:3000')}/api/v1/exports/#{export.id}/download"
-    end
   end
 end

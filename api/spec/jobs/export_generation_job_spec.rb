@@ -23,10 +23,13 @@ RSpec.describe ExportGenerationJob, type: :job do
 
         export.reload
         expect(export.status).to eq("succeeded")
-        expect(export.file_url).to be_present
+        expect(export.file_url).to eq(Exports::Storage::LOCAL_MARKER)
+        expect(Exports::Storage.encrypted_file?(export)).to be true
         expect(export.file_size).to be > 0
         expect(export.finished_at).to be_present
         expect(export.expires_at).to be > 6.days.from_now
+      ensure
+        Exports::Storage.delete!(export) if export.persisted?
       end
 
       it "encola ExportMailer.ready si el user tiene email" do

@@ -103,7 +103,7 @@ function DashboardPage() {
     <AppPageShell contentClassName="space-y-10">
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <PageHeader title="Panel principal" belowTitle={<DashboardDateLine />}>
+      <PageHeader title={<WelcomeGreeting name={user?.name} />} belowTitle={<DashboardDateLine />}>
         <Button variant="outline" size="sm" className="gap-2" asChild>
           <Link to="/opportunities" search={{ view: 'kanban' }}>
             <LayoutGrid className="size-4" />
@@ -194,5 +194,17 @@ function DashboardPage() {
 
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
     </AppPageShell>
+  )
+}
+
+function WelcomeGreeting({ name }: { name?: string }) {
+  const hour = new Date().getHours()
+  const greeting =
+    hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches'
+  const firstName = name?.split(' ')[0] ?? ''
+  return (
+    <span>
+      {greeting}{firstName ? ', ' : ''}<span className="text-primary">{firstName}</span>
+    </span>
   )
 }

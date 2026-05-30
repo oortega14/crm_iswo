@@ -45,3 +45,4 @@ class WhatsappDeliveryJob < ApplicationJob
       reminder.mark_failed!(msg.error_message.presence || "whatsapp_delivery_failed")
     end
   end
+end

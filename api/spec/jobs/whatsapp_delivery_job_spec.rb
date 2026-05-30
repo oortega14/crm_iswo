@@ -51,5 +51,37 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
       handler = described_class.rescue_handlers.find { |(klass, _)| klass == "Faraday::Error" }
       expect(handler).to be_present
     end
+
+    context "con reminder_id (recordatorio WhatsApp)" do
+      let(:reminder) do
+        opp = create(:opportunity, tenant: tenant)
+        create(:reminder, :whatsapp, tenant: tenant, opportunity: opp)
+      end
+
+      it "marca el reminder como sent cuando el mensaje se entrega" do
+        sender = instance_double(WhatsApp::MessageSender)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+        allow(sender).to receive(:deliver) do
+          message.update!(status: "sent", sent_at: Time.current)
+          true
+        end
+
+        described_class.new.perform(message.id, reminder.id)
+        expect(reminder.reload.status).to eq("sent")
+      end
+
+      it "marca el reminder como failed cuando el mensaje falla" do
+        sender = instance_double(WhatsApp::MessageSender)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+        allow(sender).to receive(:deliver) do
+          message.update_columns(status: "failed", error_message: "provider down")
+          false
+        end
+
+        described_class.new.perform(message.id, reminder.id)
+        expect(reminder.reload.status).to eq("failed")
+        expect(reminder.last_error).to include("provider down")
+      end
+    end
   end
 end

@@ -140,3 +140,30 @@ exige *vistas admin*, no *Slim* como tecnología obligatoria.
 
 **Conformidad RFC:** desviación **documentada** — actualizar RFC-001 §5 en una
 revisión de producto si se requiere cumplimiento literal del stack tabulado.
+
+---
+
+### Recordatorios — entrega antes de marcar `sent` (RFC §6.4)
+
+`ReminderNotificationJob` solo marca `status=sent` **después** de confirmar entrega:
+
+| Canal | Comportamiento |
+|-------|----------------|
+| **email** | `ReminderMailer#deliver_now` — si falla, `mark_failed!` |
+| **whatsapp** | `WhatsappDeliveryJob` recibe `reminder_id` y marca sent/failed según el estado del `WhatsappMessage` |
+| **in_app** | Crea `Notification` primero; si falla la creación, no marca sent |
+
+---
+
+### Notificaciones in-app (RFC §6.4)
+
+El RFC menciona push in-app; la implementación MVP usa **polling** en
+`NotificationDropdown` (15s + `refetchOnWindowFocus`). No hay WebSocket/ActionCable
+aún — desviación aceptada para MVP; latencia máxima ~15s visible para el usuario.
+
+---
+
+### Enmascaramiento en logs (ISO A.8.11)
+
+`LogSanitizer.redact` enmascara email, teléfonos y credenciales en
+`opportunity_logs.changes_data`. `Auditable` ya redacta updates en `audit_events`.

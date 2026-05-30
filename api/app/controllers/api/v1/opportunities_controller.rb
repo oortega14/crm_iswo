@@ -413,7 +413,7 @@ module Api
           tenant:       current_tenant,
           user:         current_user,
           action:       action,
-          changes_data: changes_data,
+          changes_data: LogSanitizer.redact(changes_data),
           ip_address:   request.remote_ip,
           user_agent:   request.user_agent
         )

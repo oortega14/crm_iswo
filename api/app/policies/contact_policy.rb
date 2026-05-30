@@ -14,6 +14,7 @@ class ContactPolicy < ApplicationPolicy
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner_or_assigned?
   def destroy?          = admin?
+  def bulk_destroy?     = admin?
   def check_duplicates? = admin? || manager? || consultant?
   def export?           = manager_or_admin?
 

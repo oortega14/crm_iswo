@@ -116,10 +116,23 @@ function mapBantSlidersFromApi(a: Record<string, unknown>): {
   const raw = a.bant_data
   const bd =
     raw != null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+
+  // BantScorer escribe breakdown: { budget: 60, authority: 50, ... }
+  // El input manual escribe { budget: { score: 60 }, ... }
+  // Leemos ambos formatos; el manual tiene precedencia.
+  const breakdown =
+    bd.breakdown != null && typeof bd.breakdown === 'object' && !Array.isArray(bd.breakdown)
+      ? (bd.breakdown as Record<string, unknown>)
+      : {}
+
   const pick = (key: string) => {
     const block = bd[key]
     if (block != null && typeof block === 'object' && !Array.isArray(block)) {
       return bantDimScore01ToSlider((block as Record<string, unknown>).score)
+    }
+    // Fallback: formato breakdown del recálculo automático
+    if (typeof breakdown[key] === 'number') {
+      return bantDimScore01ToSlider(breakdown[key])
     }
     return 0
   }

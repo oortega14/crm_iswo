@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 
 type PageHeaderProps = {
-  title: string
+  title: React.ReactNode
   description?: string
   /** Contenido entre el título y la descripción (p. ej. fecha en el dashboard) */
   belowTitle?: React.ReactNode

@@ -4,13 +4,13 @@
 # ContactPolicy
 # ============================================================================
 # - admin/manager: ven y editan todos los contactos del tenant.
-# - consultant: ve los que tiene asignados (a través de oportunidades suyas
-#   o como owner directo) + puede crear nuevos.
+# - consultant: ve los propios, los de sus opps y los de opps de su red (solo lectura
+#   en red); puede crear nuevos contactos.
 # - viewer: solo lectura sobre todos.
 # ============================================================================
 class ContactPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned?)
+  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned? || network_visible?)
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner_or_assigned?
   def destroy?          = admin?
@@ -25,8 +25,8 @@ class ContactPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        # Propios o contacto de alguna oportunidad suya (sin DISTINCT+JOIN: evita errores SQL en PG con ORDER).
-        opp_contact_ids = Opportunity.where(owner_user_id: user.id).where.not(contact_id: nil).select(:contact_id).distinct
+        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user)
+        opp_contact_ids = Opportunity.where(owner_user_id: owner_ids).where.not(contact_id: nil).select(:contact_id).distinct
         scope.where(owner_user_id: user.id).or(scope.where(id: opp_contact_ids))
       else
         scope.none
@@ -41,5 +41,9 @@ class ContactPolicy < ApplicationPolicy
 
     record.owner_user_id == user&.id ||
       record.opportunities.where(owner_user_id: user&.id).exists?
+  end
+
+  def network_visible?
+    ConsultantNetworkAccess.can_view_contact?(user, record)
   end
 end

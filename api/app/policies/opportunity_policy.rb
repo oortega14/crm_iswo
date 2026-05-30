@@ -4,14 +4,14 @@
 # OpportunityPolicy
 # ============================================================================
 # - admin/manager: ven y editan todas las oportunidades del tenant.
-# - consultant: ve y edita las suyas (owner_user_id == user.id).
+# - consultant: ve y edita las suyas; ve (solo lectura) las de su red de referidos.
 # - viewer: solo lectura sobre todas.
 #
 # Reasignar (assign) y mergear son acciones sensibles → solo admin/manager.
 # ============================================================================
 class OpportunityPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff? && (manager_or_admin? || viewer? || owner?)
+  def show?             = staff? && (manager_or_admin? || viewer? || owner? || network_visible?)
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner?
   def destroy?          = admin?
@@ -30,11 +30,7 @@ class OpportunityPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        # RFC F2: consultor ve sus oportunidades + las de su red de referidos
-        depth = user.tenant&.settings&.dig("network_depth").to_i
-        depth = 3 if depth < 1
-        network_ids = user.network_user_ids(depth: depth)
-        scope.where(owner_user_id: [user.id] + network_ids)
+        scope.where(owner_user_id: ConsultantNetworkAccess.visible_owner_ids(user))
       else
         scope.none
       end
@@ -45,5 +41,9 @@ class OpportunityPolicy < ApplicationPolicy
 
   def owner?
     record.respond_to?(:owner_user_id) && record.owner_user_id == user&.id
+  end
+
+  def network_visible?
+    ConsultantNetworkAccess.can_view_opportunity?(user, record)
   end
 end

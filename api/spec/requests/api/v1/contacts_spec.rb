@@ -19,7 +19,7 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(json["error"]).to eq("tenant_missing")
     end
 
-    it "401 si el JWT corresponde a otro tenant (user no existe en ese tenant)", :without_tenant do
+    it "403 si el JWT corresponde a otro tenant (tenant_mismatch)", :without_tenant do
       home_tenant = create(:tenant, slug: "home")
       other_tenant = create(:tenant, slug: "other")
       user = ActsAsTenant.with_tenant(home_tenant) { create(:user, :manager, tenant: home_tenant) }
@@ -29,9 +29,8 @@ RSpec.describe "Api::V1::Contacts", type: :request do
             "Authorization" => "Bearer #{jwt_for(user)}",
             "X-Tenant-Slug" => other_tenant.slug
           }
-      # Con acts_as_tenant strict mode, el user de home_tenant no aparece
-      # en la query de other_tenant → Devise devuelve 401, no 403.
-      expect(response).to have_http_status(:unauthorized)
+      expect(response).to have_http_status(:forbidden)
+      expect(json["error"]).to eq("tenant_mismatch")
     end
   end
 

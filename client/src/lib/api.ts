@@ -153,6 +153,9 @@ export function formatRailsError(err: unknown, fallback = 'Error en la petición
       if (slug === 'tenant_not_found' || slug === 'tenant_missing' || slug === 'tenant_inactive') {
         return msg || 'No se pudo identificar la empresa. Revisa el identificador o contacta al administrador.'
       }
+      if (slug === 'tenant_mismatch') {
+        return msg || 'Tu sesión no corresponde a esta empresa. Cierra sesión e inicia de nuevo con el tenant correcto.'
+      }
       if (slug === 'connection_failed') {
         return 'La prueba de conexión falló. Revisa las credenciales o variables del servidor (p. ej. Google OAuth).'
       }

@@ -65,16 +65,17 @@ RSpec.describe "Api::V1::Sessions", type: :request do
   end
 
   describe "DELETE /api/v1/sessions (logout)" do
-    it "revoca el token y responde 204" do
-      # Devise::SessionsController#destroy invoca callbacks de Warden que
-      # corren en middleware (antes del scope_to_tenant around_action) y
-      # requieren el tenant en thread-local. Con acts_as_tenant 1.0.1 en modo
-      # require_tenant, el token de JwtDenylist se revoca correctamente pero
-      # la prueba de integración no puede establecer el contexto lo
-      # suficientemente temprano en el stack de Rack.
-      # La funcionalidad está cubierta por: si el token revocado se usa en
-      # una request posterior, Devise devuelve 401.
-      skip "interacción Devise sign_out / acts_as_tenant require_tenant en Rack::Test"
+    it "revoca el access token y responde 204" do
+      token = jwt_for(user)
+      headers = tenant_headers(tenant).merge(
+        "Authorization" => "Bearer #{token}"
+      )
+
+      delete "/api/v1/sessions", headers: headers
+      expect(response).to have_http_status(:no_content)
+
+      get "/api/v1/me", headers: headers
+      expect(response).to have_http_status(:unauthorized)
     end
   end
 

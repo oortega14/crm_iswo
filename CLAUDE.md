@@ -10,6 +10,8 @@
 | `/diagnostico` | Verificar que Rails, Vite, PostgreSQL, Redis y Sidekiq estén funcionando |
 | `/nuevo-tenant` | Crear y configurar un tenant nuevo con pipeline y usuarios según su vertical |
 
+**Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Sidekiq, integraciones).
+
 Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
 
 ---

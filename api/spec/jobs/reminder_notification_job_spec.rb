@@ -50,7 +50,8 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=in_app" do
         let(:reminder) { reminder_in_app }
 
-        it "marca como sent sin tocar mailers" do
+        it "crea Notification y marca como sent" do
+          allow(Notification).to receive(:create!)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end

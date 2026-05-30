@@ -21,6 +21,7 @@ module Api
         authorize @pipeline, :update?
         stage = @pipeline.pipeline_stages.new(stage_params.merge(tenant: current_tenant))
         if stage.save
+          @stage = stage
           render_created(stage, with: PipelineStageSerializer)
         else
           render_unprocessable(stage)

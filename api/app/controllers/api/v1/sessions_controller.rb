@@ -116,15 +116,15 @@ module Api
         return unless t
 
         ActsAsTenant.with_tenant(t) do
-          AuditEvent.create!(
-            tenant:      t,
-            user:        user,
-            action:      action,
-            entity_type: "User",
-            entity_id:   user.id,
-            metadata:    {},
-            ip_address:  request.remote_ip,
-            user_agent:  request.user_agent.to_s.truncate(255)
+          AuditLogger.record!(
+            tenant:       t,
+            user:         user,
+            action:       action,
+            entity_type:  "User",
+            entity_id:    user.id,
+            metadata:     {},
+            ip_address:   request.remote_ip,
+            user_agent:   request.user_agent
           )
         end
       rescue StandardError => e

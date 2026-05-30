@@ -68,6 +68,11 @@ Los admins pueden gestionar campos desde **Settings → Campos** sin deploy.
 
 ### Audit log 100% CRUD (RFC §9)
 
+`app/services/audit_logger.rb` centraliza la persistencia en `AuditEvent` con
+`LogSanitizer` aplicado a toda la metadata. Los controladores y concerns llaman
+a `AuditLogger.record!` / `record_entity!` en lugar de `AuditEvent.create!`
+directo.
+
 `app/controllers/concerns/auditable.rb` incluido en `BaseController`. Registra
 `create`, `update` y `destroy` automáticamente en `AuditEvent` para todas las
 entidades, sin tocar cada controlador individualmente.
@@ -76,11 +81,13 @@ entidades, sin tocar cada controlador individualmente.
 - `after_action` solo dispara en respuestas 2xx — los errores no se auditan.
 - Detecta el record por convención (`controller_name.singularize` → `@contact`,
   `@user`, `@lead_source`, etc.).
+- Tras un `create` exitoso el ivar debe estar asignado (`@reminder = reminder`)
+  antes del render — si no, el `after_action` no encuentra el record.
 - Controladores con ivar no convencional declaran `auditable_resource :nombre`:
   `PipelineStages→:stage`, `LandingPages→:landing`, `BantCriteria→:criterion`,
   `ReferralNetworks→:edge`, `TenantFieldDefinitions→:definition`.
 - Campos sensibles (`email`, `phone`, `credentials`, etc.) se redactan como
-  `[REDACTED]` en el diff de updates.
+  `[REDACTED]` en el diff de updates (clave completa, vía `LogSanitizer`).
 - Falla silenciosamente (`rescue StandardError` + `logger.warn`) — nunca tumba
   la petición HTTP.
 
@@ -166,4 +173,5 @@ aún — desviación aceptada para MVP; latencia máxima ~15s visible para el us
 ### Enmascaramiento en logs (ISO A.8.11)
 
 `LogSanitizer.redact` enmascara email, teléfonos y credenciales en
-`opportunity_logs.changes_data`. `Auditable` ya redacta updates en `audit_events`.
+`opportunity_logs.changes_data`. `Auditable` y `AuditLogger` redactan metadata
+sensible en `audit_events`.

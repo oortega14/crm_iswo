@@ -130,7 +130,32 @@ RSpec.describe "Auditable concern", type: :request do
       expect(response).to have_http_status(:ok)
       event = AuditEvent.where(entity_type: "User", action: "update").last
       expect(event).to be_present
-      expect(event.metadata.dig("changes", "phone")).to eq(%w[[REDACTED] [REDACTED]])
+      expect(event.metadata.dig("changes", "phone")).to eq("[REDACTED]")
+    end
+  end
+
+  describe "ivar no convencional (reminders)" do
+    let(:opportunity) { create(:opportunity, tenant: tenant, owner_user: admin) }
+
+    it "registra AuditEvent tras POST create cuando @reminder está asignado" do
+      payload = {
+        reminder: {
+          remind_at: 2.days.from_now.iso8601,
+          channel:   "in_app",
+          subject:   "Auditable",
+          message:   "Test"
+        }
+      }.to_json
+
+      expect {
+        post "/api/v1/opportunities/#{opportunity.id}/reminders",
+             params:  payload,
+             headers: auth_headers(admin)
+      }.to change(AuditEvent, :count).by(1)
+
+      event = AuditEvent.last
+      expect(event.action).to      eq("create")
+      expect(event.entity_type).to eq("Reminder")
     end
   end
 end

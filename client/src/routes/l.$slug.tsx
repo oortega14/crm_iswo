@@ -88,14 +88,18 @@ function buildSchema(fields: FieldConfig[]) {
   const shape: Record<string, z.ZodTypeAny> = {}
   for (const f of fields) {
     if (!f.enabled) continue
-    let rule: z.ZodString = z.string()
-    if (f.type === 'email') rule = rule.email('Correo inválido')
     if (f.required) {
-      rule = rule.min(1, `${f.label} es obligatorio`)
+      shape[f.name] =
+        f.type === 'email'
+          ? z.string().email('Correo inválido').min(1, `${f.label} es obligatorio`)
+          : z.string().min(1, `${f.label} es obligatorio`)
     } else {
-      rule = rule.optional() as unknown as z.ZodString
+      // Campos opcionales: admiten vacío o valor válido
+      shape[f.name] =
+        f.type === 'email'
+          ? z.string().email('Correo inválido').or(z.literal(''))
+          : z.string().optional().default('')
     }
-    shape[f.name] = rule
   }
   return z.object(shape)
 }

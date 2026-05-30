@@ -10,6 +10,7 @@ module Api
 
       # GET /api/v1/users
       def index
+        authorize User, :index?
         scope = policy_scope(User).kept.order(:name, :email)
         scope = scope.where(role: params[:role])     if params[:role].present?
         scope = scope.where(active: cast_bool(params[:active])) if params[:active].present?

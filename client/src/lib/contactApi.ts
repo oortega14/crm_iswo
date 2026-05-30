@@ -132,6 +132,11 @@ export async function deleteContact(id: string): Promise<void> {
   await api.delete(`/contacts/${id}`)
 }
 
+export async function bulkDeleteContacts(ids: string[]): Promise<{ deleted: number }> {
+  const response = await api.delete('/contacts/bulk_destroy', { data: { ids } })
+  return (response.data as { data: { deleted: number } }).data
+}
+
 export async function assignContactOwner(contactId: string, ownerUserId: string): Promise<void> {
   await api.patch(`/contacts/${contactId}`, {
     contact: { owner_user_id: ownerUserId },

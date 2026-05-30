@@ -87,12 +87,13 @@ Rails.application.routes.draw do
       # ---- Contactos ---------------------------------------------------------
       resources :contacts do
         collection do
-          get  :check_duplicates      # ?phone=...&email=...
-          get  :import_template       # plantilla CSV
-          post :import                # multipart CSV
-          get  "export.csv",  action: :export_download, defaults: { file_format: "csv" }
-          get  "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
-          post :export                # encola ExportGenerationJob
+          get    :check_duplicates      # ?phone=...&email=...
+          get    :import_template       # plantilla CSV
+          post   :import                # multipart CSV
+          get    "export.csv",  action: :export_download, defaults: { file_format: "csv" }
+          get    "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
+          post   :export                # encola ExportGenerationJob
+          delete :bulk_destroy          # { ids: [...] }
         end
       end
 

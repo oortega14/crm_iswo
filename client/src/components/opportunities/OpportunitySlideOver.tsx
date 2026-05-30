@@ -418,6 +418,11 @@ export function OpportunitySlideOver({
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {opportunity.owner?.name && (
+                  <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[80px]">
+                    {opportunity.owner.name.split(' ')[0]}
+                  </span>
+                )}
                 <Avatar className="size-8">
                   <AvatarImage src={opportunity.owner?.avatar_url} />
                   <AvatarFallback className="text-xs">

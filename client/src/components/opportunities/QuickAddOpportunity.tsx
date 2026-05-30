@@ -26,7 +26,7 @@ import { Spinner } from '@/components/ui/spinner'
 import type { LeadSource } from '@/types'
 
 const opportunitySchema = z.object({
-  contact_name: z.string().optional().default(''),
+  contact_name: z.string().min(1, 'El nombre es requerido').default(''),
   contact_email: z.string().email('Correo inválido').optional().or(z.literal('')),
   contact_phone: z.string().min(7, 'Teléfono inválido').optional().or(z.literal('')),
   company_name: z.string().optional(),
@@ -138,6 +138,13 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       }
     }
   }, [defaultPipeline, setValue])
+
+  // Cuando hay contacto preseleccionado, contact_name se rellena para que pase la validación
+  useEffect(() => {
+    if (prefilledContact) {
+      setValue('contact_name', prefilledContact.name)
+    }
+  }, [prefilledContact, setValue])
 
   const selectedPipelineId = watch('pipeline_id')
   const selectedPipeline = pipelines?.find((p) => p.id === selectedPipelineId)

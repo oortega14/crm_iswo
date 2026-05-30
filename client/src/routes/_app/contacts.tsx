@@ -17,7 +17,9 @@ import {
   Target,
   RefreshCw,
   Filter,
+  Trash2,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -61,6 +63,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
 import {
+  bulkDeleteContacts,
   contactListErrorMessage,
   deleteContact,
   fetchContactsList,
@@ -111,6 +114,8 @@ function ContactsPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactRow | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -233,6 +238,49 @@ function ContactsPage() {
     setConfirmDeleteContact(contact)
   }
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => bulkDeleteContacts(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      toast.success(`${result.deleted} contacto(s) eliminado(s)`)
+      setSelectedIds(new Set())
+      setConfirmBulkDelete(false)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudieron eliminar los contactos'))
+    },
+  })
+
+  const currentContacts = contactsData?.contacts ?? []
+  const allOnPageSelected =
+    currentContacts.length > 0 && currentContacts.every((c) => selectedIds.has(c.id))
+  const someOnPageSelected = currentContacts.some((c) => selectedIds.has(c.id))
+
+  const toggleSelectAll = () => {
+    if (allOnPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        currentContacts.forEach((c) => next.delete(c.id))
+        return next
+      })
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        currentContacts.forEach((c) => next.add(c.id))
+        return next
+      })
+    }
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
 
   const activeKind = activeTab === 'companies' ? 'company' : 'person'
 
@@ -334,6 +382,31 @@ function ContactsPage() {
         </div>
 
         <TabsContent value="contacts" className="mt-4">
+          {/* Barra de acción masiva */}
+          {selectedIds.size > 0 && canDeleteContacts && (
+            <div className="mb-2 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2">
+              <span className="text-sm font-medium">
+                {selectedIds.size} contacto(s) seleccionado(s)
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="ml-auto gap-1.5"
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                <Trash2 className="size-3.5" />
+                Eliminar seleccionados
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Cancelar
+              </Button>
+            </div>
+          )}
+
           <Card>
             <CardContent className="p-0">
               {contactsError ? (
@@ -352,6 +425,16 @@ function ContactsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {canDeleteContacts && (
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={allOnPageSelected}
+                              data-state={someOnPageSelected && !allOnPageSelected ? 'indeterminate' : undefined}
+                              onCheckedChange={toggleSelectAll}
+                              aria-label="Seleccionar todos"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Nombre</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Telefono</TableHead>
@@ -364,11 +447,20 @@ function ContactsPage() {
                     </TableHeader>
                     <TableBody>
                       {contactsData?.contacts.map((contact) => (
-                        <TableRow 
-                          key={contact.id} 
-                          className="cursor-pointer"
+                        <TableRow
+                          key={contact.id}
+                          className={selectedIds.has(contact.id) ? 'bg-muted/40 cursor-pointer' : 'cursor-pointer'}
                           onClick={() => handleContactClick(contact)}
                         >
+                          {canDeleteContacts && (
+                            <TableCell onClick={(e) => { e.stopPropagation(); toggleSelect(contact.id) }}>
+                              <Checkbox
+                                checked={selectedIds.has(contact.id)}
+                                onCheckedChange={() => toggleSelect(contact.id)}
+                                aria-label={`Seleccionar ${contact.fullName}`}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar className="h-8 w-8">
@@ -685,6 +777,29 @@ function ContactsPage() {
       />
 
       <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+
+      <AlertDialog
+        open={confirmBulkDelete}
+        onOpenChange={(o) => { if (!o) setConfirmBulkDelete(false) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar {selectedIds.size} contacto(s)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán también las oportunidades vinculadas a estos contactos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => bulkDeleteMutation.mutate()}
+            >
+              Eliminar {selectedIds.size} contacto(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={!!confirmDeleteContact}

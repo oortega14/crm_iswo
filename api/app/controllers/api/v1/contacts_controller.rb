@@ -65,6 +65,19 @@ module Api
         render_no_content
       end
 
+      # DELETE /api/v1/contacts/bulk_destroy  — { ids: ["1","2",...] }
+      def bulk_destroy
+        authorize Contact, :destroy?
+        ids = Array(params[:ids]).map(&:to_i).uniq.reject(&:zero?)
+        return render json: { error: "bad_request", message: "ids requeridos" }, status: :bad_request if ids.blank?
+
+        contacts = policy_scope(Contact).kept.where(id: ids)
+        deleted  = contacts.count
+        contacts.each { |c| audit_contact!("contact.destroy", c) }
+        contacts.discard_all
+        render json: { data: { deleted: deleted } }, status: :ok
+      end
+
       # GET /api/v1/contacts/check_duplicates?phone=...&email=...&full_name=...
       # Llamado desde el form del SPA mientras el consultor escribe.
       # Devuelve { data: { exists: bool, opportunity?: { id, contact_name, owner_name, created_at } } }

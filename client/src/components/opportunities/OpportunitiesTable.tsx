@@ -11,7 +11,9 @@ import {
   type ColumnFiltersState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, ChevronDown, Settings2 } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Network, Settings2 } from 'lucide-react'
+import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
+import { useUser } from '@/stores/auth'
 import {
   cn,
   formatCurrency,
@@ -33,6 +35,19 @@ import {
 import type { Opportunity } from '@/types'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+
+const COLUMN_LABELS: Record<string, string> = {
+  contact_name:    'Contacto',
+  temperature:     'Temperatura',
+  contact_actions: 'Acciones',
+  estimated_value: 'Valor',
+  stage:           'Etapa',
+  bant_score:      'BANT',
+  status:          'Estado',
+  owner:           'Propietario',
+  last_activity_at:'Última actividad',
+}
 
 interface OpportunitiesTableProps {
   opportunities: Opportunity[]
@@ -53,8 +68,14 @@ export function OpportunitiesTable({
     owner_id: false,
   })
 
+  const currentUser = useUser()
+  const networkUserIds = useNetworkUserIds()
+
   const columns = useMemo(
-    () => [
+    () => {
+    const _networkUserIds = networkUserIds
+    const _currentUserId = String(currentUser?.id ?? '')
+    return [
       columnHelper.accessor('id', {
         header: 'ID',
         cell: (info) => <span className="font-mono text-xs">{info.getValue()}</span>,
@@ -169,6 +190,11 @@ export function OpportunitiesTable({
         cell: (info) => {
           const owner = info.getValue()
           if (!owner) return null
+          const ownerId = owner.id ? String(owner.id) : undefined
+          const isFromNetwork =
+            ownerId !== undefined &&
+            ownerId !== _currentUserId &&
+            _networkUserIds.has(ownerId)
           return (
             <div className="flex items-center gap-2">
               <Avatar className="size-6">
@@ -178,6 +204,18 @@ export function OpportunitiesTable({
                 </AvatarFallback>
               </Avatar>
               <span className="text-sm truncate max-w-[100px]">{owner.name}</span>
+              {isFromNetwork && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex items-center">
+                      <Network className="size-3 text-indigo-500" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    De tu red de referidos
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
           )
         },
@@ -205,8 +243,9 @@ export function OpportunitiesTable({
           )
         },
       }),
-    ],
-    []
+    ]
+    },
+    [networkUserIds, currentUser?.id]
   )
 
   const table = useReactTable({
@@ -244,7 +283,7 @@ export function OpportunitiesTable({
                   checked={column.getIsVisible()}
                   onCheckedChange={(value) => column.toggleVisibility(!!value)}
                 >
-                  {column.id}
+                  {COLUMN_LABELS[column.id] ?? column.id}
                 </DropdownMenuCheckboxItem>
               ))}
           </DropdownMenuContent>

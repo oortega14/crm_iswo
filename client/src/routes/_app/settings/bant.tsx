@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, useTenant } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/settings/bant')({
   component: BantSettingsPage,
@@ -54,6 +54,24 @@ const DIMENSIONS = [
 function BantSettingsPage() {
   const queryClient = useQueryClient()
   const canEdit = useAuthStore((s) => s.isAdmin())
+  const tenant = useTenant()
+  const [staleDays, setStaleDays] = useState(7)
+
+  useEffect(() => {
+    setStaleDays(tenant?.settings?.stale_days ?? 7)
+  }, [tenant?.settings?.stale_days])
+
+  const staleMutation = useMutation({
+    mutationFn: async (days: number) => {
+      await api.patch('/tenant', { tenant: { settings: { stale_days: days } } })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tenant'] })
+      queryClient.invalidateQueries({ queryKey: ['auth'] })
+      toast.success('Umbral de inactividad actualizado')
+    },
+    onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo guardar')),
+  })
 
   const { data: criterion, isLoading, isError } = useQuery({
     queryKey: ['bant_criterion'],
@@ -243,6 +261,57 @@ function BantSettingsPage() {
             placeholder="Ej: Pesos ajustados para ciclo de venta inmobiliaria..."
             className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none disabled:opacity-50"
           />
+        </CardContent>
+      </Card>
+
+      {/* Umbral de inactividad */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Inactividad en pipeline</CardTitle>
+          <CardDescription>
+            Días sin actividad para marcar una oportunidad con el indicador de alerta (ícono de reloj en Kanban).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Slider
+              value={[staleDays]}
+              min={1}
+              max={60}
+              step={1}
+              disabled={!canEdit}
+              onValueChange={([v]) => setStaleDays(v)}
+              className="flex-1"
+            />
+            <div className="flex items-center gap-1">
+              <Input
+                type="number"
+                min={1}
+                max={60}
+                value={staleDays}
+                onChange={(e) => setStaleDays(Math.min(60, Math.max(1, Number(e.target.value))))}
+                className="w-16 h-7 text-center text-sm"
+                disabled={!canEdit}
+              />
+              <span className="text-sm text-muted-foreground">días</span>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Las oportunidades sin actividad hace más de {staleDays} día(s) aparecerán resaltadas en el pipeline.
+          </p>
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => staleMutation.mutate(staleDays)}
+                disabled={staleMutation.isPending}
+              >
+                {staleMutation.isPending && <Spinner className="mr-2 size-3" />}
+                Guardar
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -99,3 +99,42 @@ entidades, sin tocar cada controlador individualmente.
 Se resolvió usando **ambas** estrategias:
 - Subdominio (`micasita.crm.iswo.com.co`) resuelto por `TenantResolver`.
 - Header HTTP `X-Tenant-Slug` como fallback para clientes que no soporten subdominios.
+
+---
+
+### Admin UI — React SPA en lugar de Slim (RFC §5)
+
+El RFC §5 propone **React** para la app principal y **Slim (SSR en Rails)** para
+módulos admin internos. En la implementación se adoptó **frontend único en React**
+para todo el producto, incluida la administración por tenant.
+
+**Decisión:** Slim **descartado** a favor de la SPA en `client/`. Rails corre como
+**API-only** (`config.api_only = true`); no hay vistas `.slim` ni asset pipeline
+de admin en el backend.
+
+**Cobertura funcional del RFC (admin):** equivalente vía React + `/api/v1`, con
+RBAC Pundit y la misma sesión JWT que el resto del CRM:
+
+| Módulo admin RFC | Ruta SPA |
+|------------------|----------|
+| Pipelines / etapas | `/settings/pipelines` |
+| BANT / stale days | `/settings/bant` |
+| Campos por tenant | `/settings/fields` |
+| Usuarios | `/settings/users` |
+| Integraciones (Meta, Google, WhatsApp) | `/settings/integrations` |
+| Lead sources | `/settings/lead-sources` |
+| Landings + GrapeJS | `/landings` |
+| Exportaciones | `/exports` |
+| Duplicados | `/duplicates` |
+| Auditoría | `/settings/audit` |
+| Onboarding de tenants | `/settings/tenant-onboarding` |
+
+**Excepción operativa (no producto):** Sidekiq Web en `/sidekiq` — UI HTML propia
+del gem, protegida con HTTP Basic en producción.
+
+**Por qué no implementar Slim:** evita duplicar pantallas, auth y permisos;
+alinea el producto con referentes HubSpot/GoHighLevel (una sola app web); el MVP
+exige *vistas admin*, no *Slim* como tecnología obligatoria.
+
+**Conformidad RFC:** desviación **documentada** — actualizar RFC-001 §5 en una
+revisión de producto si se requiere cumplimiento literal del stack tabulado.

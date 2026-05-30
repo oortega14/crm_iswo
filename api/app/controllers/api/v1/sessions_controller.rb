@@ -36,9 +36,13 @@ module Api
 
       # DELETE /api/v1/sessions
       def destroy
-        log_session_audit("logout", current_user) if current_user
-        revoke_refresh_session!(current_user) if current_user
-        sign_out(resource_name) if current_user
+        user   = current_user
+        tenant = current_tenant rescue nil
+        log_session_audit("logout", user, tenant) if user && tenant
+        revoke_refresh_session!(user) if user
+        # sign_out dispara el TokenRevoker de warden-jwt_auth que llama User.find_for_jwt_authentication
+        # (scoped por acts_as_tenant). Usamos without_tenant para que lo encuentre por PK sin scope.
+        ActsAsTenant.without_tenant { sign_out(resource_name) } if user
         head :no_content
       end
 
@@ -107,17 +111,22 @@ module Api
         head :no_content
       end
 
-      def log_session_audit(action, user)
-        AuditEvent.create!(
-          tenant:      current_tenant,
-          user:        user,
-          action:      action,
-          entity_type: "User",
-          entity_id:   user.id,
-          metadata:    {},
-          ip_address:  request.remote_ip,
-          user_agent:  request.user_agent.to_s.truncate(255)
-        )
+      def log_session_audit(action, user, tenant = nil)
+        t = tenant || (current_tenant rescue nil)
+        return unless t
+
+        ActsAsTenant.with_tenant(t) do
+          AuditEvent.create!(
+            tenant:      t,
+            user:        user,
+            action:      action,
+            entity_type: "User",
+            entity_id:   user.id,
+            metadata:    {},
+            ip_address:  request.remote_ip,
+            user_agent:  request.user_agent.to_s.truncate(255)
+          )
+        end
       rescue StandardError => e
         Rails.logger.warn("[AuditEvent] #{action}: #{e.message}")
       end

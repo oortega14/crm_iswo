@@ -7,6 +7,7 @@ import {
   Users,
   Bell,
   Settings,
+  Settings2,
   Network,
   Flag,
   Download,
@@ -65,6 +66,7 @@ const mainNavItems: NavItem[] = [
 ]
 
 const settingsNavItems: NavItem[] = [
+  { label: 'General', href: '/settings/general', icon: Settings2, roles: ['admin'] },
   { label: 'Pipelines', href: '/settings/pipelines', icon: Target, roles: ['admin'] },
   { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin', 'manager'] },
   { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin', 'manager'] },

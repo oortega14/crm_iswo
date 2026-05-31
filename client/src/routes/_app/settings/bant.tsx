@@ -193,8 +193,11 @@ function BantSettingsPage() {
           <div className="flex items-center justify-between rounded-lg border px-4 py-3">
             <span className="text-sm font-medium">Total de pesos</span>
             <Badge
-              variant={isValid ? 'success' : 'destructive'}
-              className="text-base font-mono"
+              variant={isValid ? 'outline' : 'destructive'}
+              className={cn(
+                'text-base font-mono',
+                isValid && 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+              )}
             >
               {total} / 100
             </Badge>

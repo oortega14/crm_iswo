@@ -440,17 +440,28 @@ export async function recalculateOpportunityBant(
 export type OpportunityExportFormat = 'csv' | 'xlsx'
 
 /** Filtros Ransack para export (alineado con /exports) */
+const DATE_RANGE_DAYS: Record<string, number> = {
+  week: 7, month: 30, quarter: 90, year: 365,
+}
+
 export function buildOpportunityExportFilters(filters: {
   pipeline_id?: string
   stage_id?: string
   owner_id?: string
   temperature?: string
+  date_range?: string
+  source_id?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
   if (filters.pipeline_id) out.pipeline_id_eq = filters.pipeline_id
   if (filters.stage_id) out.pipeline_stage_id_eq = filters.stage_id
   if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
   if (filters.temperature) out.temperature_eq = filters.temperature
+  if (filters.source_id) out.lead_source_id_eq = filters.source_id
+  const days = filters.date_range ? (DATE_RANGE_DAYS[filters.date_range] ?? 0) : 0
+  if (days > 0) {
+    out.updated_at_gteq = new Date(Date.now() - days * 86_400_000).toISOString()
+  }
   return out
 }
 

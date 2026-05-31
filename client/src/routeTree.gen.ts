@@ -29,6 +29,7 @@ import { Route as AppSettingsTenantOnboardingRouteImport } from './routes/_app/s
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
 import { Route as AppSettingsLeadSourcesRouteImport } from './routes/_app/settings/lead-sources'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
+import { Route as AppSettingsGeneralRouteImport } from './routes/_app/settings/general'
 import { Route as AppSettingsFieldsRouteImport } from './routes/_app/settings/fields'
 import { Route as AppSettingsBantRouteImport } from './routes/_app/settings/bant'
 import { Route as AppSettingsAuditRouteImport } from './routes/_app/settings/audit'
@@ -133,6 +134,11 @@ const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsGeneralRoute = AppSettingsGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsFieldsRoute = AppSettingsFieldsRouteImport.update({
   id: '/fields',
   path: '/fields',
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/bant': typeof AppSettingsBantRoute
   '/settings/fields': typeof AppSettingsFieldsRoute
+  '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByTo {
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/bant': typeof AppSettingsBantRoute
   '/settings/fields': typeof AppSettingsFieldsRoute
+  '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -217,6 +225,7 @@ export interface FileRoutesById {
   '/_app/settings/audit': typeof AppSettingsAuditRoute
   '/_app/settings/bant': typeof AppSettingsBantRoute
   '/_app/settings/fields': typeof AppSettingsFieldsRoute
+  '/_app/settings/general': typeof AppSettingsGeneralRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
   '/_app/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
@@ -243,6 +252,7 @@ export interface FileRouteTypes {
     | '/settings/audit'
     | '/settings/bant'
     | '/settings/fields'
+    | '/settings/general'
     | '/settings/integrations'
     | '/settings/lead-sources'
     | '/settings/pipelines'
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
     | '/settings/audit'
     | '/settings/bant'
     | '/settings/fields'
+    | '/settings/general'
     | '/settings/integrations'
     | '/settings/lead-sources'
     | '/settings/pipelines'
@@ -292,6 +303,7 @@ export interface FileRouteTypes {
     | '/_app/settings/audit'
     | '/_app/settings/bant'
     | '/_app/settings/fields'
+    | '/_app/settings/general'
     | '/_app/settings/integrations'
     | '/_app/settings/lead-sources'
     | '/_app/settings/pipelines'
@@ -450,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsIntegrationsRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/general': {
+      id: '/_app/settings/general'
+      path: '/general'
+      fullPath: '/settings/general'
+      preLoaderRoute: typeof AppSettingsGeneralRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/fields': {
       id: '/_app/settings/fields'
       path: '/fields'
@@ -478,6 +497,7 @@ interface AppSettingsRouteChildren {
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute
   AppSettingsBantRoute: typeof AppSettingsBantRoute
   AppSettingsFieldsRoute: typeof AppSettingsFieldsRoute
+  AppSettingsGeneralRoute: typeof AppSettingsGeneralRoute
   AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute
   AppSettingsLeadSourcesRoute: typeof AppSettingsLeadSourcesRoute
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
@@ -489,6 +509,7 @@ const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAuditRoute: AppSettingsAuditRoute,
   AppSettingsBantRoute: AppSettingsBantRoute,
   AppSettingsFieldsRoute: AppSettingsFieldsRoute,
+  AppSettingsGeneralRoute: AppSettingsGeneralRoute,
   AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
   AppSettingsLeadSourcesRoute: AppSettingsLeadSourcesRoute,
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,

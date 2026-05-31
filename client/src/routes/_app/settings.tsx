@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Link, useLocation } from '@tanstack/react-router'
-import { GitBranch, Users, Puzzle, FileText, ChevronRight, Radio, Target, Sliders } from 'lucide-react'
+import { GitBranch, Users, Puzzle, FileText, ChevronRight, Radio, Target, Sliders, Settings2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -11,6 +11,13 @@ export const Route = createFileRoute('/_app/settings')({
 })
 
 const settingsNav: { title: string; href: string; icon: React.ComponentType<{ className?: string }>; description: string; roles: UserRole[] }[] = [
+  {
+    title: 'General',
+    href: '/settings/general',
+    icon: Settings2,
+    description: 'Comportamiento del pipeline y la red',
+    roles: ['admin'],
+  },
   {
     title: 'Pipelines',
     href: '/settings/pipelines',

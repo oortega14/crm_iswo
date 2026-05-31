@@ -145,13 +145,24 @@ export async function assignContactOwner(contactId: string, ownerUserId: string)
 
 export type ContactExportFormat = 'csv' | 'xlsx'
 
+const CONTACT_DATE_RANGE_DAYS: Record<string, number> = {
+  week: 7, month: 30, quarter: 90, year: 365,
+}
+
 export function buildContactExportFilters(filters: {
   kind?: ContactKind
   owner_id?: string
+  date_range?: string
+  source_kind?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
   if (filters.kind) out.kind_eq = filters.kind
   if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
+  if (filters.source_kind) out.source_kind_eq = filters.source_kind
+  const days = filters.date_range ? (CONTACT_DATE_RANGE_DAYS[filters.date_range] ?? 0) : 0
+  if (days > 0) {
+    out.updated_at_gteq = new Date(Date.now() - days * 86_400_000).toISOString()
+  }
   return out
 }
 

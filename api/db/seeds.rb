@@ -51,10 +51,11 @@ VERTICALS = [
     stages: [
       { name: "Prospecto",          position: 0, probability: 10,  color: "#94A3B8" },
       { name: "Diagnóstico",        position: 1, probability: 25,  color: "#60A5FA" },
-      { name: "Propuesta Enviada",  position: 2, probability: 45,  color: "#818CF8" },
-      { name: "Negociación",        position: 3, probability: 70,  color: "#F59E0B" },
-      { name: "Contrato Firmado",   position: 4, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Perdida",            position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",         position: 2, probability: 40,  color: "#22C55E" },
+      { name: "Propuesta Enviada",  position: 3, probability: 55,  color: "#818CF8" },
+      { name: "Negociación",        position: 4, probability: 70,  color: "#F59E0B" },
+      { name: "Contrato Firmado",   position: 5, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Perdida",            position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "web",      name: "Sitio Web ISWO" },
@@ -124,11 +125,12 @@ VERTICALS = [
     stages: [
       { name: "Interesado",            position: 0, probability: 10,  color: "#94A3B8" },
       { name: "Visita Agendada",       position: 1, probability: 25,  color: "#60A5FA" },
-      { name: "Visita Realizada",      position: 2, probability: 40,  color: "#818CF8" },
-      { name: "Oferta Presentada",     position: 3, probability: 60,  color: "#F59E0B" },
-      { name: "En Proceso Escritura",  position: 4, probability: 85,  color: "#F97316" },
-      { name: "Escriturado",           position: 5, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Perdida",               position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",            position: 2, probability: 40,  color: "#22C55E" },
+      { name: "Visita Realizada",      position: 3, probability: 55,  color: "#818CF8" },
+      { name: "Oferta Presentada",     position: 4, probability: 70,  color: "#F59E0B" },
+      { name: "En Proceso Escritura",  position: 5, probability: 85,  color: "#F97316" },
+      { name: "Escriturado",           position: 6, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Perdida",               position: 7, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "web",      name: "Sitio Web Mi Casita" },
@@ -199,10 +201,11 @@ VERTICALS = [
     stages: [
       { name: "Solicitud Recibida",     position: 0, probability: 15,  color: "#94A3B8" },
       { name: "Documentación",          position: 1, probability: 30,  color: "#60A5FA" },
-      { name: "Estudio de Crédito",     position: 2, probability: 50,  color: "#818CF8" },
-      { name: "Aprobado",               position: 3, probability: 80,  color: "#F59E0B" },
-      { name: "Desembolsado",           position: 4, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Rechazado / Perdido",    position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",             position: 2, probability: 45,  color: "#22C55E" },
+      { name: "Estudio de Crédito",     position: 3, probability: 60,  color: "#818CF8" },
+      { name: "Aprobado",               position: 4, probability: 80,  color: "#F59E0B" },
+      { name: "Desembolsado",           position: 5, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Rechazado / Perdido",    position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "whatsapp", name: "WhatsApp" },
@@ -379,6 +382,18 @@ def seed_duplicate_flags(tenant, contacts, pipeline, admin_user)
   end
 rescue ActiveRecord::RecordInvalid => e
   puts "     [duplicados] skip: #{e.message}"
+end
+
+def seed_field_definitions(tenant)
+  fields = Tenants::Onboarder::VERTICAL_FIELDS[tenant.slug] || []
+  return if fields.empty?
+
+  fields.each do |attrs|
+    TenantFieldDefinition.find_or_initialize_by(tenant: tenant, key: attrs[:key]).tap do |d|
+      d.assign_attributes(attrs.except(:key))
+      d.save!
+    end
+  end
 end
 
 def seed_referral_networks(tenant, users)
@@ -797,6 +812,9 @@ VERTICALS.each do |config|
 
     seed_duplicate_flags(tenant, contacts, pipeline, users.find { |u| u.role == 'admin' } || users.first)
     puts "     #{DuplicateFlag.where(tenant: tenant).count} flag(s) de duplicados de demo"
+
+    seed_field_definitions(tenant)
+    puts "     #{TenantFieldDefinition.where(tenant: tenant).count} campos personalizados (vertical)"
 
     seed_referral_networks(tenant, users)
     puts "     Red de referidos sembrada (#{ReferralNetwork.where(tenant: tenant).count} relaciones)"

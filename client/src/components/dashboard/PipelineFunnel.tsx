@@ -256,7 +256,7 @@ export function PipelineFunnel({
                     const [a, b] = GRADIENT_PAIRS[index % GRADIENT_PAIRS.length]
                     return (
                       <linearGradient
-                        key={gradientId(index)}
+                        key={`grad-${index}`}
                         id={gradientId(index)}
                         x1="0"
                         y1="0"

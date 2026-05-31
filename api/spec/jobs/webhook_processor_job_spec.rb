@@ -192,4 +192,132 @@ RSpec.describe WebhookProcessorJob, type: :job do
       end
     end
   end
+
+  describe "whatsapp_openwa" do
+    let(:tenant) { ActsAsTenant.current_tenant }
+    let(:contact) { create(:contact, tenant: tenant) }
+
+    def openwa_payload(event:, msg_id: "OWID001", from: "573001234567@c.us",
+                       to: "573009999999@c.us", body: "Hola OpenWA")
+      {
+        "event"     => event,
+        "sessionId" => "test-session",
+        "data" => {
+          "id"   => { "_serialized" => msg_id },
+          "from" => from,
+          "to"   => to,
+          "body" => body
+        }
+      }
+    end
+
+    context "message.received — mensaje entrante", :without_tenant do
+      it "persiste inbound, crea contacto y asigna tenant por AdIntegration" do
+        t = create(:tenant)
+        ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :openwa, tenant: t, account_identifier: "test-session")
+        end
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.received"))
+
+        ActsAsTenant.with_tenant(t) do
+          inbound = WhatsappMessage.find_by(provider_message_id: "OWID001")
+          expect(inbound).to be_present
+          expect(inbound.direction).to eq("in")
+          expect(inbound.provider).to eq("openwa")
+          expect(inbound.status).to eq("delivered")
+          expect(inbound.body).to eq("Hola OpenWA")
+          expect(inbound.contact).to be_present
+        end
+      end
+
+      it "convierte chatId @c.us a E.164 en from/to_number" do
+        t = create(:tenant)
+        ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :openwa, tenant: t, account_identifier: "test-session")
+        end
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.received",
+                                                                       from: "573001234567@c.us",
+                                                                       to:   "573009999999@c.us"))
+
+        inbound = ActsAsTenant.with_tenant(t) { WhatsappMessage.find_by(provider_message_id: "OWID001") }
+        expect(inbound.from_number).to eq("+573001234567")
+        expect(inbound.to_number).to eq("+573009999999")
+      end
+
+      it "es idempotente — no duplica si ya existe el provider_message_id" do
+        t = create(:tenant)
+        ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :openwa, tenant: t, account_identifier: "test-session")
+        end
+
+        2.times do
+          described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.received"))
+        end
+
+        count = ActsAsTenant.with_tenant(t) { WhatsappMessage.where(provider_message_id: "OWID001").count }
+        expect(count).to eq(1)
+      end
+
+      it "ignora el payload si no hay tenant para el sessionId" do
+        expect {
+          described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.received",
+                                                                         from: "99999@c.us",
+                                                                         to:   "88888@c.us"))
+        }.not_to change { ActsAsTenant.without_tenant { WhatsappMessage.count } }
+      end
+    end
+
+    context "message.delivered" do
+      it "actualiza el estado del mensaje saliente a delivered con timestamp" do
+        msg = create(:whatsapp_message, :openwa, :outbound,
+                     tenant: tenant, contact: contact,
+                     provider_message_id: "OWID_DEL", status: "sent", delivered_at: nil)
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.delivered",
+                                                                       msg_id: "OWID_DEL"))
+
+        msg.reload
+        expect(msg.status).to eq("delivered")
+        expect(msg.delivered_at).to be_present
+      end
+    end
+
+    context "message.read" do
+      it "actualiza el estado del mensaje saliente a read con timestamp" do
+        msg = create(:whatsapp_message, :openwa, :outbound,
+                     tenant: tenant, contact: contact,
+                     provider_message_id: "OWID_READ", status: "delivered", read_at: nil)
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.read",
+                                                                       msg_id: "OWID_READ"))
+
+        msg.reload
+        expect(msg.status).to eq("read")
+        expect(msg.read_at).to be_present
+      end
+    end
+
+    context "message.failed" do
+      it "actualiza el estado del mensaje saliente a failed" do
+        msg = create(:whatsapp_message, :openwa, :outbound,
+                     tenant: tenant, contact: contact,
+                     provider_message_id: "OWID_FAIL", status: "sent")
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.failed",
+                                                                       msg_id: "OWID_FAIL"))
+
+        expect(msg.reload.status).to eq("failed")
+      end
+    end
+
+    context "evento desconocido" do
+      it "no crea ni modifica mensajes" do
+        expect {
+          described_class.new.perform("whatsapp_openwa", openwa_payload(event: "group.joined"))
+        }.not_to change(WhatsappMessage, :count)
+      end
+    end
+  end
 end

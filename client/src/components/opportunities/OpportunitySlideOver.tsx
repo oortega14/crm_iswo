@@ -614,31 +614,24 @@ export function OpportunitySlideOver({
                               )}
                               Reglas
                             </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant={claudeAvailable ? 'default' : 'outline'}
-                              className={cn(
-                                'h-7 gap-1 px-2.5 text-xs',
-                                claudeAvailable && 'bg-violet-600 text-white hover:bg-violet-700',
-                              )}
-                              onClick={() => { setAiResult(null); classifyMutation.mutate() }}
-                              disabled={
-                                classifyMutation.isPending || syncTemperatureMutation.isPending
-                              }
-                              title={
-                                claudeAvailable
-                                  ? `Clasificar con Claude (${aiCaps?.model})`
-                                  : 'Clasificar con Claude AI (sin API key usará reglas locales)'
-                              }
-                            >
-                              {classifyMutation.isPending ? (
-                                <Loader2 className="size-3 animate-spin" />
-                              ) : (
-                                <Sparkles className="size-3" />
-                              )}
-                              Clasificar con Claude AI
-                            </Button>
+                            {claudeAvailable && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="default"
+                                className="h-7 gap-1 px-2.5 text-xs bg-violet-600 text-white hover:bg-violet-700"
+                                onClick={() => { setAiResult(null); classifyMutation.mutate() }}
+                                disabled={classifyMutation.isPending || syncTemperatureMutation.isPending}
+                                title={`Clasificar con Claude (${aiCaps?.model})`}
+                              >
+                                {classifyMutation.isPending ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <Sparkles className="size-3" />
+                                )}
+                                Clasificar con Claude AI
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -661,8 +654,7 @@ export function OpportunitySlideOver({
                           </>
                         ) : (
                           <>
-                            Sin <code className="text-[10px]">ANTHROPIC_API_KEY</code> en el API — solo
-                            reglas locales. Añádela en <code className="text-[10px]">api/.env</code>.
+                            «Reglas» calcula la temperatura según BANT y días de actividad.
                           </>
                         )}
                       </p>

@@ -23,7 +23,26 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import type { LeadSource } from '@/types'
+import type { LeadSource, TenantFieldDefinition } from '@/types'
+
+function mapFieldDefs(raw: unknown): TenantFieldDefinition[] {
+  const items = (raw as { data?: unknown[] })?.data ?? []
+  return items.map((item) => {
+    const r = item as { id?: string; attributes?: Record<string, unknown> }
+    const a = r.attributes ?? {}
+    return {
+      id:         String(r.id ?? ''),
+      key:        String(a.key ?? ''),
+      label:      String(a.label ?? ''),
+      field_type: (a.field_type as TenantFieldDefinition['field_type']) ?? 'text',
+      options:    Array.isArray(a.options) ? (a.options as string[]) : [],
+      required:   Boolean(a.required),
+      entity:     (a.entity as TenantFieldDefinition['entity']) ?? 'opportunity',
+      position:   Number(a.position ?? 0),
+      active:     Boolean(a.active ?? true),
+    }
+  })
+}
 
 const opportunitySchema = z.object({
   contact_name: z.string().min(1, 'El nombre es requerido').default(''),
@@ -70,6 +89,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
   const tenant = useTenant()
   const [duplicatePhone, setDuplicatePhone] = useState<DuplicateInfo | null>(null)
   const [duplicateEmail, setDuplicateEmail] = useState<DuplicateInfo | null>(null)
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
 
   // Fetch pipelines when the panel is open (tras bootstrap del tenant deben existir embudos/etapas)
   const {
@@ -102,6 +122,16 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
     },
     enabled: open,
     staleTime: 60 * 1000,
+  })
+
+  const { data: fieldDefs = [] } = useQuery({
+    queryKey: ['tenant_field_definitions', 'opportunity'],
+    queryFn: async () => {
+      const res = await api.get('/tenant_field_definitions', { params: { entity: 'opportunity' } })
+      return mapFieldDefs(res.data)
+    },
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
   })
 
   const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
@@ -204,6 +234,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: OpportunityForm) => {
+      const extraFields = Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}
       const body = prefilledContact
         ? {
             contact_id: prefilledContact.id,
@@ -214,6 +245,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
             temperature: data.temperature,
+            ...extraFields,
           }
         : {
             contact_name: data.contact_name,
@@ -227,6 +259,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
             temperature: data.temperature,
+            ...extraFields,
           }
       const response = await api.post('/opportunities', { opportunity: body })
       const raw = jsonApiPrimaryOne(response.data)
@@ -240,6 +273,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       reset()
+      setCustomFields({})
       onOpenChange(false)
     },
     onError: (error: unknown) => {
@@ -516,6 +550,83 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                       className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                     />
                   </div>
+
+                  {/* Campos personalizados por vertical (RFC F5) */}
+                  {fieldDefs.length > 0 && (
+                    <>
+                      <div className="border-t pt-3">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+                          Datos del negocio
+                        </p>
+                        <div className="flex flex-col gap-3">
+                          {fieldDefs.map((def) => {
+                            const val = customFields[def.key]
+
+                            if (def.field_type === 'boolean') {
+                              return (
+                                <div key={def.key} className="flex items-center justify-between">
+                                  <Label className="text-sm font-normal">{def.label}</Label>
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(val)}
+                                    onChange={(e) =>
+                                      setCustomFields((prev) => ({ ...prev, [def.key]: e.target.checked }))
+                                    }
+                                    className="size-4 rounded border-input accent-primary"
+                                  />
+                                </div>
+                              )
+                            }
+
+                            if (def.field_type === 'select') {
+                              return (
+                                <div key={def.key} className="flex flex-col gap-1.5">
+                                  <Label htmlFor={`cf_${def.key}`} className="text-sm font-normal">
+                                    {def.label}{def.required && ' *'}
+                                  </Label>
+                                  <select
+                                    id={`cf_${def.key}`}
+                                    value={String(val ?? '')}
+                                    onChange={(e) =>
+                                      setCustomFields((prev) => ({ ...prev, [def.key]: e.target.value }))
+                                    }
+                                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                  >
+                                    <option value="">— Seleccionar —</option>
+                                    {def.options.map((opt) => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )
+                            }
+
+                            return (
+                              <div key={def.key} className="flex flex-col gap-1.5">
+                                <Label htmlFor={`cf_${def.key}`} className="text-sm font-normal">
+                                  {def.label}{def.required && ' *'}
+                                </Label>
+                                <Input
+                                  id={`cf_${def.key}`}
+                                  type={
+                                    def.field_type === 'date' ? 'date'
+                                    : def.field_type === 'number' || def.field_type === 'currency' ? 'number'
+                                    : 'text'
+                                  }
+                                  value={String(val ?? '')}
+                                  onChange={(e) =>
+                                    setCustomFields((prev) => ({ ...prev, [def.key]: e.target.value }))
+                                  }
+                                  placeholder={def.required ? `${def.label} *` : def.label}
+                                  className="h-9"
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* Origen */}
                   {(leadSources ?? []).length > 0 && (

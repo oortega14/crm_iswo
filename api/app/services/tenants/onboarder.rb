@@ -37,6 +37,18 @@ module Tenants
       { kind: "manual",   name: "Manual / Presencial"  },
     ].freeze
 
+    # Campos extra para la vertical ISWO (consultoría en sistemas de gestión ISO)
+    ISWO_FIELDS = [
+      { key: "norma_iso",            label: "Norma ISO",                  field_type: "select",   position: 0,
+        options: ["ISO 9001", "ISO 14001", "ISO 45001", "ISO 27001", "ISO 22000", "ISO 50001", "Varias normas"] },
+      { key: "sector_empresa",       label: "Sector de la empresa",       field_type: "select",   position: 1,
+        options: ["Manufactura", "Salud", "Construcción", "Educación", "Servicios", "Gobierno", "Alimentos", "Tecnología", "Otro"] },
+      { key: "num_sedes",            label: "Número de sedes",            field_type: "number",   position: 2 },
+      { key: "estado_certificacion", label: "Estado de certificación",    field_type: "select",   position: 3,
+        options: ["Sin certificar", "En proceso", "Certificado", "Recertificación"] },
+      { key: "organismo_certificador", label: "Organismo certificador",   field_type: "text",     position: 4 },
+    ].freeze
+
     # Campos extra para la vertical Libranzas (crédito por descuento de nómina)
     LIBRANZAS_FIELDS = [
       { key: "empleador_nombre", label: "Empleador",            field_type: "text",     position: 0 },
@@ -65,6 +77,7 @@ module Tenants
     ].freeze
 
     VERTICAL_FIELDS = {
+      "iswo"      => ISWO_FIELDS,
       "libranzas" => LIBRANZAS_FIELDS,
       "micasita"  => MICASITA_FIELDS,
       "mi_casita" => MICASITA_FIELDS,

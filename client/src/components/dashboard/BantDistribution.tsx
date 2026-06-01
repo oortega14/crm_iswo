@@ -31,7 +31,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
                 <Gauge className="size-4" />
               </span>
-              Calidad BANT
+              Distribución BANT
             </CardTitle>
             <Skeleton className="h-5 w-24 rounded-md" />
           </div>
@@ -52,7 +52,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
               <Gauge className="size-4" />
             </span>
-            Calidad BANT
+            Distribución BANT
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -81,7 +81,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
               <Gauge className="size-4" />
             </span>
-            Calidad BANT
+            Distribución BANT
           </CardTitle>
           <Badge variant="secondary" className="font-mono text-xs">
             Prom. {distribution.average}

@@ -234,6 +234,7 @@ export function OpportunitySlideOver({
     onSuccess: () => {
       toast.success('Oportunidad eliminada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       onOpenChange(false)
     },
     onError: () => {
@@ -284,6 +285,7 @@ export function OpportunitySlideOver({
       toast.success('Consultor asignado')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: () => toast.error('No se pudo reasignar'),
   })

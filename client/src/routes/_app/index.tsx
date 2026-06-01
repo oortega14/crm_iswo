@@ -62,42 +62,52 @@ function DashboardPage() {
   const activePipelineId = selectedPipelineId ?? defaultPipeline?.id
   const pipelineFilterKey = activePipelineId ?? 'all'
 
+  // staleTime: 0 → siempre refetch al montar o enfocar la ventana
+  // refetchOnWindowFocus: true → se actualiza al volver al dashboard
+  const dashboardQueryOpts = { staleTime: 0, refetchOnWindowFocus: true } as const
+
   const { data: briefing, isPending: briefingPending, isError: briefingError } = useQuery({
     queryKey: queryKeys.dashboard.briefing(pipelineFilterKey),
     queryFn: () => fetchDashboardBriefing(activePipelineId),
-    staleTime: 2 * 60 * 1000,
+    ...dashboardQueryOpts,
   })
 
   const kpisQ = useQuery({
     queryKey: queryKeys.dashboard.kpis(pipelineFilterKey),
     queryFn: () => fetchDashboardKpis(activePipelineId),
+    ...dashboardQueryOpts,
   })
 
   const pipelineQ = useQuery({
     queryKey: queryKeys.dashboard.pipeline(activePipelineId),
     queryFn: () => fetchDashboardPipeline(activePipelineId),
+    ...dashboardQueryOpts,
   })
 
   const consultantsQ = useQuery({
     queryKey: queryKeys.dashboard.topConsultants(pipelineFilterKey),
     queryFn: () => fetchDashboardTopConsultants(activePipelineId),
     enabled: isManagerOrAbove,
+    ...dashboardQueryOpts,
   })
 
   const activityQ = useQuery({
     queryKey: queryKeys.dashboard.activity(pipelineFilterKey),
     queryFn: () => fetchDashboardActivity(activePipelineId),
     refetchInterval: 30_000,
+    ...dashboardQueryOpts,
   })
 
   const bantQ = useQuery({
     queryKey: queryKeys.dashboard.bantDistribution(pipelineFilterKey),
     queryFn: () => fetchDashboardBantDistribution(activePipelineId),
+    ...dashboardQueryOpts,
   })
 
   const leadSourcesQ = useQuery({
     queryKey: queryKeys.dashboard.leadSources(pipelineFilterKey),
     queryFn: () => fetchDashboardLeadSources(activePipelineId),
+    ...dashboardQueryOpts,
   })
 
   const initialLoading =

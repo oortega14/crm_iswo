@@ -8,12 +8,13 @@ class OpportunityLogSerializer < ApplicationSerializer
 
   attributes :action, :changes_data, :note, :ip_address, :user_agent
 
+  # opportunity_logs no tiene columna updated_at (es inmutable)
+  attribute :updated_at do |_log|
+    nil
+  end
+
   attribute :author_name do |log|
-    if log.user
-      [log.user.first_name, log.user.last_name].compact.join(" ").presence || log.user.email
-    else
-      "sistema"
-    end
+    log.user ? (log.user.name.presence || log.user.email) : "sistema"
   end
 
   belongs_to :user,        serializer: :user, record_type: :user

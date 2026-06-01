@@ -188,14 +188,8 @@ function DashboardPage() {
         </div>
       </DashboardSection>
 
-      {/* ── Calidad de leads — RFC §6.1 BANT + orígenes ─────────────── */}
-      <DashboardSection title="Calidad de leads" icon={BarChart2} accent="brand">
-        <LeadTemperatureStrip
-          hotCount={kpisQ.data?.hot_count ?? 0}
-          warmCount={kpisQ.data?.warm_count ?? 0}
-          coldCount={kpisQ.data?.cold_count ?? 0}
-          loading={kpisQ.isPending}
-        />
+      {/* ── Distribución BANT — RFC §6.1 BANT + orígenes ────────────── */}
+      <DashboardSection title="Distribución BANT" icon={BarChart2} accent="brand">
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <BantDistribution
             data={bantQ.data}
@@ -209,6 +203,12 @@ function DashboardPage() {
             isError={leadSourcesQ.isError}
           />
         </div>
+        <LeadTemperatureStrip
+          hotCount={kpisQ.data?.hot_count ?? 0}
+          warmCount={kpisQ.data?.warm_count ?? 0}
+          coldCount={kpisQ.data?.cold_count ?? 0}
+          loading={kpisQ.isPending}
+        />
       </DashboardSection>
 
       {/* ── Seguimiento — RFC §6.4: actividad del día + recordatorios ─── */}

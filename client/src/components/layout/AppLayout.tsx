@@ -192,8 +192,8 @@ export function AppLayout({ children }: AppLayoutProps) {
               className="h-8 w-auto object-contain"
             />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold text-sm">
-              IS
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Building2 className="size-4" />
             </div>
           )}
           <span className="font-semibold text-sidebar-foreground truncate">

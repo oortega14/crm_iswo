@@ -75,16 +75,7 @@ VERTICALS = [
     demo_contacts: [
       { first_name: "Marcela",   last_name: "Torres",    email: "marcela@ejemplo.co",   phone_e164: "+573001234001", company_name: "Constructora Omega" },
       { first_name: "Ricardo",   last_name: "Patiño",    email: "ricardo@ejemplo.co",   phone_e164: "+573001234002", company_name: "Clínica San Rafael" },
-      { first_name: "Valentina", last_name: "Herrera",   email: "valentina@ejemplo.co", phone_e164: "+573001234003", company_name: "Alimentos del Valle" },
-      { first_name: "Andrés",    last_name: "Gómez",     email: "andres.g@ejemplo.co",  phone_e164: "+573001234004", company_name: "Industrias Gómez" },
-      { first_name: "Sofía",     last_name: "Restrepo",  email: "sofia.r@ejemplo.co",   phone_e164: "+573001234005", company_name: "Logística CR SAS" },
-      { first_name: "Camilo",    last_name: "Arango",    email: "camilo.a@ejemplo.co",  phone_e164: "+573001234006", company_name: "Ferretería Nacional" },
-      { first_name: "Lucía",     last_name: "Montoya",   email: "lucia.m@ejemplo.co",   phone_e164: "+573001234007", company_name: "Hospital del Norte" },
-      { first_name: "Sebastián", last_name: "Vargas",    email: "sebas.v@ejemplo.co",   phone_e164: "+573001234008", company_name: "Minería Sur" },
-      { first_name: "Natalia",   last_name: "Ospina",    email: "natalia.o@ejemplo.co", phone_e164: "+573001234009", company_name: "Distribuidora Ospina" },
-      { first_name: "Felipe",    last_name: "Jiménez",   email: "felipe.j@ejemplo.co",  phone_e164: "+573001234010", company_name: "Textiles FJ" },
-      { first_name: "Alejandra", last_name: "Castillo",  email: "ale.c@ejemplo.co",     phone_e164: "+573001234011", company_name: "Salud Total EPS" },
-      { first_name: "Miguel",    last_name: "Ríos",      email: "miguel.r@ejemplo.co",  phone_e164: "+573001234012", company_name: "Agropecuaria Ríos" }
+      { first_name: "Valentina", last_name: "Herrera",   email: "valentina@ejemplo.co", phone_e164: "+573001234003", company_name: "Alimentos del Valle" }
     ]
   },
 
@@ -149,18 +140,9 @@ VERTICALS = [
       { name: "Felipe Guzmán",      email: "felipe@micasita.local",   role: "consultant", password: "Password123!" }
     ],
     demo_contacts: [
-      { first_name: "Jorge",     last_name: "Salcedo",    email: "jorge@ejemplo.co",    phone_e164: "+573101234001", document_id: "12345678" },
-      { first_name: "Patricia",  last_name: "Villamizar", email: "patricia@ejemplo.co", phone_e164: "+573101234002", document_id: "87654321" },
-      { first_name: "Sergio",    last_name: "Córdoba",    email: "sergio@ejemplo.co",   phone_e164: "+573101234003", document_id: "11223344" },
-      { first_name: "Carolina",  last_name: "Méndez",     email: "caro.m@ejemplo.co",   phone_e164: "+573101234004", document_id: "22334455" },
-      { first_name: "Jhon",      last_name: "Ramírez",    email: "jhon.r@ejemplo.co",   phone_e164: "+573101234005", document_id: "33445566" },
-      { first_name: "Tatiana",   last_name: "Guerrero",   email: "tatiana.g@ejemplo.co",phone_e164: "+573101234006", document_id: "44556677" },
-      { first_name: "Gustavo",   last_name: "Pineda",     email: "gus.p@ejemplo.co",    phone_e164: "+573101234007", document_id: "55667788" },
-      { first_name: "Liliana",   last_name: "Cano",       email: "lili.c@ejemplo.co",   phone_e164: "+573101234008", document_id: "66778899" },
-      { first_name: "Rodrigo",   last_name: "Bermúdez",   email: "rodri.b@ejemplo.co",  phone_e164: "+573101234009", document_id: "77889900" },
-      { first_name: "Mónica",    last_name: "Sandoval",   email: "monica.s@ejemplo.co", phone_e164: "+573101234010", document_id: "88990011" },
-      { first_name: "Iván",      last_name: "Agudelo",    email: "ivan.a@ejemplo.co",   phone_e164: "+573101234011", document_id: "99001122" },
-      { first_name: "Yesenia",   last_name: "Bedoya",     email: "yese.b@ejemplo.co",   phone_e164: "+573101234012", document_id: "10112233" }
+      { first_name: "Jorge",    last_name: "Salcedo",    email: "jorge@ejemplo.co",    phone_e164: "+573101234001", document_id: "12345678" },
+      { first_name: "Patricia", last_name: "Villamizar", email: "patricia@ejemplo.co", phone_e164: "+573101234002", document_id: "87654321" },
+      { first_name: "Sergio",   last_name: "Córdoba",    email: "sergio@ejemplo.co",   phone_e164: "+573101234003", document_id: "11223344" }
     ]
   },
 
@@ -223,18 +205,9 @@ VERTICALS = [
       { name: "Sandra Ospina",       email: "sandra@libranzas.local",   role: "consultant", password: "Password123!" }
     ],
     demo_contacts: [
-      { first_name: "Hernando", last_name: "Roa",       email: "hernando@ejemplo.co",  phone_e164: "+573201234001", company_name: "Gobernación del Valle",      document_id: "55667788" },
-      { first_name: "Carmen",   last_name: "Duarte",    email: "carmen@ejemplo.co",    phone_e164: "+573201234002", company_name: "Hospital Universitario",     document_id: "99887766" },
-      { first_name: "Nelson",   last_name: "Jiménez",   email: "nelson@ejemplo.co",    phone_e164: "+573201234003", company_name: "Ministerio de Educación",    document_id: "44332211" },
-      { first_name: "Gloria",   last_name: "Peñaloza",  email: "gloria.p@ejemplo.co",  phone_e164: "+573201234004", company_name: "Alcaldía de Medellín",       document_id: "12348765" },
-      { first_name: "Oswaldo",  last_name: "Muñoz",     email: "oswal.m@ejemplo.co",   phone_e164: "+573201234005", company_name: "Banco Popular",              document_id: "23456789" },
-      { first_name: "Beatriz",  last_name: "Lozano",    email: "bea.l@ejemplo.co",     phone_e164: "+573201234006", company_name: "SENA Regional",              document_id: "34567890" },
-      { first_name: "Jairo",    last_name: "Trujillo",  email: "jairo.t@ejemplo.co",   phone_e164: "+573201234007", company_name: "Secretaría de Salud",        document_id: "45678901" },
-      { first_name: "Esperanza",last_name: "Morales",   email: "espe.m@ejemplo.co",    phone_e164: "+573201234008", company_name: "Universidad Nacional",       document_id: "56789012" },
-      { first_name: "Álvaro",   last_name: "Serrano",   email: "alvaro.s@ejemplo.co",  phone_e164: "+573201234009", company_name: "Ejército Nacional",          document_id: "67890123" },
-      { first_name: "Pilar",    last_name: "Gutiérrez", email: "pilar.g@ejemplo.co",   phone_e164: "+573201234010", company_name: "Contraloría Departamental",  document_id: "78901234" },
-      { first_name: "Fabio",    last_name: "Valencia",  email: "fabio.v@ejemplo.co",   phone_e164: "+573201234011", company_name: "Policía Nacional",           document_id: "89012345" },
-      { first_name: "Rocío",    last_name: "Cardona",   email: "rocio.c@ejemplo.co",   phone_e164: "+573201234012", company_name: "Personería Municipal",       document_id: "90123456" }
+      { first_name: "Hernando", last_name: "Roa",    email: "hernando@ejemplo.co", phone_e164: "+573201234001", company_name: "Gobernación del Valle",  document_id: "55667788" },
+      { first_name: "Carmen",   last_name: "Duarte", email: "carmen@ejemplo.co",   phone_e164: "+573201234002", company_name: "Hospital Universitario", document_id: "99887766" },
+      { first_name: "Nelson",   last_name: "Jiménez",email: "nelson@ejemplo.co",   phone_e164: "+573201234003", company_name: "Ministerio de Educación",document_id: "44332211" }
     ]
   }
 ].freeze
@@ -426,46 +399,19 @@ end
 
 OPPORTUNITY_TEMPLATES = {
   "iswo" => [
-    { value: 22_000_000, bant: 88, temp: "hot",  status: "won",       days_ago: 10, stage_pos: :won,  note: "Contrato firmado. Implementación ISO 9001 para 3 sedes." },
-    { value: 15_500_000, bant: 75, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 3,     note: "Propuesta enviada. Esperan respuesta del gerente." },
-    { value: 9_800_000,  bant: 68, temp: "warm", status: "qualified", days_ago: 3,  stage_pos: 2,     note: "Diagnóstico completado. Interés en ISO 14001." },
-    { value: 7_200_000,  bant: 60, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 1,     note: "Reunión inicial exitosa. Solicitan cotización." },
-    { value: 4_500_000,  bant: 45, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Lead desde LinkedIn. Sin contacto previo." },
-    { value: 18_000_000, bant: 80, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 3,     note: "Negociación avanzada. Piden ajuste en plazo." },
-    { value: 6_000_000,  bant: 52, temp: "cold", status: "new_lead",  days_ago: 8,  stage_pos: 0,     note: nil },
-    { value: 11_000_000, bant: 71, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 2,     note: "Calificado BANT. Presupuesto aprobado para Q3." },
-    { value: 3_500_000,  bant: 38, temp: "cold", status: "lost",      days_ago: 15, stage_pos: :lost, note: "Decidieron con la competencia por precio." },
-    { value: 25_000_000, bant: 92, temp: "hot",  status: "won",       days_ago: 7,  stage_pos: :won,  note: "Proyecto corporativo multisite. Mejor cierre del mes." },
-    { value: 8_500_000,  bant: 63, temp: "warm", status: "contacted", days_ago: 6,  stage_pos: 1,     note: "Segunda reunión agendada para la semana." },
-    { value: 5_000_000,  bant: 47, temp: "cold", status: "new_lead",  days_ago: 1,  stage_pos: 0,     note: "Referido por cliente existente." }
+    { value: 22_000_000, bant: 88, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Contrato firmado. Implementación ISO 9001 para 3 sedes." },
+    { value: 25_000_000, bant: 92, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Proyecto corporativo multisite. Mejor cierre del mes." },
+    { value: 14_000_000, bant: 82, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Recertificación ISO 45001. Cliente de larga data." }
   ],
   "micasita" => [
-    { value: 380_000_000, bant: 85, temp: "hot",  status: "won",       days_ago: 8,  stage_pos: :won,  note: "Escritura firmada. Apartamento en El Poblado." },
-    { value: 220_000_000, bant: 72, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 4,     note: "En proceso de escrituración. Todo listo." },
-    { value: 450_000_000, bant: 78, temp: "hot",  status: "qualified", days_ago: 3,  stage_pos: 3,     note: "Oferta presentada. Casa en Envigado." },
-    { value: 180_000_000, bant: 61, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 2,     note: "Visita realizada. Le gustó el inmueble." },
-    { value: 290_000_000, bant: 55, temp: "warm", status: "new_lead",  days_ago: 1,  stage_pos: 1,     note: "Visita agendada para el sábado." },
-    { value: 160_000_000, bant: 42, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Llegó por Meta Ads. Sin contactar." },
-    { value: 520_000_000, bant: 90, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 4,     note: "Penthouse. Financiación aprobada." },
-    { value: 195_000_000, bant: 65, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 3,     note: "Segunda visita. Pendiente carta de crédito." },
-    { value: 140_000_000, bant: 35, temp: "cold", status: "lost",      days_ago: 20, stage_pos: :lost, note: "No obtuvo crédito hipotecario." },
-    { value: 310_000_000, bant: 83, temp: "hot",  status: "won",       days_ago: 12, stage_pos: :won,  note: "Casa en Laureles. Cierre exitoso." },
-    { value: 255_000_000, bant: 58, temp: "warm", status: "contacted", days_ago: 6,  stage_pos: 2,     note: "Visita realizada. Esperando decisión." },
-    { value: 170_000_000, bant: 48, temp: "cold", status: "new_lead",  days_ago: 2,  stage_pos: 0,     note: "Referido por cliente anterior." }
+    { value: 380_000_000, bant: 85, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Escritura firmada. Apartamento en El Poblado." },
+    { value: 310_000_000, bant: 83, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Casa en Laureles. Cierre exitoso." },
+    { value: 450_000_000, bant: 91, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Penthouse Envigado. Financiación aprobada." }
   ],
   "libranzas" => [
-    { value: 18_000_000, bant: 84, temp: "hot",  status: "won",       days_ago: 6,  stage_pos: :won,  note: "Desembolsado. Descuento nómina activo." },
-    { value: 12_500_000, bant: 76, temp: "hot",  status: "proposal",  days_ago: 1,  stage_pos: 3,     note: "Aprobado por la entidad. Firma pendiente." },
-    { value: 8_000_000,  bant: 65, temp: "warm", status: "qualified", days_ago: 3,  stage_pos: 2,     note: "En estudio de crédito. Historial limpio." },
-    { value: 5_500_000,  bant: 55, temp: "warm", status: "contacted", days_ago: 5,  stage_pos: 1,     note: "Documentación completa enviada." },
-    { value: 22_000_000, bant: 88, temp: "hot",  status: "won",       days_ago: 9,  stage_pos: :won,  note: "Monto alto. Empleado Gobernación." },
-    { value: 4_000_000,  bant: 40, temp: "cold", status: "new_lead",  days_ago: 0,  stage_pos: 0,     note: "Ingresó por WhatsApp. Pendiente contacto." },
-    { value: 15_000_000, bant: 79, temp: "hot",  status: "proposal",  days_ago: 2,  stage_pos: 3,     note: "Entidad aprobó. Esperando firma del empleador." },
-    { value: 7_000_000,  bant: 60, temp: "warm", status: "qualified", days_ago: 4,  stage_pos: 2,     note: "Estudio aprobado con observaciones." },
-    { value: 3_000_000,  bant: 30, temp: "cold", status: "lost",      days_ago: 14, stage_pos: :lost, note: "Rechazado. Nivel de endeudamiento alto." },
-    { value: 28_000_000, bant: 91, temp: "hot",  status: "won",       days_ago: 11, stage_pos: :won,  note: "Funcionario público. Mejor libranza del mes." },
-    { value: 9_500_000,  bant: 62, temp: "warm", status: "contacted", days_ago: 7,  stage_pos: 1,     note: "Documentos enviados. Revisando con RRHH." },
-    { value: 6_000_000,  bant: 50, temp: "cold", status: "new_lead",  days_ago: 1,  stage_pos: 0,     note: "Call center. Primera llamada realizada." }
+    { value: 18_000_000, bant: 84, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Desembolsado. Descuento nómina activo." },
+    { value: 28_000_000, bant: 91, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Funcionario público. Mejor libranza del mes." },
+    { value: 22_000_000, bant: 88, temp: "hot", status: "won", days_ago: 0, stage_pos: :won, note: "Monto alto. Empleada Gobernación. Cierre rápido." }
   ]
 }.freeze
 
@@ -676,6 +622,55 @@ LANDING_TEMPLATES = {
   ]
 }.freeze
 
+def seed_landing_form_submissions(tenant, pipeline)
+  return unless defined?(LandingFormSubmission) && defined?(LandingSubmissionProcessor)
+
+  form_leads = {
+    "iswo"      => [
+      { full_name: "Camilo Arango",    email: "camilo.a@ejemplo.co",   phone: "3006001001", company: "Ferretería Nacional" },
+      { full_name: "Lucía Montoya",    email: "lucia.m@ejemplo.co",    phone: "3006001002", company: "Hospital del Norte"  },
+      { full_name: "Sebastián Vargas", email: "sebas.v@ejemplo.co",    phone: "3006001003", company: "Minería Sur"         }
+    ],
+    "micasita"  => [
+      { full_name: "Carolina Méndez",  email: "caro.m@ejemplo.co",     phone: "3106001001", company: nil },
+      { full_name: "Tatiana Guerrero", email: "tatiana.g@ejemplo.co",  phone: "3106001002", company: nil },
+      { full_name: "Gustavo Pineda",   email: "gus.p@ejemplo.co",      phone: "3106001003", company: nil }
+    ],
+    "libranzas" => [
+      { full_name: "Gloria Peñaloza",  email: "gloria.p@ejemplo.co",   phone: "3206001001", company: "Alcaldía de Medellín"  },
+      { full_name: "Oswaldo Muñoz",    email: "oswal.m@ejemplo.co",    phone: "3206001002", company: "Banco Popular"         },
+      { full_name: "Beatriz Lozano",   email: "bea.l@ejemplo.co",      phone: "3206001003", company: "SENA Regional"         }
+    ]
+  }
+
+  leads      = form_leads[tenant.slug] || form_leads["iswo"]
+  landings   = LandingPage.where(tenant: tenant, published: true).to_a
+  return if landings.empty?
+
+  leads.each_with_index do |lead, i|
+    landing = landings[i % landings.size]
+    payload = { "full_name" => lead[:full_name], "email" => lead[:email],
+                "phone" => lead[:phone], "company" => lead[:company] }.compact
+
+    submission = LandingFormSubmission.find_or_initialize_by(
+      tenant:      tenant,
+      landing_page: landing,
+      payload:     payload
+    )
+    if submission.new_record?
+      submission.assign_attributes(
+        utm_source:   %w[google facebook whatsapp directo][i % 4],
+        utm_medium:   %w[cpc social organic][i % 3],
+        utm_campaign: "demo_seed_#{tenant.slug}"
+      )
+      submission.save!
+      LandingSubmissionProcessor.new(submission).call
+    end
+  end
+rescue => e
+  puts "     [form_submissions] #{e.message}"
+end
+
 def seed_landing_pages(tenant)
   templates = LANDING_TEMPLATES[tenant.slug] || []
   templates.each do |t|
@@ -821,6 +816,9 @@ VERTICALS.each do |config|
 
     seed_landing_pages(tenant)
     puts "     #{LandingPage.where(tenant: tenant).count} landing pages (#{LandingPage.where(tenant: tenant, published: true).count} publicadas)"
+
+    seed_landing_form_submissions(tenant, pipeline)
+    puts "     #{LandingFormSubmission.where(tenant: tenant).count} envío(s) de formulario simulado(s)"
   end
 end
 

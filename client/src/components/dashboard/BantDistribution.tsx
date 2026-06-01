@@ -152,39 +152,39 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
 
         {total > 0 && (
           <div className="mt-1 grid grid-cols-3 gap-2">
-            <div
-              className={cn(
-                'flex flex-col items-center rounded-lg border border-red-200/50 bg-red-50/80 p-2.5',
-                'dark:border-red-900/40 dark:bg-red-950/30',
-              )}
-            >
-              <span className="text-lg font-semibold tabular-nums text-red-600 dark:text-red-400">
+            {/* Bajo — naranja (#f97316) */}
+            <div className={cn(
+              'flex flex-col items-center rounded-lg border p-2.5',
+              'bg-orange-50/80 border-orange-200/60 text-orange-700',
+              'dark:bg-orange-950/50 dark:border-orange-800/50 dark:text-orange-400',
+            )}>
+              <span className="text-lg font-semibold tabular-nums">
                 {distribution.low}
               </span>
               <span className="text-[10px] text-muted-foreground">
                 {Math.round((distribution.low / total) * 100)}% bajo
               </span>
             </div>
-            <div
-              className={cn(
-                'flex flex-col items-center rounded-lg border border-amber-200/50 bg-amber-50/80 p-2.5',
-                'dark:border-amber-900/40 dark:bg-amber-950/30',
-              )}
-            >
-              <span className="text-lg font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+            {/* Medio — amarillo (#eab308) */}
+            <div className={cn(
+              'flex flex-col items-center rounded-lg border p-2.5',
+              'bg-yellow-50/80 border-yellow-200/60 text-yellow-700',
+              'dark:bg-yellow-950/50 dark:border-yellow-800/50 dark:text-yellow-400',
+            )}>
+              <span className="text-lg font-semibold tabular-nums">
                 {distribution.medium}
               </span>
               <span className="text-[10px] text-muted-foreground">
                 {Math.round((distribution.medium / total) * 100)}% medio
               </span>
             </div>
-            <div
-              className={cn(
-                'flex flex-col items-center rounded-lg border border-primary/30 bg-primary/10 p-2.5',
-                'dark:border-primary/35 dark:bg-primary/15',
-              )}
-            >
-              <span className="text-lg font-semibold tabular-nums text-primary">
+            {/* Alto — esmeralda (#10b981) */}
+            <div className={cn(
+              'flex flex-col items-center rounded-lg border p-2.5',
+              'bg-emerald-50/80 border-emerald-200/60 text-emerald-700',
+              'dark:bg-emerald-950/50 dark:border-emerald-800/50 dark:text-emerald-400',
+            )}>
+              <span className="text-lg font-semibold tabular-nums">
                 {distribution.high}
               </span>
               <span className="text-[10px] text-muted-foreground">

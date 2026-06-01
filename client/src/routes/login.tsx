@@ -2,8 +2,10 @@ import { createFileRoute, redirect, useNavigate, Link } from '@tanstack/react-ro
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Eye, EyeOff, Building2 } from 'lucide-react'
 import api from '@/lib/api'
 import {
   buildTenant,
@@ -87,6 +89,7 @@ function LoginPage() {
   const login = useAuthStore((s) => s.login)
   const setTenant = useAuthStore((s) => s.setTenant)
   const setAccessToken = useAuthStore((s) => s.setAccessToken)
+  const [showPassword, setShowPassword] = useState(false)
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginForm): Promise<{ user: User; token: string }> => {
@@ -170,10 +173,12 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-lg">
-            IS
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Building2 className="size-6" />
           </div>
-          <CardTitle className="text-2xl">CRM ISWO</CardTitle>
+          <CardTitle className="text-2xl">
+            {import.meta.env.VITE_APP_NAME || 'CRM ISWO'}
+          </CardTitle>
           <CardDescription>Ingresa tus credenciales para continuar</CardDescription>
         </CardHeader>
         <CardContent>
@@ -213,14 +218,25 @@ function LoginPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Tu contraseña"
-                autoComplete="current-password"
-                {...register('password')}
-                aria-invalid={!!errors.password}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Tu contraseña"
+                  autoComplete="current-password"
+                  className="pr-10"
+                  {...register('password')}
+                  aria-invalid={!!errors.password}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
               )}

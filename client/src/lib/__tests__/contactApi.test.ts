@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mapContactResource, type ContactSummary } from '@/lib/contactApi'
+import { mapContactResource } from '@/lib/contactApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
 
 function makeContactResource(attrs: Record<string, unknown> = {}): JsonApiResource {

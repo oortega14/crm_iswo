@@ -88,8 +88,8 @@ function ForgotPasswordPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">Recuperar contraseña</CardTitle>
           <CardDescription>
-            Indica el tenant (igual que en el inicio de sesión) y tu correo. El enlace llegará por
-            email si la cuenta existe.
+            Indica el identificador de empresa y tu correo. Si la cuenta existe,
+            recibirás un enlace por email.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -98,11 +98,11 @@ function ForgotPasswordPage() {
             className="flex flex-col gap-4"
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="tenantSlug">Espacio de trabajo (tenant)</Label>
+              <Label htmlFor="tenantSlug">Empresa (identificador)</Label>
               <Input
                 id="tenantSlug"
                 autoComplete="organization"
-                placeholder="p. ej. iswo"
+                placeholder="p. ej. iswo, mi-casita, libranzas…"
                 {...form.register('tenantSlug')}
                 aria-invalid={!!form.formState.errors.tenantSlug}
               />

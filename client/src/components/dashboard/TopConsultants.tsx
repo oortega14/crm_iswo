@@ -55,7 +55,7 @@ export function TopConsultants({
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Trophy className="size-4" />
             </span>
-            Mejores del mes
+            Ranking comercial
           </CardTitle>
           <CardDescription>Oportunidades ganadas en el mes en curso.</CardDescription>
         </CardHeader>
@@ -80,7 +80,7 @@ export function TopConsultants({
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Trophy className="size-4" />
             </span>
-            Mejores del mes
+            Ranking comercial
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -106,7 +106,7 @@ export function TopConsultants({
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <Trophy className="size-4" />
           </span>
-          Mejores del mes
+          Ranking comercial
         </CardTitle>
         <CardDescription>Ranking por oportunidades ganadas (mes actual). Valor facturado estimado.</CardDescription>
       </CardHeader>

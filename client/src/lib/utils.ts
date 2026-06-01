@@ -201,9 +201,12 @@ export type TemperatureLevel = 'cold' | 'warm' | 'hot'
 
 export function getTemperatureColor(temp: TemperatureLevel): string {
   switch (temp) {
-    case 'hot':  return 'bg-red-100 text-red-700 border-red-200'
-    case 'warm': return 'bg-amber-100 text-amber-700 border-amber-200'
-    case 'cold': return 'bg-sky-100 text-sky-700 border-sky-200'
+    case 'hot':
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-400 dark:border-red-800/60'
+    case 'warm':
+      return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800/60'
+    case 'cold':
+      return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-800/60'
   }
 }
 

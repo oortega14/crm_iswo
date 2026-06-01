@@ -9,7 +9,9 @@ module Users
     end
 
     def call
-      return unless @user
+      # Solo admins pueden recuperar contraseña por este flujo.
+      # Retornamos silenciosamente para no revelar si el email existe con otro rol.
+      return unless @user&.role_admin?
 
       ActsAsTenant.with_tenant(@user.tenant) do
         raw_token, enc_token = Devise.token_generator.generate(User, :reset_password_token)

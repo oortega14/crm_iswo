@@ -257,15 +257,26 @@ function LoginPage() {
               )}
             </Button>
 
-            <p className="text-center text-sm">
-              <Link
-                to="/forgot-password"
-                search={tenantForForgot ? { tenant: tenantForForgot } : undefined}
-                className="text-primary underline-offset-4 hover:underline"
-              >
-                ¿Olvidaste tu contraseña?
-              </Link>
-            </p>
+            {tenantForForgot === 'iswo' ? (
+              <Button asChild variant="default" className="w-full">
+                <Link
+                  to="/forgot-password"
+                  search={{ tenant: tenantForForgot }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </Button>
+            ) : (
+              <p className="text-center text-sm">
+                <Link
+                  to="/forgot-password"
+                  search={tenantForForgot ? { tenant: tenantForForgot } : undefined}
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </p>
+            )}
           </form>
         </CardContent>
       </Card>

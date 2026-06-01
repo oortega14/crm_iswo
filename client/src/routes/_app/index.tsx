@@ -1,12 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp, BarChart2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { queryKeys } from '@/lib/queryClient'
 import {
   fetchDashboardActivity,
+  fetchDashboardBantDistribution,
   fetchDashboardBriefing,
   fetchDashboardKpis,
+  fetchDashboardLeadSources,
   fetchDashboardPipeline,
   fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
@@ -17,6 +19,9 @@ import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
 import { TopConsultants } from '@/components/dashboard/TopConsultants'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { DailyBriefing } from '@/components/dashboard/DailyBriefing'
+import { BantDistribution } from '@/components/dashboard/BantDistribution'
+import { LeadSourcesChart } from '@/components/dashboard/LeadSourcesChart'
+import { LeadTemperatureStrip } from '@/components/dashboard/LeadTemperatureStrip'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
 import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
@@ -83,6 +88,16 @@ function DashboardPage() {
     queryKey: queryKeys.dashboard.activity(pipelineFilterKey),
     queryFn: () => fetchDashboardActivity(activePipelineId),
     refetchInterval: 30_000,
+  })
+
+  const bantQ = useQuery({
+    queryKey: queryKeys.dashboard.bantDistribution(pipelineFilterKey),
+    queryFn: () => fetchDashboardBantDistribution(activePipelineId),
+  })
+
+  const leadSourcesQ = useQuery({
+    queryKey: queryKeys.dashboard.leadSources(pipelineFilterKey),
+    queryFn: () => fetchDashboardLeadSources(activePipelineId),
   })
 
   const initialLoading =
@@ -170,6 +185,29 @@ function DashboardPage() {
               isError={consultantsQ.isError}
             />
           )}
+        </div>
+      </DashboardSection>
+
+      {/* ── Calidad de leads — RFC §6.1 BANT + orígenes ─────────────── */}
+      <DashboardSection title="Calidad de leads" icon={BarChart2} accent="brand">
+        <LeadTemperatureStrip
+          hotCount={kpisQ.data?.hot_count ?? 0}
+          warmCount={kpisQ.data?.warm_count ?? 0}
+          coldCount={kpisQ.data?.cold_count ?? 0}
+          loading={kpisQ.isPending}
+        />
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <BantDistribution
+            data={bantQ.data}
+            isLoading={bantQ.isPending}
+            isError={bantQ.isError}
+          />
+          <LeadSourcesChart
+            currency={currency}
+            data={leadSourcesQ.data}
+            isLoading={leadSourcesQ.isPending}
+            isError={leadSourcesQ.isError}
+          />
         </div>
       </DashboardSection>
 

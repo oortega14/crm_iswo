@@ -227,7 +227,7 @@ describe('temperature helpers', () => {
 
 // ─── debounce ────────────────────────────────────────────────────────────────
 describe('debounce', () => {
-  beforeEach(() => { vi.useFakeTimers() })
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) })
   afterEach(() => { vi.useRealTimers() })
 
   it('no llama la función antes del delay', () => {

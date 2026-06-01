@@ -8,7 +8,7 @@ import { X, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from '@tanstack/react-router'
 import api, { formatRailsError } from '@/lib/api'
-import { useTenant } from '@/stores/auth'
+import { useAuthStore, useTenant } from '@/stores/auth'
 import {
   jsonApiIncluded,
   jsonApiPrimaryList,
@@ -59,6 +59,7 @@ const opportunitySchema = z.object({
   lead_source_id: z.string().optional(),
   expected_close_on: z.string().optional(),
   temperature: z.enum(['cold', 'warm', 'hot']).default('cold'),
+  owner_id: z.string().optional(),
 })
 
 type OpportunityForm = z.infer<typeof opportunitySchema>
@@ -87,6 +88,8 @@ interface QuickAddOpportunityProps {
 export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: QuickAddOpportunityProps) {
   const queryClient = useQueryClient()
   const tenant = useTenant()
+  const userRole = useAuthStore((s) => s.user?.role)
+  const canAssign = userRole === 'admin' || userRole === 'manager'
   const [duplicatePhone, setDuplicatePhone] = useState<DuplicateInfo | null>(null)
   const [duplicateEmail, setDuplicateEmail] = useState<DuplicateInfo | null>(null)
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({})
@@ -132,6 +135,21 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
     },
     enabled: open,
     staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: users = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map((r) => ({
+          id: String(r.id),
+          name: String(r.attributes?.name ?? r.attributes?.email ?? 'Usuario'),
+        }))
+    },
+    enabled: open && canAssign,
+    staleTime: 60_000,
   })
 
   const defaultPipeline = pipelines?.find((p) => p.is_default) || pipelines?.[0]
@@ -235,6 +253,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
   const createMutation = useMutation({
     mutationFn: async (data: OpportunityForm) => {
       const extraFields = Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}
+      const ownerField = data.owner_id ? { owner_id: data.owner_id } : {}
       const body = prefilledContact
         ? {
             contact_id: prefilledContact.id,
@@ -245,6 +264,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
             temperature: data.temperature,
+            ...ownerField,
             ...extraFields,
           }
         : {
@@ -259,6 +279,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
             lead_source_id: data.lead_source_id || undefined,
             expected_close_on: data.expected_close_on || undefined,
             temperature: data.temperature,
+            ...ownerField,
             ...extraFields,
           }
       const response = await api.post('/opportunities', { opportunity: body })
@@ -626,6 +647,25 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {/* Consultor asignado — solo admin/manager */}
+                  {canAssign && users.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="owner_id">Consultor asignado</Label>
+                      <select
+                        id="owner_id"
+                        {...register('owner_id')}
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <option value="">— Yo mismo —</option>
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
                   {/* Origen */}

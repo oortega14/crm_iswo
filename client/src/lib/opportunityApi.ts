@@ -275,7 +275,7 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     qualified: a.qualified != null ? Boolean(a.qualified) : undefined,
     notes: a.notes != null ? String(a.notes) : undefined,
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
-    expected_close_on: a.expected_close_on != null ? String(a.expected_close_on) : undefined,
+    expected_close_on: a.expected_close_date != null ? String(a.expected_close_date) : undefined,
     reminder_due_at: a.reminder_due_at != null ? String(a.reminder_due_at) : undefined,
     custom_fields: a.custom_fields != null && typeof a.custom_fields === 'object'
       ? (a.custom_fields as Record<string, unknown>)
@@ -332,7 +332,7 @@ export function toOpportunityUpdatePayload(
   if (patch.qualified !== undefined) out.qualified = patch.qualified
   if (patch.stage_id !== undefined) out.pipeline_stage_id = patch.stage_id
   if (patch.source_id !== undefined) out.lead_source_id = patch.source_id || null
-  if (patch.expected_close_on !== undefined) out.expected_close_on = patch.expected_close_on || null
+  if (patch.expected_close_on !== undefined) out.expected_close_date = patch.expected_close_on || null
   if (patch.bant_score !== undefined) out.bant_score = patch.bant_score
   if (patch.bant_data !== undefined) out.bant_data = patch.bant_data
   if (patch.custom_fields !== undefined) out.custom_fields = patch.custom_fields

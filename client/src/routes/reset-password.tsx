@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -70,6 +71,8 @@ function ResetPasswordPage() {
 
 function ResetPasswordForm({ token, tenantSlug }: { token: string; tenantSlug: string }) {
   const navigate = useNavigate()
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   useEffect(() => {
     window.localStorage.setItem('crm-tenant-slug', tenantSlug.toLowerCase())
@@ -118,13 +121,24 @@ function ResetPasswordForm({ token, tenantSlug }: { token: string; tenantSlug: s
           >
             <div className="flex flex-col gap-2">
               <Label htmlFor="password">Nueva contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                {...form.register('password')}
-                aria-invalid={!!form.formState.errors.password}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className="pr-10"
+                  {...form.register('password')}
+                  aria-invalid={!!form.formState.errors.password}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
               {form.formState.errors.password && (
                 <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
               )}
@@ -132,13 +146,24 @@ function ResetPasswordForm({ token, tenantSlug }: { token: string; tenantSlug: s
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="password_confirmation">Confirmar contraseña</Label>
-              <Input
-                id="password_confirmation"
-                type="password"
-                autoComplete="new-password"
-                {...form.register('password_confirmation')}
-                aria-invalid={!!form.formState.errors.password_confirmation}
-              />
+              <div className="relative">
+                <Input
+                  id="password_confirmation"
+                  type={showConfirm ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className="pr-10"
+                  {...form.register('password_confirmation')}
+                  aria-invalid={!!form.formState.errors.password_confirmation}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                  aria-label={showConfirm ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
               {form.formState.errors.password_confirmation && (
                 <p className="text-sm text-destructive">
                   {form.formState.errors.password_confirmation.message}

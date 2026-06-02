@@ -575,20 +575,36 @@ module Api
         owner_id.to_i == current_user.id
       end
 
-      # Notifica al dueño de la oportunidad existente que hay un posible duplicado.
+      # RFC §6.2: notifica al dueño de la existente y al consultor que registró (quién / desde cuándo).
       def notify_duplicate_collision!(flag, existing_opp)
-        owner = existing_opp.owner_user
-        return unless owner
+        contact_label = existing_opp.contact&.display_name.presence || "este prospecto"
+        since_label     = existing_opp.created_at&.strftime("%d/%m/%Y") || "—"
+        registrar       = current_user
+        owner           = existing_opp.owner_user
 
-        Notification.create!(
-          tenant:   current_tenant,
-          user:     owner,
-          kind:     "duplicate_found",
-          title:    "Posible duplicado detectado",
-          body:     "#{current_user.name} registró una oportunidad para #{existing_opp.contact&.display_name} " \
-                    "que ya tienes en tu pipeline.",
-          resource: existing_opp
-        )
+        if owner.present? && owner.id != registrar.id
+          Notification.create!(
+            tenant:   current_tenant,
+            user:     owner,
+            kind:     "duplicate_found",
+            title:    "Posible duplicado detectado",
+            body:     "#{registrar.name} registró otra oportunidad para #{contact_label} " \
+                      "que ya tienes en tu pipeline.",
+            resource: existing_opp
+          )
+        end
+
+        if registrar.present?
+          owner_label = owner&.name.presence || "otro consultor"
+          Notification.create!(
+            tenant:   current_tenant,
+            user:     registrar,
+            kind:     "duplicate_found",
+            title:    "Prospecto ya registrado",
+            body:     "#{contact_label} ya tiene una oportunidad con #{owner_label} desde #{since_label}.",
+            resource: flag.opportunity
+          )
+        end
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.warn("[Notification] No se pudo crear notificación de duplicado: #{e.message}")
       end

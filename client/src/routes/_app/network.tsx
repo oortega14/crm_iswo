@@ -483,13 +483,22 @@ function NetworkPage() {
               </div>
               <div>
                 <p className="text-sm font-medium">Visibilidad de oportunidades (RFC F2)</p>
-                {isConsultant ? (
+                {networkDepth === 0 ? (
                   <p className="text-xs text-muted-foreground">
-                    Ves las oportunidades de tu red hasta <strong>{networkDepth} niveles</strong> de profundidad
+                    {isConsultant
+                      ? 'Solo ves tus oportunidades propias; no se incluyen opps de referidos.'
+                      : 'Los consultores solo ven sus oportunidades propias (profundidad 0).'}
+                  </p>
+                ) : isConsultant ? (
+                  <p className="text-xs text-muted-foreground">
+                    Ves tus oportunidades y las de consultores que referiste, hasta{' '}
+                    <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong> de profundidad
+                    (solo lectura en la red).
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Los consultores ven oportunidades de su red hasta <strong>{networkDepth} niveles</strong>.
+                    Los consultores ven sus opps y las de su red hasta{' '}
+                    <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong> (solo lectura).
                     {canDelete && ' Ajusta la profundidad para todos los consultores del tenant.'}
                   </p>
                 )}
@@ -507,7 +516,7 @@ function NetworkPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4, 5, 7, 10].map((d) => (
+                    {[0, 1, 2, 3, 4, 5, 7, 10].map((d) => (
                       <SelectItem key={d} value={String(d)}>{d} nivel{d !== 1 ? 'es' : ''}</SelectItem>
                     ))}
                   </SelectContent>

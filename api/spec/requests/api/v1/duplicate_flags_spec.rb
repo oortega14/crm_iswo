@@ -27,6 +27,7 @@ RSpec.describe "Api::V1::DuplicateFlags", type: :request do
       ids = json["data"].map { |d| d["id"].to_i }
       expect(ids).to include(flag.id)
     end
+
   end
 
   describe "GET /api/v1/duplicate_flags/:id" do
@@ -34,6 +35,16 @@ RSpec.describe "Api::V1::DuplicateFlags", type: :request do
       get "/api/v1/duplicate_flags/#{flag.id}", headers: auth_headers(admin)
       expect(response).to have_http_status(:ok)
       expect(json.dig("data", "id").to_i).to eq(flag.id)
+    end
+
+    it "incluye resumen RFC (owner y fechas) en attributes" do
+      opp_a.update!(owner_user: consultant)
+      opp_b.update!(owner_user: manager)
+      get "/api/v1/duplicate_flags/#{flag.id}", headers: auth_headers(admin)
+      attrs = json.dig("data", "attributes")
+      expect(attrs["opportunity_a"]["owner_name"]).to eq(consultant.name)
+      expect(attrs["opportunity_b"]["owner_name"]).to eq(manager.name)
+      expect(attrs["opportunity_a"]["created_at"]).to be_present
     end
 
     it "consultant puede ver un flag (show? = staff?)" do

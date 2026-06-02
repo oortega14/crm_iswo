@@ -28,6 +28,11 @@ module Tenants
       { name: "Perdida",    position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
     ].freeze
 
+    # RFC F2: consultores ven su red hasta N niveles (default 3).
+    DEFAULT_TENANT_SETTINGS = {
+      "network_depth" => ConsultantNetworkAccess::DEFAULT_NETWORK_DEPTH
+    }.freeze
+
     DEFAULT_LEAD_SOURCES = [
       { kind: "web",      name: "Web / Orgánico"      },
       { kind: "whatsapp", name: "WhatsApp"             },
@@ -116,7 +121,8 @@ module Tenants
           locale:        @locale,
           logo_url:      @logo_url,
           primary_color: @primary_color,
-          active:        true
+          active:        true,
+          settings:      DEFAULT_TENANT_SETTINGS.deep_dup
         )
 
         ActsAsTenant.with_tenant(tenant) do

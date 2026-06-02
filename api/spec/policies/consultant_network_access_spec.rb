@@ -51,20 +51,14 @@ RSpec.describe ConsultantNetworkAccess do
   end
 
   describe ".network_depth" do
-    it "sin referral_opportunity_visibility solo ve las propias" do
-      tenant.update!(settings: tenant.settings.merge("referral_opportunity_visibility" => false))
+    it "con network_depth 0 solo ve las propias (RFC §6.3)" do
+      tenant.update!(settings: tenant.settings.merge("network_depth" => 0))
       expect(described_class.visible_owner_ids(referrer)).to eq([referrer.id])
       expect(described_class.can_view_opportunity?(referrer, network_opp)).to be(false)
     end
 
-    it "con visibilidad de red y network_depth 0 solo ve las propias" do
-      tenant.update!(
-        settings: tenant.settings.merge(
-          "referral_opportunity_visibility" => true,
-          "network_depth" => 0
-        )
-      )
-      expect(described_class.visible_owner_ids(referrer)).to eq([referrer.id])
+    it "por defecto incluye la red hasta 3 niveles" do
+      expect(described_class.visible_owner_ids(referrer)).to include(referred.id)
     end
   end
 end

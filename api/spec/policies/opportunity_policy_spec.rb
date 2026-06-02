@@ -42,8 +42,7 @@ RSpec.describe OpportunityPolicy do
       expect(described_class.new(consultant, foreign_opp).show?).to be(false)
     end
 
-    it "consultant ve opps de su red de referidos (solo lectura) con visibilidad activada" do
-      tenant.update!(settings: tenant.settings.merge("referral_opportunity_visibility" => true, "network_depth" => 3))
+    it "consultant ve opps de su red de referidos (solo lectura)" do
       referred = create(:user, :consultant, tenant: tenant)
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
       network_opp = create(:opportunity,
@@ -126,8 +125,7 @@ RSpec.describe OpportunityPolicy do
       expect(described_class::Scope.new(viewer, Opportunity).resolve).to match_array([own_opp, foreign_opp])
     end
 
-    it "consultant ve las suyas y las de su red con visibilidad activada" do
-      tenant.update!(settings: tenant.settings.merge("referral_opportunity_visibility" => true, "network_depth" => 3))
+    it "consultant ve las suyas y las de su red" do
       referred = create(:user, :consultant, tenant: tenant)
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
       network_opp = create(:opportunity,

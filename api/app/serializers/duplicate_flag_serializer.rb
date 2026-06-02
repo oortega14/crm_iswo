@@ -10,16 +10,53 @@ class DuplicateFlagSerializer < ApplicationSerializer
     f.resolution == "pending"
   end
 
-  belongs_to :tenant, serializer: :tenant
+  attribute :detected_by_name do |f|
+    f.detected_by_user&.name
+  end
+
+  attribute :resolved_by_name do |f|
+    f.resolved_by_user&.name
+  end
 
   attribute :contact_a do |f|
-    f.contact_a&.then { |c| { id: c.id, full_name: [c.first_name, c.last_name].compact.join(" "), email: c.email, phone: c.phone_e164 } }
+    DuplicateFlagSerializer.contact_payload(f.contact_a)
   end
 
   attribute :contact_b do |f|
-    f.contact_b&.then { |c| { id: c.id, full_name: [c.first_name, c.last_name].compact.join(" "), email: c.email, phone: c.phone_e164 } }
+    DuplicateFlagSerializer.contact_payload(f.contact_b)
   end
 
   attribute :opportunity_a_id
   attribute :opportunity_b_id
+
+  attribute :opportunity_a do |f|
+    DuplicateFlagSerializer.opportunity_payload(f.opportunity)
+  end
+
+  attribute :opportunity_b do |f|
+    DuplicateFlagSerializer.opportunity_payload(f.duplicate_of_opportunity)
+  end
+
+  def self.contact_payload(contact)
+    return nil unless contact
+
+    {
+      id:        contact.id,
+      full_name: contact.display_name,
+      email:     contact.email,
+      phone:     contact.phone_e164
+    }
+  end
+
+  def self.opportunity_payload(opp)
+    return nil unless opp
+
+    {
+      id:           opp.id,
+      contact_name: opp.contact&.display_name.presence || opp.title,
+      owner_id:     opp.owner_user_id,
+      owner_name:   opp.owner_user&.name,
+      created_at:   opp.created_at&.iso8601
+    }
+  end
 end

@@ -16,6 +16,7 @@ export const Route = createFileRoute('/_app/settings/general')({
 })
 
 const NETWORK_DEPTH_OPTIONS = [
+  { value: 0, label: '0', description: 'Solo oportunidades propias' },
   { value: 1, label: '1 nivel', description: 'Solo referidos directos' },
   { value: 2, label: '2 niveles', description: 'Directos + sus referidos' },
   { value: 3, label: '3 niveles', description: 'Recomendado — hasta bisnietos' },
@@ -135,7 +136,7 @@ function GeneralSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {NETWORK_DEPTH_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -159,9 +160,18 @@ function GeneralSettingsPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            Con <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong>, cada
-            consultor ve sus oportunidades propias más las de sus referidos hasta{' '}
-            {networkDepth === 1 ? 'el primer nivel' : `${networkDepth} niveles de profundidad`}.
+            {networkDepth === 0 ? (
+              <>
+                Con <strong>0 niveles</strong>, cada consultor solo ve sus oportunidades propias
+                (sin opps de referidos en el CRM).
+              </>
+            ) : (
+              <>
+                Con <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong>, cada
+                consultor ve sus oportunidades propias más las de sus referidos hasta{' '}
+                {networkDepth === 1 ? 'el primer nivel' : `${networkDepth} niveles de profundidad`}.
+              </>
+            )}{' '}
             Los admins y managers siempre ven todo el tenant.
           </p>
         </CardContent>

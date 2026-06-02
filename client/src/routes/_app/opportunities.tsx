@@ -23,6 +23,13 @@ import {
 } from '@/lib/opportunityApi'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
+import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
+import {
+  countOpportunitiesByOwnership,
+  matchesOwnershipFilter,
+  type OpportunityOwnershipFilter,
+} from '@/lib/opportunityOwnership'
+import { OpportunityOwnershipToolbar } from '@/components/opportunities/OpportunityOwnershipToolbar'
 import { toast } from 'sonner'
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
@@ -34,6 +41,8 @@ const opportunitiesSearchSchema = z.object({
   owner: z.string().optional(),
   status: z.string().optional(),
   stale: z.coerce.boolean().optional(),
+  /** RFC §6.3 — filtro consultor: propias vs red */
+  ownership: z.enum(['all', 'own', 'network']).optional(),
 })
 
 export const Route = createFileRoute('/_app/opportunities')({
@@ -45,9 +54,13 @@ function OpportunitiesPage() {
   const search = useSearch({ from: '/_app/opportunities' })
   const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
-  const userRole = useAuthStore((s) => s.user?.role)
+  const user = useAuthStore((s) => s.user)
+  const userRole = user?.role
   const canCreateOpportunity = userRole !== 'viewer'
+  const showOwnershipUi = userRole === 'consultant'
   const tenant = useAuthStore((s) => s.tenant)
+  const networkUserIds = useNetworkUserIds()
+  const ownershipFilter: OpportunityOwnershipFilter = search.ownership ?? 'all'
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
@@ -139,7 +152,7 @@ function OpportunitiesPage() {
     let all = opportunities ?? []
     const q = searchInput.trim().toLowerCase()
     if (q.length > 0 && q.length < 2) {
-      return all.filter(
+      all = all.filter(
         (o) =>
           o.contact_name?.toLowerCase().includes(q) ||
           o.company_name?.toLowerCase().includes(q) ||
@@ -147,8 +160,31 @@ function OpportunitiesPage() {
           o.contact_phone?.includes(q),
       )
     }
+    if (showOwnershipUi && ownershipFilter !== 'all') {
+      all = all.filter((o) =>
+        matchesOwnershipFilter(o, ownershipFilter, user?.id, networkUserIds, userRole),
+      )
+    }
     return all
-  }, [opportunities, searchInput])
+  }, [opportunities, searchInput, showOwnershipUi, ownershipFilter, user?.id, networkUserIds, userRole])
+
+  const ownershipCounts = useMemo(
+    () => {
+      let base = opportunities ?? []
+      const q = searchInput.trim().toLowerCase()
+      if (q.length > 0 && q.length < 2) {
+        base = base.filter(
+          (o) =>
+            o.contact_name?.toLowerCase().includes(q) ||
+            o.company_name?.toLowerCase().includes(q) ||
+            o.contact_email?.toLowerCase().includes(q) ||
+            o.contact_phone?.includes(q),
+        )
+      }
+      return countOpportunitiesByOwnership(base, user?.id, networkUserIds, userRole)
+    },
+    [opportunities, searchInput, user?.id, networkUserIds, userRole],
+  )
 
   const selectedPreview = opportunities?.find((o) => o.id === selectedId)
 
@@ -192,6 +228,7 @@ function OpportunitiesPage() {
         status: undefined,
         stage: undefined,
         stale: undefined,
+        ownership: undefined,
       }),
     })
   }
@@ -267,6 +304,21 @@ function OpportunitiesPage() {
           </Button>
         )}
       </PageHeader>
+
+      {showOwnershipUi && (
+        <OpportunityOwnershipToolbar
+          value={ownershipFilter}
+          onChange={(ownership) =>
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                ownership: ownership === 'all' ? undefined : ownership,
+              }),
+            })
+          }
+          counts={ownershipCounts}
+        />
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/50 bg-card/40 shadow-sm dark:bg-card/20">
         {isLoading ? (

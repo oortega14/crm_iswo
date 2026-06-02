@@ -11,9 +11,14 @@ import {
   type ColumnFiltersState,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { ArrowUpDown, ChevronDown, Network, Settings2 } from 'lucide-react'
+import { ArrowUpDown, ChevronDown, Settings2 } from 'lucide-react'
 import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
-import { useUser } from '@/stores/auth'
+import {
+  getOpportunityOwnership,
+  ownershipRowClassName,
+} from '@/lib/opportunityOwnership'
+import { OpportunityOwnershipBadge } from '@/components/opportunities/OpportunityOwnershipBadge'
+import { useUser, useUserRole } from '@/stores/auth'
 import {
   cn,
   formatCurrency,
@@ -35,8 +40,6 @@ import {
 import type { Opportunity } from '@/types'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-
 const COLUMN_LABELS: Record<string, string> = {
   contact_name:    'Contacto',
   temperature:     'Temperatura',
@@ -69,12 +72,14 @@ export function OpportunitiesTable({
   })
 
   const currentUser = useUser()
+  const role = useUserRole()
   const networkUserIds = useNetworkUserIds()
 
   const columns = useMemo(
     () => {
     const _networkUserIds = networkUserIds
-    const _currentUserId = String(currentUser?.id ?? '')
+    const _currentUserId = currentUser?.id
+    const _role = role
     return [
       columnHelper.accessor('id', {
         header: 'ID',
@@ -92,16 +97,27 @@ export function OpportunitiesTable({
             <ArrowUpDown className="ml-2 size-4" />
           </Button>
         ),
-        cell: (info) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{info.getValue()}</span>
-            {info.row.original.company_name && (
-              <span className="text-xs text-muted-foreground">
-                {info.row.original.company_name}
-              </span>
-            )}
-          </div>
-        ),
+        cell: (info) => {
+          const ownership = getOpportunityOwnership(
+            info.row.original,
+            _currentUserId,
+            _networkUserIds,
+            _role,
+          )
+          return (
+            <div className="flex flex-col gap-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium">{info.getValue()}</span>
+                <OpportunityOwnershipBadge ownership={ownership} />
+              </div>
+              {info.row.original.company_name && (
+                <span className="text-xs text-muted-foreground">
+                  {info.row.original.company_name}
+                </span>
+              )}
+            </div>
+          )
+        },
       }),
       columnHelper.accessor('temperature', {
         header: 'Temp.',
@@ -190,11 +206,6 @@ export function OpportunitiesTable({
         cell: (info) => {
           const owner = info.getValue()
           if (!owner) return null
-          const ownerId = owner.id ? String(owner.id) : undefined
-          const isFromNetwork =
-            ownerId !== undefined &&
-            ownerId !== _currentUserId &&
-            _networkUserIds.has(ownerId)
           return (
             <div className="flex items-center gap-2">
               <Avatar className="size-6">
@@ -204,18 +215,6 @@ export function OpportunitiesTable({
                 </AvatarFallback>
               </Avatar>
               <span className="text-sm truncate max-w-[100px]">{owner.name}</span>
-              {isFromNetwork && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center">
-                      <Network className="size-3 text-indigo-500" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    De tu red de referidos
-                  </TooltipContent>
-                </Tooltip>
-              )}
             </div>
           )
         },
@@ -245,7 +244,7 @@ export function OpportunitiesTable({
       }),
     ]
     },
-    [networkUserIds, currentUser?.id]
+    [networkUserIds, currentUser?.id, role]
   )
 
   const table = useReactTable({
@@ -323,14 +322,22 @@ export function OpportunitiesTable({
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
+              table.getRowModel().rows.map((row) => {
+                const ownership = getOpportunityOwnership(
+                  row.original,
+                  currentUser?.id,
+                  networkUserIds,
+                  role,
+                )
+                return (
                 <tr
                   key={row.id}
                   onClick={() => onSelectOpportunity(row.original.id)}
                   className={cn(
                     'border-b cursor-pointer hover:bg-muted/50 transition-colors',
                     row.original.status === 'lost' && 'opacity-50 bg-muted/20',
-                    row.original.status === 'won'  && 'bg-green-50/40 dark:bg-green-950/20'
+                    row.original.status === 'won'  && 'bg-green-50/40 dark:bg-green-950/20',
+                    ownershipRowClassName(ownership),
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
@@ -339,7 +346,7 @@ export function OpportunitiesTable({
                     </td>
                   ))}
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>

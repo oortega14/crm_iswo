@@ -33,6 +33,15 @@ RSpec.describe ReferralNetwork, type: :model do
       expect(dup.errors[:referrer_user_id]).to be_present
     end
 
+    it "no permite ciclos en la red" do
+      middle = create(:user, :consultant, tenant: tenant)
+      create(:referral_network, tenant: tenant, referrer_user: referrer, referred_user: middle, depth: 1)
+      create(:referral_network, tenant: tenant, referrer_user: middle, referred_user: referred, depth: 1)
+      cycle = build(:referral_network, tenant: tenant, referrer_user: referred, referred_user: referrer, depth: 1)
+      expect(cycle).not_to be_valid
+      expect(cycle.errors[:base]).to be_present
+    end
+
     it "valida que ambos usuarios pertenezcan al mismo tenant" do
       other_tenant = create(:tenant, slug: "otro-#{SecureRandom.hex(4)}")
       outsider = ActsAsTenant.with_tenant(other_tenant) { create(:user, :consultant, tenant: other_tenant) }

@@ -60,7 +60,7 @@ const mainNavItems: NavItem[] = [
   { label: 'Contactos', href: '/contacts', icon: Users, roles: ['admin', 'manager', 'consultant', 'viewer'] },
   { label: 'Recordatorios', href: '/reminders', icon: Bell, roles: ['admin', 'manager', 'consultant', 'viewer'] },
   { label: 'Red de Referidos', href: '/network', icon: Network, roles: ['admin', 'manager', 'consultant'] },
-  { label: 'Duplicados', href: '/duplicates', icon: Flag, roles: ['admin', 'manager'] },
+  { label: 'Duplicados', href: '/duplicates', icon: Flag, roles: ['admin', 'manager', 'consultant'] },
   { label: 'Exportaciones', href: '/exports', icon: Download, roles: ['admin', 'manager'] },
   { label: 'Landing Pages', href: '/landings', icon: FileText, roles: ['admin'] },
 ]
@@ -122,10 +122,10 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: duplicateCount } = useQuery({
     queryKey: queryKeys.duplicateFlags.pending,
     queryFn: async () => {
-      const response = await api.get<{ meta: { total: number } }>(
-        '/duplicate_flags?resolution=pending'
-      )
-      return response.data.meta?.total || 0
+      const response = await api.get<{
+        meta?: { pagination?: { count?: number } }
+      }>('/duplicate_flags', { params: { resolution: 'pending', items: 1, page: 1 } })
+      return response.data.meta?.pagination?.count ?? 0
     },
     enabled: user?.role === 'admin' || user?.role === 'manager',
   })

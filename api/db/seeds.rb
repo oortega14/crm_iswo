@@ -34,8 +34,7 @@ VERTICALS = [
         "modules"       => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"      => "consulting_iso",
         "show_bant"     => true,
-        "network_depth" => 0,
-        "referral_opportunity_visibility" => false
+        "network_depth" => 3
       }
     },
     bant: {
@@ -96,8 +95,7 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "real_estate",
         "show_bant"       => true,
-        "network_depth"   => 0,
-        "referral_opportunity_visibility" => false,
+        "network_depth"   => 3,
         "opportunity_fields" => {
           "estimated_value_label" => "Valor del inmueble",
           "show_document_id"      => true
@@ -164,8 +162,7 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "payroll_credit",
         "show_bant"       => true,
-        "network_depth"   => 0,
-        "referral_opportunity_visibility" => false,
+        "network_depth"   => 3,
         "opportunity_fields" => {
           "estimated_value_label" => "Monto del crédito",
           "show_document_id"      => true
@@ -395,6 +392,20 @@ def seed_referral_networks(tenant, users)
   consultants.each do |c|
     ReferralNetwork.where(tenant: tenant, referred_user: c, referrer_user_id: consultant_ids - [c.id]).delete_all
     ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: parent, referred_user: c) do |rn|
+      rn.depth = 1
+      rn.active = true
+    end
+  end
+
+  # Demo F2: cadena consultor→consultor para probar visibilidad de opps en red
+  if consultants.size >= 2
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: consultants[0], referred_user: consultants[1]) do |rn|
+      rn.depth = 1
+      rn.active = true
+    end
+  end
+  if consultants.size >= 3
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: consultants[1], referred_user: consultants[2]) do |rn|
       rn.depth = 1
       rn.active = true
     end

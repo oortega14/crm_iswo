@@ -17,6 +17,9 @@ import {
   UserRound,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
+import { getOpportunityOwnership } from '@/lib/opportunityOwnership'
+import { OpportunityOwnershipBadge } from '@/components/opportunities/OpportunityOwnershipBadge'
 import { useUser, useUserRole } from '@/stores/auth'
 import {
   assignOpportunityOwner,
@@ -106,6 +109,7 @@ export function OpportunitySlideOver({
   const [valueInput, setValueInput] = useState('')
   const role = useUserRole()
   const currentUser = useUser()
+  const networkUserIds = useNetworkUserIds()
 
   const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
     queryKey: queryKeys.opportunities.detail(opportunityId || ''),
@@ -122,6 +126,14 @@ export function OpportunitySlideOver({
     const ownerId = opportunity.owner_id || opportunity.owner?.id
     return String(ownerId ?? '') === String(currentUser?.id ?? '')
   }, [opportunity, role, currentUser?.id])
+
+  const ownership = useMemo(
+    () =>
+      opportunity
+        ? getOpportunityOwnership(opportunity, currentUser?.id, networkUserIds, role)
+        : null,
+    [opportunity, currentUser?.id, networkUserIds, role],
+  )
 
   const { data: contactForLead } = useQuery({
     queryKey: queryKeys.contacts.detail(opportunity?.contact_id ?? ''),
@@ -436,6 +448,7 @@ export function OpportunitySlideOver({
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
+                  <OpportunityOwnershipBadge ownership={ownership} />
                   <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} />
                   {opportunity.stage?.name && (
                     <span className="text-xs text-muted-foreground">

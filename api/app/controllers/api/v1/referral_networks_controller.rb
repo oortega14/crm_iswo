@@ -55,7 +55,9 @@ module Api
       # GET /api/v1/referral_networks/my_network
       def my_network
         authorize ReferralNetwork, :index?
-        render json: { data: build_tree(current_user.id, 5) }, status: :ok
+        depth = ConsultantNetworkAccess.tree_depth(current_tenant)
+        payload = depth.zero? ? empty_tree(current_user.id) : build_tree(current_user.id, depth)
+        render json: { data: payload }, status: :ok
       end
 
       private
@@ -66,6 +68,11 @@ module Api
 
       def edge_params
         params.require(:referral_network).permit(:referrer_user_id, :referred_user_id, :depth, :active)
+      end
+
+      def empty_tree(root_id)
+        root = current_tenant.users.find_by(id: root_id)
+        { root: user_node(root), edges: [] }
       end
 
       def build_tree(root_id, max_depth)

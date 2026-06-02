@@ -47,6 +47,11 @@ RSpec.describe Tenants::Onboarder do
       expect(result.tenant.bant_criterion).to be_present
     end
 
+    it "inicializa network_depth RFC F2" do
+      result = onboarder.call
+      expect(result.tenant.settings["network_depth"]).to eq(ConsultantNetworkAccess::DEFAULT_NETWORK_DEPTH)
+    end
+
     context "vertical libranzas", :without_tenant do
       it "crea campos personalizados de la vertical" do
         result = described_class.new(

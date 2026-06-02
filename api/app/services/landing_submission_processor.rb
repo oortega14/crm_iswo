@@ -111,6 +111,12 @@ class LandingSubmissionProcessor
       changes_data: { landing_id: @landing&.id, utm: utm_fields }
     )
 
+    Notifications::NewLeadNotifier.call(
+      opportunity:  opp,
+      source_kind:  "web",
+      source_label: @landing&.title.presence || @landing&.slug
+    )
+
     opp
   end
 
@@ -164,15 +170,7 @@ class LandingSubmissionProcessor
     }.compact
   end
 
-  # Round-robin simple: el consultant con menos oportunidades new_lead abiertas.
   def next_round_robin_owner
-    @tenant.users
-           .where(role: "consultant", active: true)
-           .left_joins(:owned_opportunities)
-           .where("opportunities.status = ? OR opportunities.id IS NULL", "new_lead")
-           .group("users.id")
-           .order(Arel.sql("COUNT(opportunities.id) ASC"))
-           .first ||
-      @tenant.users.where(active: true).order(:id).first
+    Leads::RoundRobinOwner.call(@tenant)
   end
 end

@@ -11,6 +11,11 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
       create(:user, :admin, tenant: tenant, email: "alice@example.com", password: "Oldsecret12")
     end
   end
+  let!(:manager) do
+    with_tenant(tenant) do
+      create(:user, :manager, tenant: tenant, email: "manager@example.com", password: "Oldsecret12")
+    end
+  end
   let!(:consultant) do
     with_tenant(tenant) do
       create(:user, :consultant, tenant: tenant, email: "consultor@example.com", password: "Oldsecret12")
@@ -34,7 +39,20 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
       expect(body).to include(tenant.slug)
     end
 
-    it "responde 202 sin correo si el usuario existe pero NO es admin" do
+    it "responde 202 y envía correo cuando el usuario es manager del tenant" do
+      ActionMailer::Base.deliveries.clear
+
+      expect do
+        post "/api/v1/password/forgot",
+             params: { email: manager.email },
+             headers: { "X-Tenant-Slug" => tenant.slug },
+             as: :json
+      end.to change { ActionMailer::Base.deliveries.size }.by(1)
+
+      expect(response).to have_http_status(:accepted)
+    end
+
+    it "responde 202 sin correo si el usuario existe pero es consultor" do
       ActionMailer::Base.deliveries.clear
 
       post "/api/v1/password/forgot",
@@ -143,6 +161,43 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(admin.reload.refresh_token_jti).to be_present
+    end
+
+    it "permite al manager cambiar su contraseña" do
+      with_tenant(tenant) { manager.update_column(:refresh_token_jti, SecureRandom.uuid) }
+      mgr_auth = auth_headers(manager, tenant: tenant).merge("X-Tenant-Slug" => tenant.slug)
+
+      post "/api/v1/password/change",
+           params: {
+             user: {
+               current_password:      "Oldsecret12",
+               password:              "Newsecret12",
+               password_confirmation: "Newsecret12"
+             }
+           },
+           headers: mgr_auth,
+           as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(manager.reload.valid_password?("Newsecret12")).to be(true)
+    end
+
+    it "403 si un consultor intenta cambiar su contraseña" do
+      consult_auth = auth_headers(consultant, tenant: tenant).merge("X-Tenant-Slug" => tenant.slug)
+
+      post "/api/v1/password/change",
+           params: {
+             user: {
+               current_password:      "Oldsecret12",
+               password:              "Newsecret12",
+               password_confirmation: "Newsecret12"
+             }
+           },
+           headers: consult_auth,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(consultant.reload.valid_password?("Oldsecret12")).to be(true)
     end
   end
 end

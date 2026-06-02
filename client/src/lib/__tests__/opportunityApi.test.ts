@@ -8,6 +8,7 @@ import {
   mapOpportunityResource,
   toOpportunityUpdatePayload,
   buildOpportunityListParams,
+  buildOpportunityExportFilters,
   type JsonApiResource,
 } from '@/lib/opportunityApi'
 
@@ -338,5 +339,36 @@ describe('buildOpportunityListParams', () => {
   it('incluye stale_days si es mayor a 0', () => {
     const params = buildOpportunityListParams({ stale_days: 7 })
     expect(params.get('stale_days')).toBe('7')
+  })
+})
+
+// ─── buildOpportunityExportFilters ─────────────────────────────────────────────
+describe('buildOpportunityExportFilters', () => {
+  it('mapea filtros de pantalla a claves Ransack', () => {
+    const filters = buildOpportunityExportFilters({
+      pipeline_id: '1',
+      stage_id: '10',
+      owner_id: '3',
+      temperature: 'hot',
+      status: 'qualified',
+      stale_days: 7,
+      q: 'juan',
+    })
+    expect(filters.pipeline_id_eq).toBe('1')
+    expect(filters.pipeline_stage_id_eq).toBe('10')
+    expect(filters.owner_user_id_eq).toBe('3')
+    expect(filters.temperature_eq).toBe('hot')
+    expect(filters.status_eq).toBe('qualified')
+    expect(filters.last_activity_at_lteq).toBeDefined()
+    expect(
+      filters.title_or_contact_first_name_or_contact_last_name_or_contact_company_name_or_contact_email_or_contact_phone_e164_or_contact_phone_normalized_cont,
+    ).toBe('juan')
+  })
+
+  it('omite q con menos de 2 caracteres', () => {
+    const filters = buildOpportunityExportFilters({ q: 'a' })
+    expect(
+      filters.title_or_contact_first_name_or_contact_last_name_or_contact_company_name_or_contact_email_or_contact_phone_e164_or_contact_phone_normalized_cont,
+    ).toBeUndefined()
   })
 })

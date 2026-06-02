@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { bantChartFill } from '@/lib/dashboardChartColors'
 import type { DashboardBantDistribution } from '@/lib/dashboardApi'
 
 interface BantDistributionProps {
@@ -12,11 +13,10 @@ interface BantDistributionProps {
   isError?: boolean
 }
 
-const COLORS = {
-  low: 'var(--score-low)',
-  medium: 'var(--score-medium)',
-  high: 'var(--score-high)',
-}
+const CHART_COLORS = bantChartFill
+
+const iconShell =
+  'flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground'
 
 const shell =
   'overflow-hidden border-border/70 shadow-sm transition-shadow duration-300 hover:shadow-md'
@@ -28,7 +28,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
+              <span className={iconShell}>
                 <Gauge className="size-4" />
               </span>
               Distribución BANT
@@ -49,7 +49,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
       <Card className={shell}>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
+            <span className={iconShell}>
               <Gauge className="size-4" />
             </span>
             Distribución BANT
@@ -66,9 +66,9 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
 
   const distribution = data
   const chartData = [
-    { name: 'Bajo (0-39)', value: distribution.low, color: COLORS.low },
-    { name: 'Medio (40-69)', value: distribution.medium, color: COLORS.medium },
-    { name: 'Alto (70-100)', value: distribution.high, color: COLORS.high },
+    { name: 'Bajo (0-39)', value: distribution.low, color: CHART_COLORS.low },
+    { name: 'Medio (40-69)', value: distribution.medium, color: CHART_COLORS.medium },
+    { name: 'Alto (70-100)', value: distribution.high, color: CHART_COLORS.high },
   ]
 
   const total = distribution.low + distribution.medium + distribution.high
@@ -78,7 +78,7 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
       <CardHeader className="border-b border-border/50 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400">
+            <span className={iconShell}>
               <Gauge className="size-4" />
             </span>
             Distribución BANT
@@ -111,11 +111,16 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
                   outerRadius={78}
                   paddingAngle={3}
                   dataKey="value"
-                  stroke="hsl(var(--background))"
+                  stroke="var(--card)"
                   strokeWidth={2}
                 >
                   {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} className="transition-opacity" />
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={entry.color}
+                      fillOpacity={0.88}
+                      className="transition-opacity hover:opacity-90"
+                    />
                   ))}
                 </Pie>
                 <Tooltip
@@ -152,45 +157,32 @@ export function BantDistribution({ data, isLoading, isError }: BantDistributionP
 
         {total > 0 && (
           <div className="mt-1 grid grid-cols-3 gap-2">
-            {/* Bajo — naranja (#f97316) */}
-            <div className={cn(
-              'flex flex-col items-center rounded-lg border p-2.5',
-              'bg-orange-50/80 border-orange-200/60 text-orange-700',
-              'dark:bg-orange-950/50 dark:border-orange-800/50 dark:text-orange-400',
-            )}>
-              <span className="text-lg font-semibold tabular-nums">
-                {distribution.low}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {Math.round((distribution.low / total) * 100)}% bajo
-              </span>
-            </div>
-            {/* Medio — amarillo (#eab308) */}
-            <div className={cn(
-              'flex flex-col items-center rounded-lg border p-2.5',
-              'bg-yellow-50/80 border-yellow-200/60 text-yellow-700',
-              'dark:bg-yellow-950/50 dark:border-yellow-800/50 dark:text-yellow-400',
-            )}>
-              <span className="text-lg font-semibold tabular-nums">
-                {distribution.medium}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {Math.round((distribution.medium / total) * 100)}% medio
-              </span>
-            </div>
-            {/* Alto — esmeralda (#10b981) */}
-            <div className={cn(
-              'flex flex-col items-center rounded-lg border p-2.5',
-              'bg-emerald-50/80 border-emerald-200/60 text-emerald-700',
-              'dark:bg-emerald-950/50 dark:border-emerald-800/50 dark:text-emerald-400',
-            )}>
-              <span className="text-lg font-semibold tabular-nums">
-                {distribution.high}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {Math.round((distribution.high / total) * 100)}% alto
-              </span>
-            </div>
+            {(
+              [
+                { key: 'low' as const, count: distribution.low, label: 'bajo' },
+                { key: 'medium' as const, count: distribution.medium, label: 'medio' },
+                { key: 'high' as const, count: distribution.high, label: 'alto' },
+              ] as const
+            ).map(({ key, count, label }) => (
+              <div
+                key={key}
+                className={cn(
+                  'flex flex-col items-center rounded-lg border border-border/70 bg-muted/25 p-2.5',
+                )}
+              >
+                <span
+                  className="mb-1.5 h-1 w-8 rounded-full"
+                  style={{ backgroundColor: CHART_COLORS[key] }}
+                  aria-hidden
+                />
+                <span className="text-lg font-semibold tabular-nums text-foreground">
+                  {count}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {Math.round((count / total) * 100)}% {label}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>

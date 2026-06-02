@@ -49,4 +49,22 @@ RSpec.describe ConsultantNetworkAccess do
       expect(described_class.can_view_contact?(referrer, network_opp.contact)).to be(true)
     end
   end
+
+  describe ".network_depth" do
+    it "sin referral_opportunity_visibility solo ve las propias" do
+      tenant.update!(settings: tenant.settings.merge("referral_opportunity_visibility" => false))
+      expect(described_class.visible_owner_ids(referrer)).to eq([referrer.id])
+      expect(described_class.can_view_opportunity?(referrer, network_opp)).to be(false)
+    end
+
+    it "con visibilidad de red y network_depth 0 solo ve las propias" do
+      tenant.update!(
+        settings: tenant.settings.merge(
+          "referral_opportunity_visibility" => true,
+          "network_depth" => 0
+        )
+      )
+      expect(described_class.visible_owner_ids(referrer)).to eq([referrer.id])
+    end
+  end
 end

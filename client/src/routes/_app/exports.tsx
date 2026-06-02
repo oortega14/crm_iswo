@@ -155,19 +155,27 @@ function buildFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
     const d = new Date(Date.now() - days * 86400000)
     filters.updated_at_gteq = d.toISOString()
   }
-  if (config.stageId)    filters.pipeline_stage_id_eq = config.stageId
-  if (config.ownerId)    filters.owner_user_id_eq     = config.ownerId
-  if (config.sourceId)   filters.lead_source_id_eq    = config.sourceId
+  if (config.resource === 'contacts') {
+    if (config.contactKind) filters.kind_eq = config.contactKind
+    if (config.ownerId) filters.owner_user_id_eq = config.ownerId
+    if (config.contactSourceKind) filters.source_kind_eq = config.contactSourceKind
+  } else {
+    if (config.stageId) filters.pipeline_stage_id_eq = config.stageId
+    if (config.ownerId) filters.owner_user_id_eq = config.ownerId
+    if (config.sourceId) filters.lead_source_id_eq = config.sourceId
+  }
   return filters
 }
 
 const INITIAL_CONFIG = {
-  resource:  'opportunities' as ExportResource,
-  format:    'xlsx' as ExportFormat,
+  resource: 'opportunities' as ExportResource,
+  format: 'xlsx' as ExportFormat,
   dateRange: 'all',
-  stageId:   '',
-  ownerId:   '',
-  sourceId:  '',
+  stageId: '',
+  ownerId: '',
+  sourceId: '',
+  contactKind: '' as '' | 'person' | 'company',
+  contactSourceKind: '',
 }
 
 function ExportsPage() {
@@ -201,7 +209,7 @@ function ExportsPage() {
           const res = await api.get('/users')
           return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapUserResource)
         },
-        enabled: isExportDialogOpen && isOpportunities,
+        enabled: isExportDialogOpen,
         staleTime: 60_000,
       },
       {
@@ -380,7 +388,7 @@ function ExportsPage() {
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Exportaciones e importaciones"
-        description="Descarga archivos Excel (.xlsx) del servidor e importa contactos masivamente con la misma plantilla Excel que en Contactos."
+        description="Exporta contactos u oportunidades e importa contactos masivamente desde Excel (.xlsx)."
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2 size-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -471,8 +479,8 @@ function ExportsPage() {
             Importación de contactos (Excel)
           </CardTitle>
           <CardDescription>
-            Sube un archivo Excel (.xlsx) para crear contactos en bloque. Descarga la plantilla, revisa errores por fila
-            en el asistente (igual que en Contactos).
+            Sube un archivo Excel (.xlsx) para crear contactos en bloque. Descarga la plantilla y revisa errores por fila
+            en el asistente.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 pt-0">
@@ -652,6 +660,81 @@ function ExportsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {!isOpportunities && (
+              <>
+                <div className="space-y-2">
+                  <Label>Tipo (opcional)</Label>
+                  <Select
+                    value={exportConfig.contactKind || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({
+                        ...c,
+                        contactKind: v === '__all__' ? '' : (v as 'person' | 'company'),
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Personas y empresas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      <SelectItem value="person">Solo personas</SelectItem>
+                      <SelectItem value="company">Solo empresas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Consultor responsable (opcional)</Label>
+                  <Select
+                    value={exportConfig.ownerId || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({ ...c, ownerId: v === '__all__' ? '' : v }))
+                    }
+                    disabled={usersQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      {(usersQ.data ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Origen del contacto (opcional)</Label>
+                  <Select
+                    value={exportConfig.contactSourceKind || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({
+                        ...c,
+                        contactSourceKind: v === '__all__' ? '' : v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      <SelectItem value="web">Web / Orgánico</SelectItem>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="meta">Meta Ads</SelectItem>
+                      <SelectItem value="google">Google Ads</SelectItem>
+                      <SelectItem value="referral">Referido</SelectItem>
+                      <SelectItem value="manual">Manual / Presencial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             {isOpportunities && (
               <>

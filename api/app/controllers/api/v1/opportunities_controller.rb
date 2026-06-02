@@ -13,6 +13,7 @@ module Api
 
       # GET /api/v1/opportunities
       def index
+        authorize Opportunity, :index?
         scope = policy_scope(Opportunity).kept.includes(:contact, :pipeline_stage, :owner_user, :reminders, :lead_source)
 
         scope = scope.where(status: params[:status])                       if params[:status].present?
@@ -23,14 +24,12 @@ module Api
           scope = scope.where(pipeline_stage_id: params[:stage_id])
         end
         scope = scope.where(contact_id: params[:contact_id])               if params[:contact_id].present?
-        scope = scope.where(owner_user_id: params[:owner_id])              if params[:owner_id].present?
+        if params[:owner_id].present? && owner_filter_allowed?(params[:owner_id])
+          scope = scope.where(owner_user_id: params[:owner_id])
+        end
         if params[:q].present?
-          like = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
-          scope = scope.left_joins(:contact).where(
-            "opportunities.title ILIKE :q OR contacts.first_name ILIKE :q OR " \
-            "contacts.last_name ILIKE :q OR contacts.company_name ILIKE :q OR contacts.email ILIKE :q",
-            q: like
-          )
+          initials = ActiveModel::Type::Boolean.new.cast(params[:initials])
+          scope = apply_opportunity_search(scope, params[:q], initials_mode: initials)
         end
         scope = scope.stale(params[:stale_days].to_i)                      if params[:stale_days].present?
         if params[:temperature].present? && Opportunity::TEMPERATURES.include?(params[:temperature].to_s)
@@ -40,13 +39,13 @@ module Api
         render_collection(
           scope.order(last_activity_at: :desc),
           with:  OpportunitySerializer,
-          include: [:owner_user, :lead_source]
+          include: [:owner_user, :lead_source, :contact]
         )
       end
 
       def show
         authorize @opportunity
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
       end
 
       def create
@@ -70,11 +69,12 @@ module Api
           return render_unprocessable(@opportunity)
         end
 
+        explicit_temp = normalized_temperature_param(h[:temperature])
         @opportunity = current_tenant.opportunities.new(
           title:             h[:title].presence || default_opportunity_title(contact, h),
           notes:             h[:notes],
           estimated_value:   h[:estimated_value],
-          temperature:       h[:temperature].presence || 'cold',
+          temperature:       explicit_temp || "cold",
           pipeline_id:       stage.pipeline_id,
           pipeline_stage_id: stage.id,
           lead_source_id:    h[:lead_source_id].presence,
@@ -84,11 +84,12 @@ module Api
         )
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
+          notify_new_lead!(@opportunity)
           flag_duplicates_for!(@opportunity, contact)
-          if defined?(Opportunities::TemperatureCalculator)
+          if explicit_temp.blank? && defined?(Opportunities::TemperatureCalculator)
             Opportunities::TemperatureCalculator.new(@opportunity.reload).apply!
           end
-          render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+          render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
         else
           render_unprocessable(@opportunity)
         end
@@ -103,17 +104,28 @@ module Api
       def update
         authorize @opportunity
         before = @opportunity.attributes.dup
+        from_stage = @opportunity.pipeline_stage
+        before_stage_id = @opportunity.pipeline_stage_id
         bant_in = params.dig(:opportunity, :bant_data).present?
         attrs = update_params.to_h
+        stage_in_request = stage_id_in_attrs?(attrs)
         apply_stage_status!(attrs)
         if @opportunity.update(attrs)
           if bant_in && defined?(Opportunities::BantScorer)
             Opportunities::BantScorer.new(@opportunity).call_and_persist!
             @opportunity.reload
           end
-          @opportunity.touch_activity!
+          recalc_temp = !temperature_param_explicit? && !bant_in
+          @opportunity.touch_activity!(recalc_temperature: recalc_temp)
           log_action!("update", diff(before, @opportunity.attributes))
-          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+          if @opportunity.pipeline_stage_id != before_stage_id
+            notify_stage_change!(
+              from_stage: from_stage,
+              to_stage:   @opportunity.pipeline_stage,
+              automatic:  bant_in && !stage_in_request
+            )
+          end
+          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
         else
           render_unprocessable(@opportunity)
         end
@@ -130,6 +142,7 @@ module Api
       def move_stage
         authorize @opportunity, :move_stage?
         new_stage = current_tenant.pipeline_stages.find(params.require(:pipeline_stage_id))
+        from_stage = @opportunity.pipeline_stage
         from = @opportunity.pipeline_stage_id
 
         new_status = if new_stage.closed_won  then "won"
@@ -143,11 +156,13 @@ module Api
             pipeline_id:       new_stage.pipeline_id,
             status:            new_status
           )
-          @opportunity.touch_activity!
+          @opportunity.touch_activity!(recalc_temperature: false)
           log_action!("stage_change", { from_stage_id: from, to_stage_id: new_stage.id })
         end
 
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+        notify_stage_change!(from_stage: from_stage, to_stage: new_stage) if from != new_stage.id
+
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
       end
 
       # POST /api/v1/opportunities/:id/assign  { owner_user_id }
@@ -157,7 +172,7 @@ module Api
         from = @opportunity.owner_user_id
         @opportunity.update!(owner_user_id: new_owner.id)
         log_action!("assign", { from: from, to: new_owner.id })
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
       end
 
       # POST /api/v1/opportunities/:id/merge  { target_id }
@@ -167,17 +182,26 @@ module Api
         if defined?(Opportunities::Merger)
           Opportunities::Merger.new(source: @opportunity, target: target, performed_by: current_user).call
         end
-        render_resource(target.reload, with: OpportunitySerializer, include: [:owner_user, :lead_source])
+        render_resource(target.reload, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
       end
 
       # POST /api/v1/opportunities/:id/recalculate_bant
       def recalculate_bant
         authorize @opportunity, :recalculate_bant?
+        from_stage = @opportunity.pipeline_stage
+        before_stage_id = @opportunity.pipeline_stage_id
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
         @opportunity.reload
+        if @opportunity.pipeline_stage_id != before_stage_id
+          notify_stage_change!(
+            from_stage: from_stage,
+            to_stage:   @opportunity.pipeline_stage,
+            automatic:  true
+          )
+        end
         payload = OpportunitySerializer.new(
           @opportunity,
-          include: [:owner_user, :lead_source]
+          include: [:owner_user, :lead_source, :contact]
         ).serializable_hash
         ai_meta = maybe_auto_classify_with_claude!
         payload[:meta] = ai_meta if ai_meta.present?
@@ -191,7 +215,7 @@ module Api
         log_action!("classify", { temperature: calc.temperature, ai_used: false, source: "rules" })
 
         render json: {
-          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source]).serializable_hash[:data],
+          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source, :contact]).serializable_hash[:data],
           ai_result: {
             temperature: calc.temperature,
             reasoning:   calc.reasoning,
@@ -264,7 +288,9 @@ module Api
       private
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.kept.includes(:lead_source, :owner_user).find(params[:id])
+        @opportunity = policy_scope(Opportunity).kept
+                                               .includes(:lead_source, :owner_user, :contact)
+                                               .find(params[:id])
       end
 
       def opportunity_create_attributes
@@ -345,6 +371,20 @@ module Api
         )
       end
 
+      def temperature_param_explicit?
+        raw = params[:opportunity]
+        return false unless raw.respond_to?(:key?)
+
+        raw.key?(:temperature) || raw.key?("temperature")
+      end
+
+      def normalized_temperature_param(value)
+        temp = value.to_s.strip.downcase
+        return temp if Opportunity::TEMPERATURES.include?(temp)
+
+        nil
+      end
+
       # Misma lógica que move_stage: al cambiar etapa vía PATCH, sincronizar status.
       def apply_stage_status!(attrs)
         stage_id = attrs["pipeline_stage_id"] || attrs[:pipeline_stage_id]
@@ -390,7 +430,7 @@ module Api
 
       def classify_response_payload(result, classifier = nil)
         {
-          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source]).serializable_hash[:data],
+          data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source, :contact]).serializable_hash[:data],
           ai_result: {
             temperature:     result.temperature,
             reasoning:       result.reasoning,
@@ -461,21 +501,93 @@ module Api
         end
       end
 
+      def notify_new_lead!(opportunity)
+        source = opportunity.lead_source
+        Notifications::NewLeadNotifier.call(
+          opportunity:  opportunity,
+          actor:        current_user,
+          source_kind:  source&.kind,
+          source_label: source&.name
+        )
+      end
+
+      def notify_stage_change!(from_stage:, to_stage:, automatic: false)
+        Notifications::StageChangeNotifier.call(
+          opportunity: @opportunity.reload,
+          from_stage:  from_stage,
+          to_stage:    to_stage,
+          actor:       current_user,
+          automatic:   automatic
+        )
+      end
+
+      def stage_id_in_attrs?(attrs)
+        attrs.key?("pipeline_stage_id") || attrs.key?(:pipeline_stage_id)
+      end
+
+      def apply_opportunity_search(scope, q_param, initials_mode: false)
+        q_raw = q_param.to_s.strip
+        return scope if q_raw.blank?
+
+        joined = scope.left_joins(:contact)
+        if initials_mode && two_letter_initials_query?(q_raw)
+          return apply_initials_search(joined, q_raw)
+        end
+
+        like   = "%#{ActiveRecord::Base.sanitize_sql_like(q_raw)}%"
+        digits = q_raw.gsub(/\D/, "")
+        phone_like = digits.length >= 2 ? "%#{ActiveRecord::Base.sanitize_sql_like(digits)}%" : like
+        joined.where(
+          "opportunities.title ILIKE :q OR contacts.first_name ILIKE :q OR " \
+          "contacts.last_name ILIKE :q OR contacts.company_name ILIKE :q OR contacts.email ILIKE :q OR " \
+          "contacts.phone_e164 ILIKE :phone OR contacts.phone_normalized ILIKE :phone",
+          q: like, phone: phone_like
+        )
+      end
+
+      def two_letter_initials_query?(q_raw)
+        q_raw.length == 2 && q_raw.match?(/\A[\p{L}]{2}\z/ui)
+      end
+
+      # Ej. "CR" → Camila Restrepo, Carlos Mejía (inicial nombre + inicial apellido).
+      def apply_initials_search(scope, q_raw)
+        i1 = q_raw[0].downcase
+        i2 = q_raw[1].downcase
+        scope.where(
+          <<~SQL.squish,
+            LOWER(LEFT(TRIM(contacts.first_name), 1)) = :i1
+            AND (
+              LOWER(LEFT(TRIM(COALESCE(contacts.last_name, '')), 1)) = :i2
+              OR (
+                (contacts.last_name IS NULL OR TRIM(contacts.last_name) = '')
+                AND LOWER(LEFT(SPLIT_PART(TRIM(contacts.first_name), ' ', 2), 1)) = :i2
+              )
+            )
+          SQL
+          i1: i1, i2: i2
+        )
+      end
+
+      # Consultores no pueden filtrar por owner ajeno (evita confusión si la policy cambia).
+      def owner_filter_allowed?(owner_id)
+        return true unless current_user&.role == "consultant"
+
+        owner_id.to_i == current_user.id
+      end
+
       # Notifica al dueño de la oportunidad existente que hay un posible duplicado.
       def notify_duplicate_collision!(flag, existing_opp)
         owner = existing_opp.owner_user
         return unless owner
 
         Notification.create!(
-          tenant:        current_tenant,
-          user:          owner,
-          kind:          "duplicate_found",
-          title:         "Posible duplicado detectado",
-          body:          "#{current_user.name} registró una oportunidad para #{existing_opp.contact&.display_name} " \
-                         "que ya tienes en tu pipeline.",
-          resource:      flag,
-          resource_type: "DuplicateFlag",
-          resource_id:   flag.id
+          tenant:   current_tenant,
+          user:     owner,
+          kind:     "duplicate_found",
+          title:    "Posible duplicado detectado",
+          body:     "#{current_user.name} registró una oportunidad para #{existing_opp.contact&.display_name} " \
+                    "que ya tienes en tu pipeline.",
+          resource: existing_opp
         )
       rescue ActiveRecord::RecordInvalid => e
         Rails.logger.warn("[Notification] No se pudo crear notificación de duplicado: #{e.message}")

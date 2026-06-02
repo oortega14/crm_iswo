@@ -11,6 +11,7 @@ module Api
       include RefreshTokenCookies
 
       before_action :authenticate_user!, only: :change
+      before_action :ensure_password_change_allowed!, only: :change
 
       # POST /api/v1/password/forgot  { email }
       def forgot
@@ -56,6 +57,16 @@ module Api
 
       def change_params
         params.require(:user).permit(:current_password, :password, :password_confirmation)
+      end
+
+      # Solo admin y manager pueden cambiar su contraseña desde el perfil (consultores/viewer: no).
+      def ensure_password_change_allowed!
+        return if current_user.role.in?(%w[admin manager])
+
+        render json: {
+          error:   "forbidden",
+          message: "Solo administradores y managers pueden cambiar su contraseña."
+        }, status: :forbidden
       end
     end
   end

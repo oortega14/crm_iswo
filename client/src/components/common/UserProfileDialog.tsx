@@ -63,6 +63,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
   const me = meData?.data?.attributes
   const meId = meData?.data?.id ?? ''
+  const canChangePassword = me?.role === 'admin' || me?.role === 'manager'
 
   const [name,  setName]  = useState('')
   const [phone, setPhone] = useState('')
@@ -211,55 +212,63 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               </div>
             </div>
 
-            <Separator />
+            {canChangePassword ? (
+              <>
+                <Separator />
 
-            <div className="space-y-4">
-              <p className="text-sm font-medium">Cambiar contraseña</p>
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-current-password">Contraseña actual</Label>
-                <Input
-                  id="profile-current-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-new-password">Nueva contraseña</Label>
-                <Input
-                  id="profile-new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="profile-confirm-password">Confirmar nueva contraseña</Label>
-                <Input
-                  id="profile-confirm-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </div>
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => passwordMutation.mutate()}
-                disabled={
-                  passwordMutation.isPending ||
-                  !currentPassword ||
-                  !newPassword ||
-                  !confirmPassword
-                }
-              >
-                {passwordMutation.isPending && <Spinner className="mr-2" />}
-                Actualizar contraseña
-              </Button>
-            </div>
+                <div className="space-y-4">
+                  <p className="text-sm font-medium">Cambiar contraseña</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-current-password">Contraseña actual</Label>
+                    <Input
+                      id="profile-current-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-new-password">Nueva contraseña</Label>
+                    <Input
+                      id="profile-new-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="profile-confirm-password">Confirmar nueva contraseña</Label>
+                    <Input
+                      id="profile-confirm-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => passwordMutation.mutate()}
+                    disabled={
+                      passwordMutation.isPending ||
+                      !currentPassword ||
+                      !newPassword ||
+                      !confirmPassword
+                    }
+                  >
+                    {passwordMutation.isPending && <Spinner className="mr-2" />}
+                    Actualizar contraseña
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Para cambiar tu contraseña, contacta a un administrador o manager del equipo.
+              </p>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>

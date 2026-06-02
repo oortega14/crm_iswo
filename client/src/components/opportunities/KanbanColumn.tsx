@@ -1,8 +1,4 @@
 import { useDroppable } from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { OpportunityCard } from './OpportunityCard'
@@ -12,25 +8,30 @@ interface KanbanColumnProps {
   stage: PipelineStage
   opportunities: Opportunity[]
   onSelectOpportunity: (id: string) => void
+  canDragOpportunity?: (opportunity: Opportunity) => boolean
+  stages?: PipelineStage[]
+  onMoveStage?: (opportunityId: string, stageId: string) => void
+  moveStagePending?: boolean
 }
 
 export function KanbanColumn({
   stage,
   opportunities,
   onSelectOpportunity,
+  canDragOpportunity,
+  stages,
+  onMoveStage,
+  moveStagePending,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
   })
 
-  const opportunityIds = opportunities.map((o) => o.id)
-
   return (
     <div
-      ref={setNodeRef}
       className={cn(
-        'flex flex-1 min-w-[140px] flex-col rounded-lg bg-muted/50 transition-colors',
-        isOver && 'bg-muted ring-2 ring-primary/20'
+        'flex flex-1 min-w-[160px] flex-col rounded-lg bg-muted/50 transition-colors',
+        isOver && 'bg-primary/5 ring-2 ring-primary/30',
       )}
     >
       {/* Column header */}
@@ -49,28 +50,41 @@ export function KanbanColumn({
         </Badge>
       </div>
 
-      {/* Cards — div nativo para no bloquear los eventos de puntero de dnd-kit */}
-      <div className="flex-1 overflow-y-auto p-1.5">
-        <SortableContext
-          items={opportunityIds}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className="flex flex-col gap-1.5 min-h-[200px]">
-            {opportunities.map((opportunity) => (
+      {/* Zona de soltar: toda la columna acepta el drop */}
+      <div ref={setNodeRef} className="flex-1 overflow-y-auto p-1.5 min-h-[200px]">
+        <div className="flex flex-col gap-1.5">
+          {opportunities.map((opportunity) => {
+            const dragDisabled = canDragOpportunity
+              ? !canDragOpportunity(opportunity)
+              : false
+            return (
               <OpportunityCard
                 key={opportunity.id}
                 opportunity={opportunity}
+                dragDisabled={dragDisabled}
+                stages={stages}
+                onMoveStage={
+                  onMoveStage
+                    ? (stageId) => onMoveStage(opportunity.id, stageId)
+                    : undefined
+                }
+                moveStagePending={moveStagePending}
                 onClick={() => onSelectOpportunity(opportunity.id)}
               />
-            ))}
+            )
+          })}
 
-            {opportunities.length === 0 && (
-              <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">
-                Sin oportunidades
-              </div>
-            )}
-          </div>
-        </SortableContext>
+          {opportunities.length === 0 && (
+            <div
+              className={cn(
+                'flex items-center justify-center h-24 rounded-md border border-dashed border-border/60 text-xs text-muted-foreground',
+                isOver && 'border-primary/50 bg-primary/5 text-primary',
+              )}
+            >
+              {isOver ? 'Soltar aquí' : 'Sin oportunidades'}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

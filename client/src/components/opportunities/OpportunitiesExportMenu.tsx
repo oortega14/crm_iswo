@@ -44,6 +44,9 @@ interface OpportunitiesExportMenuProps {
   stageId?: string
   ownerId?: string
   temperature?: string
+  status?: string
+  staleDays?: number
+  searchQuery?: string
   disabled?: boolean
 }
 
@@ -52,6 +55,9 @@ export function OpportunitiesExportMenu({
   stageId,
   ownerId,
   temperature,
+  status,
+  staleDays,
+  searchQuery,
   disabled,
 }: OpportunitiesExportMenuProps) {
   const role = useAuthStore((s) => s.user?.role)
@@ -83,6 +89,9 @@ export function OpportunitiesExportMenu({
     stage_id:    stageId,
     owner_id:    ownerId,
     temperature,
+    status,
+    stale_days:  staleDays,
+    q:           searchQuery,
     date_range:  dateRange !== 'all' ? dateRange : undefined,
     source_id:   sourceId || undefined,
   })
@@ -114,9 +123,20 @@ export function OpportunitiesExportMenu({
   if (!canExport) return null
 
   const busy = downloadMutation.isPending || enqueueMutation.isPending
+  const screenFiltersCount = [
+    pipelineId,
+    stageId,
+    ownerId,
+    temperature,
+    status,
+    staleDays,
+    searchQuery,
+  ].filter(Boolean).length
+
   const activeFiltersCount = [
     dateRange !== 'all',
     !!sourceId,
+    screenFiltersCount > 0,
   ].filter(Boolean).length
 
   return (

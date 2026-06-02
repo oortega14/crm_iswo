@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatCurrency } from '@/lib/utils'
+import { leadSourceChartColor } from '@/lib/dashboardChartColors'
 import type { DashboardLeadSourceRow } from '@/lib/dashboardApi'
 
 interface LeadSourcesChartProps {
@@ -20,20 +21,8 @@ interface LeadSourcesChartProps {
   isError?: boolean
 }
 
-const KIND_COLORS: Record<string, string> = {
-  meta:     '#3B82F6',
-  google:   '#22C55E',
-  whatsapp: '#10B981',
-  web:      '#6366F1',
-  referral: '#F59E0B',
-  manual:   '#94A3B8',
-}
-
-function getColor(kind: string | null, index: number): string {
-  if (kind && KIND_COLORS[kind]) return KIND_COLORS[kind]
-  const fallbacks = ['#8B5CF6', '#EC4899', '#F97316', '#14B8A6']
-  return fallbacks[index % fallbacks.length]
-}
+const iconShell =
+  'flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground'
 
 const shell =
   'overflow-hidden border-border/70 shadow-sm transition-shadow duration-300 hover:shadow-md'
@@ -49,7 +38,7 @@ export function LeadSourcesChart({
       <Card className={shell}>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+            <span className={iconShell}>
               <Radio className="size-4" />
             </span>
             Leads por origen
@@ -68,7 +57,7 @@ export function LeadSourcesChart({
       <Card className={shell}>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+            <span className={iconShell}>
               <Radio className="size-4" />
             </span>
             Leads por origen
@@ -88,7 +77,7 @@ export function LeadSourcesChart({
       <CardHeader className="border-b border-border/50 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+            <span className={iconShell}>
               <Radio className="size-4" />
             </span>
             Leads por origen
@@ -144,9 +133,23 @@ export function LeadSourcesChart({
                   )
                 }}
               />
-              <Bar dataKey="count" radius={[0, 8, 8, 0]} maxBarSize={28} label={{ position: 'right', fontSize: 12, fill: 'var(--foreground)', fontWeight: 600 }}>
+              <Bar
+                dataKey="count"
+                radius={[0, 8, 8, 0]}
+                maxBarSize={26}
+                label={{
+                  position: 'right',
+                  fontSize: 12,
+                  fill: 'var(--muted-foreground)',
+                  fontWeight: 500,
+                }}
+              >
                 {data.map((row, index) => (
-                  <Cell key={row.id ?? 'none'} fill={getColor(row.kind, index)} />
+                  <Cell
+                    key={row.id ?? 'none'}
+                    fill={leadSourceChartColor(row.kind, index)}
+                    fillOpacity={0.85}
+                  />
                 ))}
               </Bar>
             </BarChart>

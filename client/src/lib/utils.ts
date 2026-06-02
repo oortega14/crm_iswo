@@ -207,6 +207,8 @@ export function getTemperatureColor(temp: TemperatureLevel): string {
       return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800/60'
     case 'cold':
       return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-800/60'
+    default:
+      return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-800/60'
   }
 }
 
@@ -215,6 +217,7 @@ export function getTemperatureIcon(temp: TemperatureLevel): string {
     case 'hot':  return '🔥'
     case 'warm': return '☀️'
     case 'cold': return '🧊'
+    default:     return '🧊'
   }
 }
 
@@ -223,6 +226,7 @@ export function formatTemperatureLabel(temp: TemperatureLevel): string {
     case 'hot':  return 'Caliente'
     case 'warm': return 'Tibio'
     case 'cold': return 'Frío'
+    default:     return 'Frío'
   }
 }
 

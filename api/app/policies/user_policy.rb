@@ -16,7 +16,12 @@ class UserPolicy < ApplicationPolicy
 
   def activate?       = admin?
   def deactivate?     = admin?
-  def reset_password? = admin?
+  def reset_password?
+    return false unless manager_or_admin?
+    return false if manager? && target_is_admin?
+
+    true
+  end
 
   class Scope < ApplicationPolicy::Scope
     def resolve

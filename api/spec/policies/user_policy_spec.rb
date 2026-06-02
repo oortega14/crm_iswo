@@ -72,11 +72,17 @@ RSpec.describe UserPolicy do
   end
 
   describe "activate? / deactivate? / reset_password?" do
-    it "solo admin" do
+    it "activate/deactivate solo admin" do
       expect(described_class.new(admin,   consultant).activate?).to be(true)
       expect(described_class.new(admin,   consultant).deactivate?).to be(true)
-      expect(described_class.new(admin,   consultant).reset_password?).to be(true)
       expect(described_class.new(manager, consultant).activate?).to be(false)
+    end
+
+    it "reset_password para admin y manager (manager no sobre admin)" do
+      expect(described_class.new(admin,   consultant).reset_password?).to be(true)
+      expect(described_class.new(manager, consultant).reset_password?).to be(true)
+      expect(described_class.new(manager, admin).reset_password?).to be(false)
+      expect(described_class.new(consultant, consultant).reset_password?).to be(false)
     end
   end
 

@@ -1,11 +1,8 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatRailsError } from '@/lib/api'
-import {
-  createOpportunityReminder,
-  fetchOpportunityOptionsForReminder,
-  type ReminderChannel,
-} from '@/lib/reminderApi'
+import { createOpportunityReminder, type ReminderChannel } from '@/lib/reminderApi'
+import { OpportunityLeadPicker } from '@/components/reminders/OpportunityLeadPicker'
 import { queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -57,11 +54,11 @@ export function ReminderDialog({
     linkedOpportunity: defaultOpportunityId || '',
   })
 
-  const { data: opportunities = [], isLoading: opportunitiesLoading } = useQuery({
-    queryKey: ['opportunities', 'reminder-dialog'],
-    queryFn: fetchOpportunityOptionsForReminder,
-    enabled: open,
-  })
+  useEffect(() => {
+    if (open && defaultOpportunityId) {
+      setFormData((prev) => ({ ...prev, linkedOpportunity: defaultOpportunityId }))
+    }
+  }, [open, defaultOpportunityId])
 
   const createReminderMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -117,7 +114,7 @@ export function ReminderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md overflow-visible">
         <DialogHeader>
           <DialogTitle>Nuevo Recordatorio</DialogTitle>
           <DialogDescription>
@@ -188,23 +185,16 @@ export function ReminderDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="linkedOpportunity">Oportunidad</Label>
-            <Select
+            <Label htmlFor="linkedOpportunity">Lead / oportunidad</Label>
+            <OpportunityLeadPicker
               value={formData.linkedOpportunity}
-              onValueChange={(value) => handleChange('linkedOpportunity', value)}
-              disabled={opportunitiesLoading || Boolean(defaultOpportunityId)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar oportunidad" />
-              </SelectTrigger>
-              <SelectContent>
-                {opportunities.map((opportunity) => (
-                  <SelectItem key={opportunity.id} value={opportunity.id}>
-                    {opportunity.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onValueChange={(id) => handleChange('linkedOpportunity', id)}
+              disabled={Boolean(defaultOpportunityId)}
+              placeholder="Iniciales del lead (ej. CR)…"
+            />
+            <p className="text-xs text-muted-foreground">
+              Escribe dos letras (iniciales de nombre y apellido) para ver coincidencias.
+            </p>
           </div>
 
           <DialogFooter>

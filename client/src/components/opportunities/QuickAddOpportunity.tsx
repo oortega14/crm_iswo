@@ -16,7 +16,7 @@ import {
   mapOpportunityResource,
   mapPipelineResource,
 } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
 import { TemperatureSelector } from './TemperatureSelector'
 import { Button } from '@/components/ui/button'
@@ -293,6 +293,7 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       toast.success('Oportunidad creada exitosamente')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
       reset()
       setCustomFields({})
       onOpenChange(false)

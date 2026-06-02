@@ -9,15 +9,32 @@
 module ConsultantNetworkAccess
   module_function
 
+  # RFC §6.3: profundidad de red (solo referidos hacia abajo). 0 = solo oportunidades propias.
   def network_depth(tenant)
-    depth = tenant&.settings&.dig("network_depth").to_i
-    depth < 1 ? 3 : depth
+    raw = tenant&.settings&.dig("network_depth")
+    return 3 if raw.nil?
+
+    depth = raw.to_i
+    depth.negative? ? 0 : depth
+  end
+
+  # Visibilidad de oportunidades para consultor (RFC §6.3 / F2).
+  # Por defecto solo el propio owner; la red de referidos es opt-in por tenant.
+  def opportunities_include_referral_network?(tenant)
+    ActiveModel::Type::Boolean.new.cast(tenant&.settings&.dig("referral_opportunity_visibility"))
   end
 
   def visible_owner_ids(user)
     return [] unless user&.role == "consultant"
 
-    [user.id] + user.network_user_ids(depth: network_depth(user.tenant))
+    ids = [user.id]
+    tenant = user.tenant
+    return ids unless opportunities_include_referral_network?(tenant)
+
+    depth = network_depth(tenant)
+    return ids if depth.zero?
+
+    ids + user.network_user_ids(depth: depth)
   end
 
   def can_view_opportunity?(user, opportunity)

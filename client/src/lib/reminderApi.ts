@@ -1,5 +1,10 @@
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiIncluded, jsonApiPrimaryList, type JsonApiResource } from '@/lib/opportunityApi'
+import {
+  jsonApiIncluded,
+  jsonApiPrimaryList,
+  mapOpportunityResource,
+  type JsonApiResource,
+} from '@/lib/opportunityApi'
 
 export type ReminderChannel = 'email' | 'whatsapp' | 'in_app'
 export type ReminderStatus = 'pending' | 'sent' | 'failed' | 'done'
@@ -217,16 +222,38 @@ export async function deleteReminder(id: string): Promise<void> {
   await api.delete(`/reminders/${id}`)
 }
 
-/** Opciones para vincular recordatorio a una oportunidad (diálogo de creación). */
-export async function fetchOpportunityOptionsForReminder(): Promise<Array<{ id: string; label: string }>> {
-  const response = await api.get('/opportunities', { params: { items: 100 } })
+export interface OpportunityReminderOption {
+  id: string
+  label: string
+  subtitle?: string
+}
+
+export const REMINDER_LEAD_SEARCH_MIN_CHARS = 2
+
+/** Opciones para vincular recordatorio — búsqueda por iniciales (2 letras) o texto (3+). */
+export async function fetchOpportunityOptionsForReminder(
+  query?: string,
+): Promise<OpportunityReminderOption[]> {
+  const params: Record<string, string | number> = { items: 30 }
+  const q = query?.trim() ?? ''
+  if (q.length >= REMINDER_LEAD_SEARCH_MIN_CHARS) {
+    params.q = q
+    if (q.length === REMINDER_LEAD_SEARCH_MIN_CHARS) params.initials = 'true'
+  }
+
+  const response = await api.get('/opportunities', { params })
+  const included = jsonApiIncluded(response.data)
   return jsonApiPrimaryList(response.data).map((r) => {
-    const a = r.attributes ?? {}
-    const contactName = typeof a.contact_name === 'string' ? a.contact_name : ''
-    const title = typeof a.title === 'string' ? a.title : ''
+    const opp = mapOpportunityResource(r, included)
+    const label = opp.contact_name?.trim() || opp.title?.trim() || `Oportunidad ${opp.id}`
+    const subtitleParts = [
+      opp.contact_name && opp.title && opp.title !== opp.contact_name ? opp.title : null,
+      opp.stage?.name,
+    ].filter(Boolean)
     return {
-      id: String(r.id ?? ''),
-      label: contactName || title || `Oportunidad ${r.id}`,
+      id: opp.id,
+      label,
+      subtitle: subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined,
     }
   })
 }

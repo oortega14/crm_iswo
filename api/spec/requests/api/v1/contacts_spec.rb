@@ -34,6 +34,33 @@ RSpec.describe "Api::V1::Contacts", type: :request do
     end
   end
 
+  describe "GET /api/v1/contacts/stats" do
+    let!(:won_contact) do
+      c = create(:contact, tenant: tenant, owner_user: manager, first_name: "Cliente")
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      won_stage = pipe.pipeline_stages.find_by(closed_won: true)
+      create(:opportunity, tenant: tenant, contact: c, owner_user: manager,
+             pipeline: pipe, pipeline_stage: won_stage, status: "won")
+      c
+    end
+
+    let!(:prospect_contact) do
+      c = create(:contact, tenant: tenant, owner_user: manager, first_name: "Prospecto")
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      create(:opportunity, tenant: tenant, contact: c, owner_user: manager,
+             pipeline: pipe, pipeline_stage: pipe.pipeline_stages.first, status: "new_lead")
+      c
+    end
+
+    it "devuelve conteos por segmento" do
+      get "/api/v1/contacts/stats", headers: auth_headers(manager)
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "clients")).to be >= 1
+      expect(json.dig("data", "prospects")).to be >= 1
+      expect(json).to include("data" => hash_including("hot_leads", "stale", "stale_days"))
+    end
+  end
+
   describe "GET /api/v1/contacts" do
     let!(:contact_a) { create(:contact, tenant: tenant, first_name: "Ana") }
     let!(:contact_b) { create(:contact, tenant: tenant, first_name: "Beto") }
@@ -60,6 +87,20 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       ids = json["data"].map { |d| d["id"].to_i }
       expect(ids).to include(company.id)
       expect(ids).not_to include(contact_a.id, contact_b.id)
+    end
+
+    it "filtra por segment=clients (contactos con opp ganada)" do
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      won_stage = pipe.pipeline_stages.find_by(closed_won: true)
+      client = create(:contact, tenant: tenant, owner_user: manager, first_name: "SoloCliente")
+      create(:opportunity, tenant: tenant, contact: client, owner_user: manager,
+             pipeline: pipe, pipeline_stage: won_stage, status: "won")
+      bare = create(:contact, tenant: tenant, first_name: "SinOpp")
+
+      get "/api/v1/contacts?segment=clients", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(client.id)
+      expect(ids).not_to include(bare.id)
     end
 
     it "consultant solo ve sus contactos via policy_scope" do

@@ -15,7 +15,7 @@ module Api
         authorize Reminder, :index?
 
         scope = if params[:opportunity_id].present?
-                  opp = current_tenant.opportunities.find(params[:opportunity_id])
+                  opp = policy_scope(Opportunity).kept.find(params[:opportunity_id])
                   authorize opp, :show?
                   opp.reminders
                 else
@@ -91,11 +91,11 @@ module Api
       private
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.find(params[:opportunity_id])
+        @opportunity = policy_scope(Opportunity).kept.find(params[:opportunity_id])
       end
 
       def set_reminder
-        @reminder = current_tenant.reminders.find(params[:id])
+        @reminder = policy_scope(Reminder).find(params[:id])
       end
 
       def reminder_params

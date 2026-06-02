@@ -11,9 +11,26 @@ module Api
 
       before_action :set_contact, only: %i[show update destroy]
 
+      # GET /api/v1/contacts/stats
+      def stats
+        authorize Contact, :index?
+        payload = Contacts::Stats.new(user: current_user, tenant: current_tenant).call
+        render json: { data: payload }, status: :ok
+      end
+
       # GET /api/v1/contacts
+      # ?segment=clients|prospects|hot_leads|stale — filtro por métrica rápida
       def index
         scope = policy_scope(Contact).kept
+
+        if params[:segment].present?
+          scope = Contacts::Stats.apply_segment(
+            scope,
+            segment: params[:segment],
+            user:    current_user,
+            tenant:  current_tenant
+          )
+        end
 
         scope = scope.where(kind: params[:kind])               if params[:kind].present?
         scope = scope.where(owner_user_id: params[:owner_id])  if params[:owner_id].present?

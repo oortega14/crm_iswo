@@ -1,35 +1,17 @@
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import {
-  LayoutGrid,
-  Table as TableIcon,
-  Plus,
-  Search,
-  Flame,
-  Sun,
-  Snowflake,
-  RefreshCw,
-  Clock,
-  Filter,
-} from 'lucide-react'
+import { LayoutGrid, Table as TableIcon, Plus, Search, RefreshCw } from 'lucide-react'
 import { z } from 'zod'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { OpportunitiesFiltersPopover } from '@/components/opportunities/OpportunitiesFiltersPopover'
 import { KanbanBoard } from '@/components/opportunities/KanbanBoard'
 import { OpportunitiesTable } from '@/components/opportunities/OpportunitiesTable'
 import { OpportunitySlideOver } from '@/components/opportunities/OpportunitySlideOver'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
-import { OpportunitiesExportMenu } from '@/components/opportunities/OpportunitiesExportMenu'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -42,9 +24,6 @@ import {
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from 'sonner'
-import { formatStatusLabel } from '@/lib/utils'
-import type { OpportunityStatus } from '@/types'
-
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
   pipeline: z.string().optional(),
@@ -57,15 +36,6 @@ const opportunitiesSearchSchema = z.object({
   stale: z.coerce.boolean().optional(),
 })
 
-const STATUS_OPTIONS: OpportunityStatus[] = [
-  'new_lead',
-  'contacted',
-  'qualified',
-  'proposal',
-  'won',
-  'lost',
-]
-
 export const Route = createFileRoute('/_app/opportunities')({
   validateSearch: opportunitiesSearchSchema,
   component: OpportunitiesPage,
@@ -76,6 +46,7 @@ function OpportunitiesPage() {
   const navigate = Route.useNavigate()
   const queryClient = useQueryClient()
   const userRole = useAuthStore((s) => s.user?.role)
+  const canCreateOpportunity = userRole !== 'viewer'
   const tenant = useAuthStore((s) => s.tenant)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
@@ -185,10 +156,6 @@ function OpportunitiesPage() {
     navigate({ search: (prev) => ({ ...prev, view: newView as 'kanban' | 'table' }) })
   }
 
-  const handlePipelineChange = (pipelineId: string) => {
-    navigate({ search: (prev) => ({ ...prev, pipeline: pipelineId, stage: undefined }) })
-  }
-
   const handleSelectOpportunity = (id: string | null) => {
     navigate({ search: (prev) => ({ ...prev, selected: id || undefined }) })
   }
@@ -196,6 +163,7 @@ function OpportunitiesPage() {
   const handleRefresh = async () => {
     setRefreshing(true)
     await queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+    await invalidateContactSegmentMetrics(queryClient)
     setRefreshing(false)
   }
 
@@ -213,168 +181,59 @@ function OpportunitiesPage() {
     debouncedQ.length >= 2 ? debouncedQ : null,
   ].filter(Boolean).length
 
+  const clearAllFilters = () => {
+    setSearchInput('')
+    setDebouncedQ('')
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        temperature: undefined,
+        owner: undefined,
+        status: undefined,
+        stage: undefined,
+        stale: undefined,
+      }),
+    })
+  }
+
   return (
     <AppPageShell
       className="h-full min-h-0"
       contentClassName="flex h-full min-h-0 flex-col gap-6 p-4 lg:p-6"
     >
       <PageHeader title="Oportunidades" description={subtitle}>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:max-w-[240px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar contacto (mín. 2 letras)..."
+            placeholder="Buscar..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="h-8 pl-8 w-[200px] text-sm"
+            className="h-8 w-full pl-8 text-sm"
           />
         </div>
 
-        <div className="flex items-center gap-1">
-          {(
-            [
-              { value: 'hot', icon: Flame, cls: 'text-red-600 hover:bg-red-50 data-[active=true]:bg-red-100 data-[active=true]:text-red-700' },
-              { value: 'warm', icon: Sun, cls: 'text-amber-600 hover:bg-amber-50 data-[active=true]:bg-amber-100 data-[active=true]:text-amber-700' },
-              { value: 'cold', icon: Snowflake, cls: 'text-sky-600 hover:bg-sky-50 data-[active=true]:bg-sky-100 data-[active=true]:text-sky-700' },
-            ] as const
-          ).map(({ value, icon: Icon, cls }) => (
-            <button
-              key={value}
-              type="button"
-              data-active={search.temperature === value}
-              onClick={() =>
-                navigate({
-                  search: (prev) => ({
-                    ...prev,
-                    temperature: prev.temperature === value ? undefined : value,
-                  }),
-                })
-              }
-              className={`h-8 w-8 flex items-center justify-center rounded-md border border-transparent transition-colors ${cls}`}
-              title={value === 'hot' ? 'Caliente' : value === 'warm' ? 'Tibio' : 'Frío'}
-            >
-              <Icon className="size-4" />
-            </button>
-          ))}
-        </div>
-
-        <Button
-          type="button"
-          size="sm"
-          variant={search.stale ? 'secondary' : 'outline'}
-          className="h-8 gap-1 px-2"
-          title={`Sin actividad hace más de ${staleDays} días`}
-          onClick={() =>
-            navigate({ search: (prev) => ({ ...prev, stale: !prev.stale || undefined }) })
+        <OpportunitiesFiltersPopover
+          search={{
+            pipeline: search.pipeline,
+            stage: search.stage,
+            temperature: search.temperature,
+            owner: search.owner,
+            status: search.status,
+            stale: search.stale,
+          }}
+          onSearchChange={(updater) =>
+            navigate({ search: (prev) => ({ ...prev, ...updater(prev) }) })
           }
-        >
-          <Clock className="size-3.5" />
-          <span className="hidden md:inline">Inactivas</span>
-        </Button>
-
-        {showOwnerFilter && (
-          <Select
-            value={search.owner ?? '__all__'}
-            onValueChange={(v) =>
-              navigate({ search: (prev) => ({ ...prev, owner: v === '__all__' ? undefined : v }) })
-            }
-          >
-            <SelectTrigger className="h-8 w-[150px] text-sm">
-              <SelectValue placeholder="Consultor" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Todos</SelectItem>
-              {users.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        <Select
-          value={search.status ?? '__all__'}
-          onValueChange={(v) =>
-            navigate({ search: (prev) => ({ ...prev, status: v === '__all__' ? undefined : v }) })
-          }
-        >
-          <SelectTrigger className="h-8 w-[130px] text-sm">
-            <SelectValue placeholder="Estado" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">Todos los estados</SelectItem>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>
-                {formatStatusLabel(s)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {activePipeline && activePipeline.stages.length > 0 && (
-          <Select
-            value={search.stage ?? '__all__'}
-            onValueChange={(v) =>
-              navigate({ search: (prev) => ({ ...prev, stage: v === '__all__' ? undefined : v }) })
-            }
-          >
-            <SelectTrigger className="h-8 w-[150px] text-sm">
-              <SelectValue placeholder="Etapa" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Todas las etapas</SelectItem>
-              {activePipeline.stages.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {pipelines && pipelines.length > 1 && (
-          <Select
-            value={activePipelineId}
-            onValueChange={handlePipelineChange}
-            disabled={pipelinesLoading}
-          >
-            <SelectTrigger className="h-8 w-[180px] text-sm">
-              <SelectValue placeholder="Selecciona pipeline" />
-            </SelectTrigger>
-            <SelectContent>
-              {pipelines.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                  {p.is_default ? ' ★' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {activeFiltersCount > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs gap-1"
-            onClick={() =>
-              navigate({
-                search: (prev) => ({
-                  ...prev,
-                  temperature: undefined,
-                  owner: undefined,
-                  status: undefined,
-                  stage: undefined,
-                  stale: undefined,
-                }),
-              })
-            }
-          >
-            <Filter className="size-3" />
-            Limpiar ({activeFiltersCount})
-          </Button>
-        )}
+          activePipeline={activePipeline}
+          activePipelineId={activePipelineId}
+          pipelines={pipelines}
+          pipelinesLoading={pipelinesLoading}
+          users={users}
+          showOwnerFilter={showOwnerFilter}
+          staleDays={staleDays}
+          activeFiltersCount={activeFiltersCount}
+          onClearFilters={clearAllFilters}
+        />
 
         <Tabs value={view} onValueChange={handleViewChange}>
           <TabsList>
@@ -389,14 +248,6 @@ function OpportunitiesPage() {
           </TabsList>
         </Tabs>
 
-        <OpportunitiesExportMenu
-          pipelineId={activePipelineId}
-          stageId={search.stage}
-          ownerId={search.owner}
-          temperature={search.temperature}
-          disabled={!activePipelineId}
-        />
-
         <Button
           size="sm"
           variant="outline"
@@ -409,10 +260,12 @@ function OpportunitiesPage() {
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
 
-        <Button size="sm" className="gap-2 shadow-sm" onClick={() => setQuickAddOpen(true)}>
-          <Plus className="size-4" />
-          <span className="hidden sm:inline">Nueva</span>
-        </Button>
+        {canCreateOpportunity && (
+          <Button size="sm" className="gap-2 shadow-sm" onClick={() => setQuickAddOpen(true)}>
+            <Plus className="size-4" />
+            <span className="hidden sm:inline">Nueva</span>
+          </Button>
+        )}
       </PageHeader>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/50 bg-card/40 shadow-sm dark:bg-card/20">

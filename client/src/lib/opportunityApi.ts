@@ -1,4 +1,6 @@
+import type { QueryClient } from '@tanstack/react-query'
 import api, { formatRailsError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryClient'
 import type {
   Opportunity,
   OpportunityStatus,
@@ -30,6 +32,12 @@ export function jsonApiPrimaryList(body: unknown): JsonApiResource[] {
 export function jsonApiPrimaryOne(body: unknown): JsonApiResource | null {
   const list = jsonApiPrimaryList(body)
   return list[0] ?? null
+}
+
+function normalizeOpportunityTemperature(value: unknown): import('@/types').OpportunityTemperature {
+  const t = typeof value === 'string' ? value.toLowerCase() : ''
+  if (t === 'hot' || t === 'warm' || t === 'cold') return t
+  return 'cold'
 }
 
 /** Recursos JSON:API en `included` (p. ej. usuarios al incluir `owner_user`). */
@@ -256,6 +264,13 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     contact_email: a.contact_email != null ? String(a.contact_email) : undefined,
     contact_phone: a.contact_phone != null ? String(a.contact_phone) : undefined,
     company_name: a.company_name != null ? String(a.company_name) : undefined,
+    contact_city: a.contact_city != null ? String(a.contact_city) : undefined,
+    contact_last_contacted_at:
+      a.contact_last_contacted_at != null ? String(a.contact_last_contacted_at) : undefined,
+    lead_source_label:
+      (source?.name?.trim() ||
+        (typeof a.lead_source_label === 'string' ? a.lead_source_label.trim() : '')) ||
+      undefined,
     estimated_value: estimatedValue,
     currency: String(a.currency ?? 'COP'),
     stage_id: stageId,
@@ -271,7 +286,7 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     source_id: sourceId,
     source,
     status: (a.status as OpportunityStatus) ?? 'new_lead',
-    temperature: (a.temperature as import('@/types').OpportunityTemperature) || 'cold',
+    temperature: normalizeOpportunityTemperature(a.temperature),
     qualified: a.qualified != null ? Boolean(a.qualified) : undefined,
     notes: a.notes != null ? String(a.notes) : undefined,
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
@@ -384,11 +399,34 @@ export async function fetchOpportunities(
 
 export async function fetchOpportunityDetail(id: string): Promise<Opportunity> {
   const response = await api.get(`/opportunities/${id}`, {
-    params: { include: 'owner_user,lead_source' },
+    params: { include: 'owner_user,lead_source,contact' },
   })
   const row = jsonApiPrimaryOne(response.data)
   if (!row?.id) throw new Error('Oportunidad no encontrada')
   return mapOpportunityResource(row, jsonApiIncluded(response.data))
+}
+
+/** Actualiza detalle y listas en caché tras PATCH (p. ej. temperatura). */
+export function upsertOpportunityInQueryCache(
+  queryClient: QueryClient,
+  opportunity: Opportunity,
+): void {
+  if (!opportunity.id) return
+  queryClient.setQueryData(queryKeys.opportunities.detail(opportunity.id), opportunity)
+  queryClient.setQueriesData<Opportunity[]>(
+    {
+      queryKey: queryKeys.opportunities.all,
+      predicate: (query) => query.queryKey[1] === 'list',
+    },
+    (old) => {
+      if (!old?.length) return old
+      const idx = old.findIndex((o) => o.id === opportunity.id)
+      if (idx < 0) return old
+      const next = [...old]
+      next[idx] = opportunity
+      return next
+    },
+  )
 }
 
 export async function moveOpportunityStage(
@@ -449,18 +487,32 @@ export function buildOpportunityExportFilters(filters: {
   stage_id?: string
   owner_id?: string
   temperature?: string
+  status?: string
   date_range?: string
   source_id?: string
+  stale_days?: number
+  q?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
   if (filters.pipeline_id) out.pipeline_id_eq = filters.pipeline_id
   if (filters.stage_id) out.pipeline_stage_id_eq = filters.stage_id
   if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
   if (filters.temperature) out.temperature_eq = filters.temperature
+  if (filters.status) out.status_eq = filters.status
   if (filters.source_id) out.lead_source_id_eq = filters.source_id
   const days = filters.date_range ? (DATE_RANGE_DAYS[filters.date_range] ?? 0) : 0
   if (days > 0) {
     out.updated_at_gteq = new Date(Date.now() - days * 86_400_000).toISOString()
+  }
+  if (filters.stale_days != null && filters.stale_days > 0) {
+    out.last_activity_at_lteq = new Date(
+      Date.now() - filters.stale_days * 86_400_000,
+    ).toISOString()
+  }
+  const q = filters.q?.trim()
+  if (q && q.length >= 2) {
+    out.title_or_contact_first_name_or_contact_last_name_or_contact_company_name_or_contact_email_or_contact_phone_e164_or_contact_phone_normalized_cont =
+      q
   }
   return out
 }

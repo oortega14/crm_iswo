@@ -34,6 +34,7 @@ export const queryKeys = {
   // Contacts
   contacts: {
     all: ['contacts'] as const,
+    stats: ['contacts', 'stats'] as const,
     list: (filters: Record<string, unknown>) => ['contacts', 'list', filters] as const,
     detail: (id: string) => ['contacts', 'detail', id] as const,
   },
@@ -125,4 +126,15 @@ export const queryKeys = {
   ai: {
     capabilities: ['ai', 'capabilities'] as const,
   },
+}
+
+/** Métricas y listas de /contacts (clientes, prospectos, leads calientes, stale). */
+export function invalidateContactSegmentMetrics(client: QueryClient) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.contacts.stats }),
+    client.invalidateQueries({
+      queryKey: queryKeys.contacts.all,
+      predicate: (query) => query.queryKey[1] === 'list',
+    }),
+  ])
 }

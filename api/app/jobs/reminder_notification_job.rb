@@ -8,9 +8,9 @@
 # los envía por el canal indicado y los marca como sent / failed.
 #
 # Canales soportados (RFC-001):
-#   email     → Postmark (ReminderMailer)
-#   whatsapp  → WhatsappDeliveryJob (persiste outbound WhatsappMessage)
-#   in_app    → solo se marca como sent (el SPA lo muestra via polling/ws)
+#   email     → Postmark (ReminderMailer) + notificación in-app
+#   whatsapp  → WhatsappDeliveryJob + notificación in-app
+#   in_app    → notificación in-app (campana del SPA)
 # ============================================================================
 class ReminderNotificationJob < ApplicationJob
   queue_as :critical
@@ -33,35 +33,38 @@ class ReminderNotificationJob < ApplicationJob
   def dispatch(reminder)
     case reminder.channel
     when "email"
-      unless defined?(ReminderMailer)
-        return reminder.mark_failed!("reminder_mailer_unavailable")
-      end
-
-      ReminderMailer.with(reminder: reminder).due_notification.deliver_now
-      reminder.mark_sent!
+      deliver_email!(reminder)
     when "whatsapp"
-      enqueue_whatsapp(reminder)
+      enqueue_whatsapp!(reminder)
     when "in_app"
-      create_in_app_notification!(reminder)
-      reminder.mark_sent!
+      deliver_in_app!(reminder)
     else
       reminder.mark_failed!("channel_unknown:#{reminder.channel}")
     end
   end
 
-  def create_in_app_notification!(reminder)
-    Notification.create!(
-      tenant:        reminder.tenant,
-      user:          reminder.user,
-      kind:          "reminder_due",
-      title:         reminder.subject.presence || "Recordatorio pendiente",
-      body:          reminder.message.presence,
-      resource_type: "Opportunity",
-      resource_id:   reminder.opportunity_id
-    )
+  def deliver_email!(reminder)
+    unless defined?(ReminderMailer)
+      return reminder.mark_failed!("reminder_mailer_unavailable")
+    end
+
+    ReminderMailer.with(reminder: reminder).due_notification.deliver_now
+    return reminder.mark_failed!("missing_opportunity") unless notify_in_app!(reminder)
+
+    reminder.mark_sent!
   end
 
-  def enqueue_whatsapp(reminder)
+  def deliver_in_app!(reminder)
+    return reminder.mark_failed!("missing_opportunity") unless notify_in_app!(reminder)
+
+    reminder.mark_sent!
+  end
+
+  def notify_in_app!(reminder)
+    Notifications::ReminderDueNotifier.call(reminder: reminder)
+  end
+
+  def enqueue_whatsapp!(reminder)
     contact = reminder.opportunity&.contact
     return reminder.mark_failed!("missing_contact") if contact.nil? || contact.phone_e164.blank?
 
@@ -79,6 +82,8 @@ class ReminderNotificationJob < ApplicationJob
       body:        reminder.message.presence || reminder.subject,
       status:      "queued"
     )
+    return reminder.mark_failed!("missing_opportunity") unless notify_in_app!(reminder)
+
     WhatsappDeliveryJob.perform_later(msg.id, reminder.id)
   end
 end

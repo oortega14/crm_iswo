@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   Search,
-  Upload,
   Building2,
   User,
   Mail,
@@ -14,7 +13,6 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
-  Target,
   RefreshCw,
   Filter,
   Trash2,
@@ -54,21 +52,24 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
-import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
-import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import { ContactsExportMenu } from '@/components/contacts/ContactsExportMenu'
-import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
+import {
+  ContactEditDialog,
+  contactEditInitialFromSummary,
+} from '@/components/contacts/ContactEditDialog'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { useUserRole } from '@/stores/auth'
+import { useUser, useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
+import { ContactsQuickMetrics } from '@/components/contacts/ContactsQuickMetrics'
 import {
   bulkDeleteContacts,
   contactListErrorMessage,
   deleteContact,
   fetchContactsList,
+  fetchContactStats,
   getCompanyLabel,
   getContactInitials,
+  type ContactSegment,
   type ContactSummary,
 } from '@/lib/contactApi'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
@@ -84,6 +85,7 @@ import {
 const contactsSearchSchema = z.object({
   selected: z.string().optional(),
   owner: z.string().optional(),
+  segment: z.enum(['clients', 'prospects', 'hot_leads', 'stale']).optional(),
 })
 
 export const Route = createFileRoute('/_app/contacts')({
@@ -96,6 +98,7 @@ type ContactRow = ContactSummary
 function ContactsPage() {
   const queryClient = useQueryClient()
   const userRole = useUserRole()
+  const currentUser = useUser()
   const searchFromUrl = useSearch({ from: '/_app/contacts' })
   const navigate = Route.useNavigate()
   const router = useRouter()
@@ -104,14 +107,11 @@ function ContactsPage() {
   const [activeTab, setActiveTab] = useState<'contacts' | 'companies'>('contacts')
   const selectedId = searchFromUrl.selected
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [quickAddContact, setQuickAddContact] = useState<{ id: string; name: string } | null>(null)
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [companyPage, setCompanyPage] = useState(1)
   const pageSize = 10
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactRow | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -123,8 +123,15 @@ function ContactsPage() {
     setRefreshing(false)
   }
 
+  const segmentLabels: Record<ContactSegment, string> = {
+    clients: 'Clientes',
+    prospects: 'Prospectos',
+    hot_leads: 'Leads calientes',
+    stale: 'Sin actividad',
+  }
+
   const showOwnerFilter = userRole === 'admin' || userRole === 'manager'
-  const canImportContacts =
+  const canCreateContact =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
 
   useEffect(() => {
@@ -135,7 +142,13 @@ function ContactsPage() {
   useEffect(() => {
     setCurrentPage(1)
     setCompanyPage(1)
-  }, [debouncedQ, searchFromUrl.owner])
+  }, [debouncedQ, searchFromUrl.owner, searchFromUrl.segment])
+
+  const { data: contactStats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.contacts.stats,
+    queryFn: fetchContactStats,
+    staleTime: 0,
+  })
 
   const { data: users = [] } = useQuery({
     queryKey: queryKeys.users.all,
@@ -154,10 +167,11 @@ function ContactsPage() {
       q: debouncedQ.length >= 2 ? debouncedQ : undefined,
       kind: 'person' as const,
       owner_id: searchFromUrl.owner,
+      segment: searchFromUrl.segment,
       page: currentPage,
       items: pageSize,
     }),
-    [debouncedQ, searchFromUrl.owner, currentPage],
+    [debouncedQ, searchFromUrl.owner, searchFromUrl.segment, currentPage],
   )
 
   const listFiltersCompany = useMemo(
@@ -165,11 +179,16 @@ function ContactsPage() {
       q: debouncedQ.length >= 2 ? debouncedQ : undefined,
       kind: 'company' as const,
       owner_id: searchFromUrl.owner,
+      segment: searchFromUrl.segment,
       page: companyPage,
       items: pageSize,
     }),
-    [debouncedQ, searchFromUrl.owner, companyPage],
+    [debouncedQ, searchFromUrl.owner, searchFromUrl.segment, companyPage],
   )
+
+  const handleSegmentChange = (segment: ContactSegment | undefined) => {
+    void navigate({ search: (prev) => ({ ...prev, segment }) })
+  }
 
   const {
     data: contactsData,
@@ -211,8 +230,17 @@ function ContactsPage() {
   const companyTotalPages = companiesData?.totalPages ?? 1
   const canDeleteContacts = userRole === 'admin'
 
+  const canEditContact = (contact: ContactRow) => {
+    if (userRole === 'viewer') return false
+    if (userRole === 'admin' || userRole === 'manager') return true
+    return String(contact.ownerId ?? '') === String(currentUser?.id ?? '')
+  }
 
   const openEditDialog = (contact: ContactRow) => {
+    if (!canEditContact(contact)) {
+      toast.error('No tienes permiso para editar este contacto')
+      return
+    }
     setEditingContact(contact)
     setIsEditDialogOpen(true)
   }
@@ -256,39 +284,32 @@ function ContactsPage() {
     currentContacts.length > 0 && currentContacts.every((c) => selectedIds.has(c.id))
   const someOnPageSelected = currentContacts.some((c) => selectedIds.has(c.id))
 
-  const toggleSelectAll = () => {
-    if (allOnPageSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev)
-        currentContacts.forEach((c) => next.delete(c.id))
-        return next
-      })
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev)
-        currentContacts.forEach((c) => next.add(c.id))
-        return next
-      })
-    }
-  }
-
-  const toggleSelect = (id: string) => {
+  const setContactSelected = (id: string, selected: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (selected) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const setAllOnPageSelected = (selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      currentContacts.forEach((c) => {
+        if (selected) next.add(c.id)
+        else next.delete(c.id)
+      })
       return next
     })
   }
 
 
-  const activeKind = activeTab === 'companies' ? 'company' : 'person'
-
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Contactos"
-        description="Gestiona tu base de contactos y empresas"
+        description="Solo datos del contacto. Pipeline, temperatura y valor en Oportunidades."
       >
         <Button
           size="sm"
@@ -301,26 +322,36 @@ function ContactsPage() {
           <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!canImportContacts}
-          title={
-            canImportContacts
-              ? 'Importar desde archivo Excel (.xlsx)'
-              : 'Solo consultores, managers y administradores pueden importar'
-          }
-          onClick={() => setImportDialogOpen(true)}
-        >
-          <Upload className="mr-2 h-4 w-4" />
-          Importar
-        </Button>
-        <ContactsExportMenu kind={activeKind} ownerId={searchFromUrl.owner} />
-        <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo contacto
-        </Button>
+        {canCreateContact && (
+          <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo contacto
+          </Button>
+        )}
       </PageHeader>
+
+      <ContactsQuickMetrics
+        stats={contactStats}
+        activeSegment={searchFromUrl.segment}
+        isLoading={statsLoading}
+        onSegmentChange={handleSegmentChange}
+      />
+
+      {searchFromUrl.segment && (
+        <p className="text-sm text-muted-foreground -mt-4">
+          Filtrando por: <span className="font-medium text-foreground">{segmentLabels[searchFromUrl.segment]}</span>
+          {searchFromUrl.segment === 'stale' && contactStats?.stale_days != null && (
+            <span> (sin actividad hace más de {contactStats.stale_days} días)</span>
+          )}
+          <button
+            type="button"
+            className="ml-2 text-primary hover:underline"
+            onClick={() => handleSegmentChange(undefined)}
+          >
+            Quitar filtro
+          </button>
+        </p>
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contacts' | 'companies')}>
@@ -428,9 +459,17 @@ function ContactsPage() {
                         {canDeleteContacts && (
                           <TableHead className="w-10">
                             <Checkbox
-                              checked={allOnPageSelected}
-                              data-state={someOnPageSelected && !allOnPageSelected ? 'indeterminate' : undefined}
-                              onCheckedChange={toggleSelectAll}
+                              checked={
+                                allOnPageSelected
+                                  ? true
+                                  : someOnPageSelected
+                                    ? 'indeterminate'
+                                    : false
+                              }
+                              onCheckedChange={(checked) =>
+                                setAllOnPageSelected(checked === true)
+                              }
+                              onClick={(e) => e.stopPropagation()}
                               aria-label="Seleccionar todos"
                             />
                           </TableHead>
@@ -440,12 +479,23 @@ function ContactsPage() {
                         <TableHead>Telefono</TableHead>
                         <TableHead>Empresa</TableHead>
                         <TableHead>Cargo</TableHead>
-                        <TableHead>Oportunidades</TableHead>
                         <TableHead>Origen</TableHead>
                         <TableHead className="w-10"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {(contactsData?.contacts.length ?? 0) === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={canDeleteContacts ? 8 : 7}
+                            className="h-32 text-center text-sm text-muted-foreground"
+                          >
+                            {debouncedQ.length >= 2 || searchFromUrl.owner || searchFromUrl.segment
+                              ? 'No hay contactos con los filtros aplicados.'
+                              : 'No hay contactos registrados. Crea el primero con «Nuevo contacto».'}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
                       {contactsData?.contacts.map((contact) => (
                         <TableRow
                           key={contact.id}
@@ -453,10 +503,16 @@ function ContactsPage() {
                           onClick={() => handleContactClick(contact)}
                         >
                           {canDeleteContacts && (
-                            <TableCell onClick={(e) => { e.stopPropagation(); toggleSelect(contact.id) }}>
+                            <TableCell
+                              className="w-10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <Checkbox
                                 checked={selectedIds.has(contact.id)}
-                                onCheckedChange={() => toggleSelect(contact.id)}
+                                onCheckedChange={(checked) =>
+                                  setContactSelected(contact.id, checked === true)
+                                }
+                                onClick={(e) => e.stopPropagation()}
                                 aria-label={`Seleccionar ${contact.fullName}`}
                               />
                             </TableCell>
@@ -498,11 +554,6 @@ function ContactsPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary">
-                              {contact.opportunitiesCount}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
                             {contact.sourceLabel ? (
                               <Badge variant="outline" className="text-xs">
                                 {contact.sourceLabel}
@@ -519,31 +570,38 @@ function ContactsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {canEditContact(contact) && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openEditDialog(contact)
+                                    }}
+                                  >
+                                    Editar
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    openEditDialog(contact)
+                                    void router.navigate({
+                                      to: '/opportunities',
+                                      search: { view: 'table', contact: contact.id },
+                                    })
                                   }}
                                 >
-                                  Editar
+                                  Ir a Oportunidades
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    void router.navigate({ to: '/opportunities', search: { contact: contact.id } })
-                                  }}
-                                >
-                                  Ver Oportunidades
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeleteContact(contact)
-                                  }}
-                                >
-                                  Eliminar
-                                </DropdownMenuItem>
+                                {canDeleteContacts && (
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteContact(contact)
+                                    }}
+                                  >
+                                    Eliminar
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -662,23 +720,27 @@ function ContactsPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openEditDialog(company)
-                                      }}
-                                    >
-                                      Editar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleDeleteContact(company)
-                                      }}
-                                    >
-                                      Eliminar
-                                    </DropdownMenuItem>
+                                    {canEditContact(company) && (
+                                      <DropdownMenuItem
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openEditDialog(company)
+                                        }}
+                                      >
+                                        Editar
+                                      </DropdownMenuItem>
+                                    )}
+                                    {canDeleteContacts && (
+                                      <DropdownMenuItem
+                                        className="text-destructive"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteContact(company)
+                                        }}
+                                      >
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
@@ -686,12 +748,6 @@ function ContactsPage() {
                             <CardContent>
                               <div className="flex flex-wrap gap-2">
                                 <Badge variant="secondary">Empresa</Badge>
-                              </div>
-                              <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Target className="h-3 w-3" aria-hidden />
-                                  {company.opportunitiesCount} oportunidades
-                                </span>
                               </div>
                             </CardContent>
                           </Card>
@@ -745,24 +801,12 @@ function ContactsPage() {
         onOpenChange={(open) => {
           if (!open) void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
         }}
-        onEdit={(c) => openEditDialog(c)}
-        onDelete={(c) => handleDeleteContact(c)}
-        onAddOpportunity={(contact) => {
-          void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
-          setQuickAddContact({ id: contact.id, name: contact.fullName })
-          setIsQuickAddOpen(true)
+        onEdit={(c) => {
+          if (canEditContact(c)) openEditDialog(c)
         }}
+        canEdit={selectedPreview ? canEditContact(selectedPreview) : false}
+        onDelete={canDeleteContacts ? (c) => handleDeleteContact(c) : undefined}
         canDelete={canDeleteContacts}
-      />
-
-      {/* Quick Add Opportunity para contacto existente */}
-      <QuickAddOpportunity
-        open={isQuickAddOpen}
-        onOpenChange={(open) => {
-          setIsQuickAddOpen(open)
-          if (!open) setQuickAddContact(null)
-        }}
-        prefilledContact={quickAddContact ?? undefined}
       />
 
       {/* Create Contact Dialog */}
@@ -775,8 +819,6 @@ function ContactsPage() {
           setDebouncedQ('')
         }}
       />
-
-      <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
       <AlertDialog
         open={confirmBulkDelete}
@@ -826,19 +868,16 @@ function ContactsPage() {
 
       <ContactEditDialog
         contactId={editingContact?.id ?? null}
-        initialData={editingContact ? {
-          firstName:  editingContact.firstName,
-          lastName:   editingContact.lastName,
-          email:      editingContact.email === '-' ? '' : editingContact.email,
-          phone:      editingContact.phone === '-' ? '' : editingContact.phone,
-          company:    getCompanyLabel(editingContact.company) === '-' ? '' : getCompanyLabel(editingContact.company),
-          position:   editingContact.position === '-' ? '' : editingContact.position,
-          documentId: editingContact.documentId ?? '',
-        } : undefined}
+        initialData={editingContact ? contactEditInitialFromSummary(editingContact) : undefined}
         open={isEditDialogOpen}
         onOpenChange={(open) => {
           setIsEditDialogOpen(open)
           if (!open) setEditingContact(null)
+        }}
+        onSaved={(updated) => {
+          if (editingContact?.id === updated.id) {
+            setEditingContact(updated)
+          }
         }}
       />
     </AppPageShell>

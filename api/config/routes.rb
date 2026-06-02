@@ -87,6 +87,7 @@ Rails.application.routes.draw do
       # ---- Contactos ---------------------------------------------------------
       resources :contacts do
         collection do
+          get    :stats                  # métricas rápidas (clientes, prospectos, …)
           get    :check_duplicates      # ?phone=...&email=...
           get    :import_template       # plantilla CSV
           post   :import                # multipart CSV

@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
 import {
   X,
-  Building,
   MessageSquare,
   FileText,
   Bell,
@@ -18,20 +17,23 @@ import {
   UserRound,
 } from 'lucide-react'
 import api from '@/lib/api'
-import { useUserRole } from '@/stores/auth'
+import { useUser, useUserRole } from '@/stores/auth'
 import {
   assignOpportunityOwner,
   fetchOpportunityDetail,
   jsonApiIncluded,
   jsonApiPrimaryList,
+  jsonApiPrimaryOne,
   mapOpportunityLogResource,
+  mapOpportunityResource,
   mapUserResource,
   moveOpportunityStage,
   recalculateOpportunityBant,
   toOpportunityUpdatePayload,
+  upsertOpportunityInQueryCache,
 } from '@/lib/opportunityApi'
 import { fetchOpportunityReminders } from '@/lib/reminderApi'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
 import {
   fetchAiCapabilities,
   classifyOpportunityTemperature,
@@ -48,6 +50,7 @@ import {
   getInitials,
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -61,8 +64,12 @@ import { TemperatureBadge } from './TemperatureBadge'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
-import { ContactActionButtons } from './ContactActionButtons'
-import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
+import { OpportunityLeadSummary } from './OpportunityLeadSummary'
+import {
+  ContactEditDialog,
+  contactEditInitialFromSummary,
+} from '@/components/contacts/ContactEditDialog'
+import { fetchContactDetail } from '@/lib/contactApi'
 import type { Opportunity, OpportunityTemperature, Pipeline, TenantFieldDefinition } from '@/types'
 
 interface OpportunitySlideOverProps {
@@ -95,7 +102,10 @@ export function OpportunitySlideOver({
   } | null>(null)
   const [notesValue, setNotesValue] = useState('')
   const notesRef = useRef<HTMLTextAreaElement>(null)
+  const [editingValue, setEditingValue] = useState(false)
+  const [valueInput, setValueInput] = useState('')
   const role = useUserRole()
+  const currentUser = useUser()
 
   const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
     queryKey: queryKeys.opportunities.detail(opportunityId || ''),
@@ -105,6 +115,22 @@ export function OpportunitySlideOver({
   })
 
   const opportunity = opportunityDetail ?? opportunityPreview
+
+  const canEditBusiness = useMemo(() => {
+    if (!opportunity || role === 'viewer') return false
+    if (role === 'admin' || role === 'manager') return true
+    const ownerId = opportunity.owner_id || opportunity.owner?.id
+    return String(ownerId ?? '') === String(currentUser?.id ?? '')
+  }, [opportunity, role, currentUser?.id])
+
+  const { data: contactForLead } = useQuery({
+    queryKey: queryKeys.contacts.detail(opportunity?.contact_id ?? ''),
+    queryFn: () => fetchContactDetail(opportunity!.contact_id!),
+    enabled: open && !!opportunity?.contact_id,
+    staleTime: 30_000,
+  })
+
+  const canEditLead = canEditBusiness && !!opportunity?.contact_id
 
   const { data: aiCaps } = useQuery({
     queryKey: queryKeys.ai.capabilities,
@@ -128,9 +154,10 @@ export function OpportunitySlideOver({
 
   useEffect(() => {
     setNotesValue(opportunity?.notes ?? '')
+    setValueInput(String(opportunity?.estimated_value ?? 0))
     setAiResult(null)
     if (open) setActiveTab('overview')
-  }, [opportunity?.id, opportunity?.notes, open])
+  }, [opportunity?.id, opportunity?.notes, opportunity?.estimated_value, open])
 
   useEffect(() => {
     if (editingNotes) notesRef.current?.focus()
@@ -212,15 +239,21 @@ export function OpportunitySlideOver({
         JSON.stringify({ opportunity: payload }),
         { headers: { 'Content-Type': 'application/json' } },
       )
-      return response.data.data
+      return response.data
     },
-    onSuccess: () => {
+    onSuccess: (body) => {
+      const row = jsonApiPrimaryOne(body)
+      if (row?.id) {
+        const updated = mapOpportunityResource(row)
+        upsertOpportunityInQueryCache(queryClient, updated)
+      }
       toast.success('Oportunidad actualizada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       if (opportunity?.id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
       }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
@@ -235,6 +268,7 @@ export function OpportunitySlideOver({
       toast.success('Oportunidad eliminada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
       onOpenChange(false)
     },
     onError: () => {
@@ -255,6 +289,7 @@ export function OpportunitySlideOver({
       setAiResult(ai_result)
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
       toast.success('Temperatura actualizada según BANT y actividad')
     },
     onError: () => {
@@ -272,6 +307,7 @@ export function OpportunitySlideOver({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
     },
     onError: () => toast.error('No se pudo cambiar la etapa'),
   })
@@ -286,6 +322,7 @@ export function OpportunitySlideOver({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
     },
     onError: () => toast.error('No se pudo reasignar'),
   })
@@ -299,6 +336,7 @@ export function OpportunitySlideOver({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
       if (result.temperature_ai?.ai_used) {
         toast.success('BANT recalculado y temperatura actualizada con Claude')
       } else {
@@ -321,6 +359,7 @@ export function OpportunitySlideOver({
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
       const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
       if (usedAi) {
         toast.success(`Clasificado con Claude (${res.meta?.model ?? aiCaps?.model ?? 'IA'})`)
@@ -389,34 +428,23 @@ export function OpportunitySlideOver({
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="fixed inset-y-0 right-0 z-50 flex max-h-[100dvh] w-full max-w-lg min-h-0 flex-col border-l bg-background shadow-xl"
           >
-            {/* Header */}
+            {/* Header — negocio (estado / temperatura) */}
             <div className="flex items-start justify-between gap-4 border-b px-4 py-4">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-lg font-semibold truncate">
-                    {opportunity.contact_name}
-                  </h2>
+                <p className="text-xs text-muted-foreground mb-1">Oportunidad</p>
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
                   <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} />
-                  {opportunity.contact_id && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => setEditContactOpen(true)}
-                      title="Editar contacto"
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
+                  {opportunity.stage?.name && (
+                    <span className="text-xs text-muted-foreground">
+                      · {opportunity.stage.name}
+                    </span>
                   )}
                 </div>
-                {opportunity.company_name && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Building className="size-3.5" />
-                    {opportunity.company_name}
-                  </p>
+                {opportunity.title && opportunity.title !== opportunity.contact_name && (
+                  <p className="text-sm text-muted-foreground mt-1 truncate">{opportunity.title}</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -502,28 +530,22 @@ export function OpportunitySlideOver({
               <TabsContent value="overview" className="flex-1 overflow-hidden mt-0">
                 <ScrollArea className="h-full">
                   <div className="p-4 flex flex-col gap-6">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                        Contactar
-                      </label>
-                      <ContactActionButtons
-                        phone={opportunity.contact_phone}
-                        email={opportunity.contact_email}
-                        onOpenWhatsAppInApp={() => setActiveTab('whatsapp')}
-                      />
-                      {(opportunity.contact_phone || opportunity.contact_email) && (
-                        <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-                          {opportunity.contact_phone ? (
-                            <span className="font-mono">{opportunity.contact_phone}</span>
-                          ) : null}
-                          {opportunity.contact_email ? (
-                            <span className="truncate">{opportunity.contact_email}</span>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
+                    <OpportunityLeadSummary
+                      opportunity={opportunity}
+                      contactDetail={contactForLead}
+                      canEditLead={canEditLead}
+                      onEditLead={() => setEditContactOpen(true)}
+                      onOpenWhatsApp={() => setActiveTab('whatsapp')}
+                    />
 
                     <Separator />
+
+                    <div>
+                      <h3 className="text-sm font-semibold text-foreground mb-1">Negocio</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Etapa, temperatura, BANT, valor y notas de la oportunidad.
+                      </p>
+                    </div>
 
                     {/* Etapa y propietario (RFC: move_stage, assign) */}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -531,7 +553,7 @@ export function OpportunitySlideOver({
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
                           Etapa del pipeline
                         </label>
-                        {role === 'viewer' || pipelineStages.length === 0 ? (
+                        {!canEditBusiness || pipelineStages.length === 0 ? (
                           <p className="text-sm">{opportunity.stage?.name ?? '—'}</p>
                         ) : (
                           <Select
@@ -583,11 +605,42 @@ export function OpportunitySlideOver({
                     {/* Value */}
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Valor estimado
+                        Valor estimado ({opportunity.currency})
                       </label>
-                      <p className="text-2xl font-semibold font-mono mt-1">
-                        {formatCurrency(opportunity.estimated_value, opportunity.currency)}
-                      </p>
+                      {canEditBusiness && editingValue ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          className="mt-1 font-mono"
+                          value={valueInput}
+                          onChange={(e) => setValueInput(e.target.value)}
+                          onBlur={() => {
+                            setEditingValue(false)
+                            const num = Number(valueInput)
+                            if (Number.isFinite(num) && num !== opportunity.estimated_value) {
+                              updateMutation.mutate({ estimated_value: num })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                            if (e.key === 'Escape') {
+                              setValueInput(String(opportunity.estimated_value ?? 0))
+                              setEditingValue(false)
+                            }
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <p
+                          className={cn(
+                            'text-2xl font-semibold font-mono mt-1',
+                            canEditBusiness && 'cursor-pointer hover:text-primary',
+                          )}
+                          onClick={() => canEditBusiness && setEditingValue(true)}
+                        >
+                          {formatCurrency(opportunity.estimated_value, opportunity.currency)}
+                        </p>
+                      )}
                     </div>
 
                     <Separator />
@@ -598,7 +651,7 @@ export function OpportunitySlideOver({
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Temperatura del lead
                         </label>
-                        {role !== 'viewer' && (
+                        {canEditBusiness && (
                           <div className="flex flex-wrap items-center justify-end gap-1.5">
                             <Button
                               type="button"
@@ -640,10 +693,10 @@ export function OpportunitySlideOver({
                       <TemperatureSelector
                         value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
                         disabled={
+                          !canEditBusiness ||
                           updateMutation.isPending ||
                           classifyMutation.isPending ||
-                          syncTemperatureMutation.isPending ||
-                          role === 'viewer'
+                          syncTemperatureMutation.isPending
                         }
                         onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
                       />
@@ -707,7 +760,7 @@ export function OpportunitySlideOver({
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {role !== 'viewer' && (
+                          {canEditBusiness && (
                             <Button
                               type="button"
                               variant="outline"
@@ -741,54 +794,33 @@ export function OpportunitySlideOver({
                         need={opportunity.bant_need}
                         timeline={opportunity.bant_timeline}
                         onUpdate={handleBantUpdate}
-                        disabled={updateMutation.isPending}
+                        disabled={!canEditBusiness || updateMutation.isPending}
                       />
                     </div>
 
-                    <Separator />
+                    {opportunity.last_activity_at && (
+                      <>
+                        <Separator />
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Última actividad comercial
+                          </label>
+                          <p className="text-sm mt-1">
+                            {formatRelativeTime(opportunity.last_activity_at)}
+                          </p>
+                        </div>
+                      </>
+                    )}
 
-                    {/* Dates */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Creado
-                        </label>
-                        <p className="text-sm mt-1">
-                          {formatDate(opportunity.created_at, 'dd MMM yyyy')}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Última actividad
-                        </label>
-                        <p className="text-sm mt-1">
-                          {opportunity.last_activity_at
-                            ? formatRelativeTime(opportunity.last_activity_at)
-                            : '-'}
-                        </p>
-                      </div>
-                      {opportunity.expected_close_on && (
-                        <div className="col-span-2">
+                    {opportunity.expected_close_on && (
+                      <>
+                        <Separator />
+                        <div>
                           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                             Fecha de cierre estimada
                           </label>
                           <p className="text-sm mt-1">
                             {formatDate(opportunity.expected_close_on, 'dd MMM yyyy')}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Origen */}
-                    {(opportunity.source || opportunity.source_id) && (
-                      <>
-                        <Separator />
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Origen
-                          </label>
-                          <p className="text-sm mt-1">
-                            {opportunity.source?.name ?? '—'}
                           </p>
                         </div>
                       </>
@@ -798,7 +830,7 @@ export function OpportunitySlideOver({
                     <CustomFieldsSection
                       opportunity={opportunity}
                       onSave={(custom_fields) => updateMutation.mutate({ custom_fields })}
-                      disabled={updateMutation.isPending || role === 'viewer'}
+                      disabled={!canEditBusiness || updateMutation.isPending}
                     />
 
                     {/* Notes — editable inline */}
@@ -808,7 +840,7 @@ export function OpportunitySlideOver({
                         <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Notas
                         </label>
-                        {!editingNotes && (
+                        {canEditBusiness && !editingNotes && (
                           <Button
                             variant="ghost"
                             size="icon-sm"
@@ -843,8 +875,11 @@ export function OpportunitySlideOver({
                         />
                       ) : (
                         <p
-                          className="text-sm mt-0.5 whitespace-pre-wrap min-h-[1.5rem] cursor-text text-muted-foreground hover:text-foreground"
-                          onClick={() => setEditingNotes(true)}
+                          className={cn(
+                            'text-sm mt-0.5 whitespace-pre-wrap min-h-[1.5rem] text-muted-foreground',
+                            canEditBusiness && 'cursor-text hover:text-foreground',
+                          )}
+                          onClick={() => canEditBusiness && setEditingNotes(true)}
                         >
                           {notesValue || <span className="italic opacity-50">Sin notas</span>}
                         </p>
@@ -919,13 +954,19 @@ export function OpportunitySlideOver({
 
     <ContactEditDialog
       contactId={opportunity?.contact_id ?? null}
-      initialData={{
-        firstName: opportunity?.contact_name?.split(' ')[0] ?? '',
-        lastName:  opportunity?.contact_name?.split(' ').slice(1).join(' ') ?? '',
-        email:     opportunity?.contact_email,
-        phone:     opportunity?.contact_phone,
-        company:   opportunity?.company_name,
-      }}
+      initialData={
+        contactForLead
+          ? contactEditInitialFromSummary(contactForLead)
+          : opportunity?.contact_id
+            ? {
+                firstName: opportunity.contact_name?.split(' ')[0] ?? '',
+                lastName: opportunity.contact_name?.split(' ').slice(1).join(' ') ?? '',
+                email: opportunity.contact_email,
+                phone: opportunity.contact_phone,
+                company: opportunity.company_name,
+              }
+            : undefined
+      }
       open={editContactOpen}
       onOpenChange={setEditContactOpen}
     />

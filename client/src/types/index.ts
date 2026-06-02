@@ -50,6 +50,9 @@ export interface Opportunity {
   contact_email?: string
   contact_phone?: string
   company_name?: string
+  contact_city?: string
+  contact_last_contacted_at?: string
+  lead_source_label?: string
   estimated_value: number
   currency: string
   stage_id: string

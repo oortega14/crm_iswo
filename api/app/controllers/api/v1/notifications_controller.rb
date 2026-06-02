@@ -16,7 +16,10 @@ module Api
         authorize Notification, :index?
 
         limit = [[params.fetch(:limit, 50).to_i, 1].max, 100].min
-        scope = current_user.notifications.recent.limit(limit)
+        scope = current_user.notifications
+                            .where(tenant: current_tenant)
+                            .recent
+                            .limit(limit)
         scope = scope.unread if params[:unread] == "true"
 
         render json: NotificationSerializer.new(scope).serializable_hash, status: :ok
@@ -42,7 +45,7 @@ module Api
       private
 
       def set_notification
-        @notification = current_user.notifications.find(params[:id])
+        @notification = current_user.notifications.where(tenant: current_tenant).find(params[:id])
       end
     end
   end

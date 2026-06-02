@@ -4,14 +4,17 @@ module Users
   # Genera el token compatible con Devise y envía `UserMailer#password_reset`
   # (evita Devise::Mailer y rutas tipo `edit_user_password_url`, inexistentes en API-only).
   class PasswordResetIssuer
-    def initialize(user:)
+    # @param allow_any_role [Boolean] true cuando admin/manager restablece a otro usuario
+    def initialize(user:, allow_any_role: false)
       @user = user
+      @allow_any_role = allow_any_role
     end
 
     def call
-      # Solo admins pueden recuperar contraseña por este flujo.
-      # Retornamos silenciosamente para no revelar si el email existe con otro rol.
-      return unless @user&.role_admin?
+      # Recuperación pública (forgot): solo admin y manager. No revelar otros roles.
+      unless @allow_any_role || @user&.role.in?(%w[admin manager])
+        return
+      end
 
       ActsAsTenant.with_tenant(@user.tenant) do
         raw_token, enc_token = Devise.token_generator.generate(User, :reset_password_token)

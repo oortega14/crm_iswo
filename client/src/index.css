@@ -53,6 +53,21 @@
   --chart-4: #34d399;
   --chart-5: #fbbf24;
 
+  /* Gráficos dashboard — baja saturación, alineados al fondo claro */
+  --bant-chart-low: hsl(22 52% 78%);
+  --bant-chart-medium: hsl(42 42% 76%);
+  --bant-chart-high: hsl(158 32% 72%);
+  --lead-chart-meta: hsl(217 38% 72%);
+  --lead-chart-google: hsl(152 28% 70%);
+  --lead-chart-whatsapp: hsl(168 26% 68%);
+  --lead-chart-web: hsl(248 32% 74%);
+  --lead-chart-referral: hsl(32 40% 74%);
+  --lead-chart-manual: hsl(215 14% 68%);
+  --lead-chart-fallback-1: hsl(262 28% 74%);
+  --lead-chart-fallback-2: hsl(199 30% 72%);
+  --lead-chart-fallback-3: hsl(12 36% 76%);
+  --lead-chart-fallback-4: hsl(186 26% 70%);
+
   --radius: 0.5rem;
 
   --sidebar: #ffffff;
@@ -95,6 +110,23 @@
   --info: #2563eb;
   --chart-1: #2563eb;
   --chart-2: #10b981;
+  --chart-3: #7c8db5;
+  --chart-4: #5a9a8a;
+  --chart-5: #a89b6e;
+
+  --bant-chart-low: hsl(22 38% 52%);
+  --bant-chart-medium: hsl(42 32% 50%);
+  --bant-chart-high: hsl(158 26% 48%);
+  --lead-chart-meta: hsl(217 32% 58%);
+  --lead-chart-google: hsl(152 24% 54%);
+  --lead-chart-whatsapp: hsl(168 22% 52%);
+  --lead-chart-web: hsl(248 26% 58%);
+  --lead-chart-referral: hsl(32 34% 56%);
+  --lead-chart-manual: hsl(215 12% 52%);
+  --lead-chart-fallback-1: hsl(262 22% 56%);
+  --lead-chart-fallback-2: hsl(199 26% 54%);
+  --lead-chart-fallback-3: hsl(12 30% 54%);
+  --lead-chart-fallback-4: hsl(186 22% 52%);
 
   --sidebar: #0b1220;
   --sidebar-foreground: #e5e7eb;

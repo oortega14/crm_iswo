@@ -4,7 +4,10 @@
 # Notification — registro de notificación in-app por usuario
 # ============================================================================
 # Se crea desde:
-#   - ReminderNotificationJob (canal in_app)
+#   - ReminderNotificationJob (todos los canales → campana in-app)
+#   - Notifications::NewLeadNotifier (LeadImporter, landing, alta manual por otro usuario)
+#   - Notifications::StageChangeNotifier
+#   - detección de duplicados en OpportunitiesController
 # Se consume desde:
 #   - GET /api/v1/notifications
 # ============================================================================

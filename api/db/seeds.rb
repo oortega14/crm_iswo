@@ -34,7 +34,8 @@ VERTICALS = [
         "modules"       => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"      => "consulting_iso",
         "show_bant"     => true,
-        "network_depth" => 3
+        "network_depth" => 0,
+        "referral_opportunity_visibility" => false
       }
     },
     bant: {
@@ -95,7 +96,8 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "real_estate",
         "show_bant"       => true,
-        "network_depth"   => 3,
+        "network_depth"   => 0,
+        "referral_opportunity_visibility" => false,
         "opportunity_fields" => {
           "estimated_value_label" => "Valor del inmueble",
           "show_document_id"      => true
@@ -162,7 +164,8 @@ VERTICALS = [
         "modules"         => %w[opportunities contacts pipeline reminders network exports landings],
         "industry"        => "payroll_credit",
         "show_bant"       => true,
-        "network_depth"   => 3,
+        "network_depth"   => 0,
+        "referral_opportunity_visibility" => false,
         "opportunity_fields" => {
           "estimated_value_label" => "Monto del crédito",
           "show_document_id"      => true
@@ -385,12 +388,15 @@ def seed_referral_networks(tenant, users)
     end
   end
 
-  # Distribuir consultores: mitad referidos por manager/admin, mitad entre sí
+  # RFC §6.3: cada consultor cuelga del manager/admin (no en cadena entre pares).
+  # Así un consultor solo ve sus opps + las de referidos directos/indirectos que él refirió.
   parent = manager || admin
-  consultants.each_with_index do |c, i|
-    referrer = i.zero? ? parent : consultants[i - 1]
-    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: referrer, referred_user: c) do |rn|
-      rn.depth = 1; rn.active = true
+  consultant_ids = consultants.map(&:id)
+  consultants.each do |c|
+    ReferralNetwork.where(tenant: tenant, referred_user: c, referrer_user_id: consultant_ids - [c.id]).delete_all
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: parent, referred_user: c) do |rn|
+      rn.depth = 1
+      rn.active = true
     end
   end
 rescue ActiveRecord::RecordInvalid => e

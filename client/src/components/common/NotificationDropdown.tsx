@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Target, AlertCircle, UserPlus, CheckCheck } from 'lucide-react'
+import { Bell, Target, AlertCircle, UserPlus, CheckCheck, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,106 +13,87 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { queryKeys } from '@/lib/queryClient'
-import api from '@/lib/api'
+import {
+  fetchUnreadNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type AppNotification,
+} from '@/lib/notificationApi'
+import { useAuthStore } from '@/stores/auth'
 import { formatRelativeTime } from '@/lib/utils'
 
-// -------------------------------------------------------------------------
-// Types
-// -------------------------------------------------------------------------
-
-interface ApiNotification {
-  id: string
-  attributes: {
-    kind: 'reminder_due' | 'stage_change' | 'new_lead' | 'duplicate_found'
-    title: string
-    body: string | null
-    resource_type: string | null
-    resource_id: string | null
-    unread: boolean
-    read_at: string | null
-    created_at: string
+function getIcon(type: AppNotification['type']) {
+  switch (type) {
+    case 'reminder_due':
+      return Bell
+    case 'stage_change':
+      return Target
+    case 'new_lead':
+      return UserPlus
+    case 'duplicate_found':
+      return AlertCircle
+    default:
+      return Bell
   }
 }
-
-interface Notification {
-  id: string
-  type: 'reminder_due' | 'stage_change' | 'new_lead' | 'duplicate_found'
-  title: string
-  message: string
-  opportunityId: string | null
-  unread: boolean
-  createdAt: string
-}
-
-function mapNotification(r: ApiNotification): Notification {
-  const a = r.attributes
-  const opportunityId =
-    a.resource_type === 'Opportunity' ? (a.resource_id ?? null) : null
-  return {
-    id: r.id,
-    type: a.kind,
-    title: a.title,
-    message: a.body ?? '',
-    opportunityId,
-    unread: a.unread,
-    createdAt: a.created_at,
-  }
-}
-
-// -------------------------------------------------------------------------
-// Component
-// -------------------------------------------------------------------------
 
 export function NotificationDropdown() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
 
-  const { data: notifications = [] } = useQuery<Notification[]>({
+  const {
+    data: notifications = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: queryKeys.notifications,
-    queryFn: async () => {
-      const res = await api.get<{ data: ApiNotification[] }>('/notifications', {
-        params: { unread: 'true', limit: 20 },
-      })
-      return (res.data.data ?? []).map(mapNotification)
-    },
+    queryFn: () => fetchUnreadNotifications(20),
+    enabled: isAuthenticated,
     refetchInterval: 15_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
+    retry: 1,
   })
 
   const readMutation = useMutation({
-    mutationFn: (id: string) => api.patch(`/notifications/${id}/read`),
+    mutationFn: markNotificationRead,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
   })
 
   const readAllMutation = useMutation({
-    mutationFn: () => api.post('/notifications/read_all'),
+    mutationFn: markAllNotificationsRead,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
   })
 
   const unreadCount = notifications.length
 
-  const getIcon = (type: Notification['type']) => {
-    switch (type) {
-      case 'reminder_due':    return Bell
-      case 'stage_change':    return Target
-      case 'new_lead':        return UserPlus
-      case 'duplicate_found': return AlertCircle
-      default:                return Bell
-    }
-  }
-
-  const handleClick = (n: Notification) => {
+  const handleSelect = (n: AppNotification) => {
     readMutation.mutate(n.id)
     if (n.opportunityId) {
       void navigate({ to: '/opportunities', search: { selected: n.opportunityId } })
+      return
+    }
+    if (n.type === 'reminder_due') {
+      void navigate({ to: '/reminders' })
+      return
+    }
+    if (n.type === 'duplicate_found') {
+      void navigate({ to: '/duplicates' })
     }
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label="Notificaciones"
+        >
           <Bell className="size-5" />
           {unreadCount > 0 && (
             <Badge
@@ -122,59 +103,74 @@ export function NotificationDropdown() {
               {unreadCount > 99 ? '99+' : unreadCount}
             </Badge>
           )}
-          <span className="sr-only">Notificaciones</span>
         </Button>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel className="flex items-center justify-between">
+        <DropdownMenuLabel className="flex items-center justify-between gap-2">
           <span>Notificaciones</span>
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground"
-              onClick={() => readAllMutation.mutate()}
-              disabled={readAllMutation.isPending}
-            >
-              <CheckCheck className="mr-1 h-3 w-3" />
-              Marcar todas
-            </Button>
-          )}
+          {isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         </DropdownMenuLabel>
+
+        {unreadCount > 0 && (
+          <DropdownMenuItem
+            className="text-xs text-muted-foreground focus:text-foreground"
+            disabled={readAllMutation.isPending}
+            onSelect={(e) => {
+              e.preventDefault()
+              readAllMutation.mutate()
+            }}
+          >
+            <CheckCheck className="mr-2 size-3.5" />
+            Marcar todas como leídas
+          </DropdownMenuItem>
+        )}
+
         <DropdownMenuSeparator />
 
         <ScrollArea className="h-[300px]">
-          {notifications.length > 0 ? (
+          {isError ? (
+            <div className="flex flex-col items-center justify-center gap-2 px-3 py-8 text-center">
+              <p className="text-sm text-destructive">No se pudieron cargar las notificaciones.</p>
+              <Button variant="outline" size="sm" onClick={() => void refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          ) : isPending ? (
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Cargando…
+            </div>
+          ) : notifications.length > 0 ? (
             notifications.map((n) => {
               const Icon = getIcon(n.type)
               return (
                 <DropdownMenuItem
                   key={n.id}
-                  onClick={() => handleClick(n)}
-                  className="flex items-start gap-3 p-3 cursor-pointer"
+                  className="flex cursor-pointer items-start gap-3 p-3"
+                  onSelect={() => handleSelect(n)}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                     <Icon className="size-4" />
                   </div>
-                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <p className="text-sm font-medium leading-tight">{n.title}</p>
                     {n.message && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">{n.message}</p>
                     )}
                     <p className="text-xs text-muted-foreground">
                       {formatRelativeTime(n.createdAt)}
                     </p>
                   </div>
                   {n.unread && (
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
                   )}
                 </DropdownMenuItem>
               )
             })
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <Bell className="size-8 text-muted-foreground/50 mb-2" />
+              <Bell className="mb-2 size-8 text-muted-foreground/50" />
               <p className="text-sm text-muted-foreground">Sin notificaciones nuevas</p>
             </div>
           )}

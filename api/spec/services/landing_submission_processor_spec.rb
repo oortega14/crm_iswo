@@ -34,6 +34,12 @@ RSpec.describe LandingSubmissionProcessor do
         opp = submission.reload.opportunity
         expect(opp.lead_source).to eq(source)
       end
+
+      it "notifica al consultor asignado (new_lead)" do
+        described_class.new(submission).call
+        opp = submission.reload.opportunity
+        expect(opp.owner_user.notifications.kind_new_lead.unread.count).to eq(1)
+      end
     end
 
     context "con duplicado" do

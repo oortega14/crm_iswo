@@ -51,6 +51,13 @@ RSpec.describe Opportunities::LeadImporter do
       expect(result.opportunity.owner_user).to be_present
     end
 
+    it "notifica al owner con kind new_lead" do
+      result = importer.call
+      owner = result.opportunity.owner_user
+      expect(owner.notifications.kind_new_lead.unread.count).to eq(1)
+      expect(owner.notifications.kind_new_lead.last.resource).to eq(result.opportunity)
+    end
+
     it "acepta owner_user explícito" do
       result = described_class.new(tenant: tenant, attrs: attrs,
                                    source_kind: "meta", owner_user: consultant).call

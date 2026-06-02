@@ -37,11 +37,13 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=email" do
         let(:reminder) { reminder_email }
 
-        it "entrega con deliver_now y marca como sent" do
+        it "entrega con deliver_now, notifica in-app y marca como sent" do
           mailer = double("ActionMailer::MessageDelivery", deliver_now: true)
           chain  = double("Mailer", due_notification: mailer)
           allow(ReminderMailer).to receive(:with).with(reminder: reminder).and_return(chain)
+          allow(reminder).to receive(:opportunity).and_return(build_stubbed(:opportunity, tenant: tenant))
           expect(mailer).to receive(:deliver_now)
+          expect(Notifications::ReminderDueNotifier).to receive(:call).with(reminder: reminder).and_return(true)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end
@@ -50,8 +52,9 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=in_app" do
         let(:reminder) { reminder_in_app }
 
-        it "crea Notification y marca como sent" do
-          allow(Notification).to receive(:create!)
+        it "notifica in-app y marca como sent" do
+          allow(reminder).to receive(:opportunity).and_return(build_stubbed(:opportunity, tenant: tenant))
+          expect(Notifications::ReminderDueNotifier).to receive(:call).with(reminder: reminder).and_return(true)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end

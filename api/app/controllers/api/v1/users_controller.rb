@@ -86,7 +86,7 @@ module Api
       # POST /api/v1/users/:id/reset_password
       def reset_password
         authorize @user, :reset_password?
-        Users::PasswordResetIssuer.new(user: @user).call
+        Users::PasswordResetIssuer.new(user: @user, allow_any_role: true).call
         head :accepted
       rescue StandardError => e
         # No romper la UI de gestión por fallos de mailer/SMTP en entorno local.

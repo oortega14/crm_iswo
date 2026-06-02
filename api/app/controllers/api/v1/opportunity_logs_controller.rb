@@ -31,7 +31,7 @@ module Api
       private
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.find(params[:opportunity_id])
+        @opportunity = policy_scope(Opportunity).kept.find(params[:opportunity_id])
       end
     end
   end

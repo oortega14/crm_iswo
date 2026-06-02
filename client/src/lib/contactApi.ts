@@ -1,7 +1,20 @@
+import type { QueryClient } from '@tanstack/react-query'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, jsonApiPrimaryOne, type JsonApiResource } from '@/lib/opportunityApi'
+import { queryKeys } from '@/lib/queryClient'
 
 export type ContactKind = 'person' | 'company'
+
+/** Segmentos de métricas rápidas en /contacts */
+export type ContactSegment = 'clients' | 'prospects' | 'hot_leads' | 'stale'
+
+export interface ContactQuickStats {
+  clients: number
+  prospects: number
+  hot_leads: number
+  stale: number
+  stale_days: number
+}
 
 export interface ContactSummary {
   id: string
@@ -50,6 +63,7 @@ export interface ContactListFilters {
   q?: string
   kind?: ContactKind
   owner_id?: string
+  segment?: ContactSegment
   page?: number
   items?: number
 }
@@ -97,10 +111,23 @@ export function buildContactListParams(filters: ContactListFilters): Record<stri
   const params: Record<string, string | number> = {}
   if (filters.kind) params.kind = filters.kind
   if (filters.owner_id) params.owner_id = filters.owner_id
+  if (filters.segment) params.segment = filters.segment
   if (filters.q && filters.q.length >= 2) params.q = filters.q
   if (filters.page) params.page = filters.page
   if (filters.items) params.items = filters.items
   return params
+}
+
+export async function fetchContactStats(): Promise<ContactQuickStats> {
+  const response = await api.get<{ data: ContactQuickStats }>('/contacts/stats')
+  const d = response.data.data
+  return {
+    clients: Number(d?.clients ?? 0),
+    prospects: Number(d?.prospects ?? 0),
+    hot_leads: Number(d?.hot_leads ?? 0),
+    stale: Number(d?.stale ?? 0),
+    stale_days: Number(d?.stale_days ?? 7),
+  }
 }
 
 export async function fetchContactsList(filters: ContactListFilters): Promise<ContactListResult> {
@@ -126,6 +153,52 @@ export async function fetchContactDetail(id: string): Promise<ContactSummary> {
   const one = jsonApiPrimaryOne(response.data)
   if (!one?.id) throw new Error('Contacto no encontrado')
   return mapContactResource(one)
+}
+
+export type ContactUpdatePayload = {
+  first_name?: string
+  last_name?: string
+  email?: string
+  phone_e164?: string
+  company?: string
+  position?: string
+  document_id?: string
+  city?: string
+  country?: string
+  notes?: string
+  owner_user_id?: string
+}
+
+export async function updateContact(
+  id: string,
+  payload: ContactUpdatePayload,
+): Promise<ContactSummary> {
+  const response = await api.patch(`/contacts/${id}`, { contact: payload })
+  const one = jsonApiPrimaryOne(response.data)
+  if (!one?.id) throw new Error('Contacto no encontrado')
+  return mapContactResource(one)
+}
+
+/** Sincroniza detalle y filas de listas en caché tras crear/editar/asignar. */
+export function upsertContactInQueryCache(
+  queryClient: QueryClient,
+  contact: ContactSummary,
+): void {
+  queryClient.setQueryData(queryKeys.contacts.detail(contact.id), contact)
+  queryClient.setQueriesData<ContactListResult>(
+    {
+      queryKey: queryKeys.contacts.all,
+      predicate: (q) => q.queryKey[1] === 'list',
+    },
+    (old) => {
+      if (!old?.contacts?.length) return old
+      const idx = old.contacts.findIndex((c) => c.id === contact.id)
+      if (idx < 0) return old
+      const contacts = [...old.contacts]
+      contacts[idx] = contact
+      return { ...old, contacts }
+    },
+  )
 }
 
 export async function deleteContact(id: string): Promise<void> {

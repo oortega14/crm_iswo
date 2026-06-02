@@ -54,6 +54,16 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(ids).not_to include(foreign_opp.id)
     end
 
+    it "filtra por iniciales con initials=true (2 letras)" do
+      own_opp.contact.update!(first_name: "Camila", last_name: "Restrepo")
+      foreign_opp.contact.update!(first_name: "Pedro", last_name: "López")
+
+      get "/api/v1/opportunities?q=CR&initials=true", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(own_opp.id)
+      expect(ids).not_to include(foreign_opp.id)
+    end
+
     it "filtra por pipeline_id" do
       other_pipeline = create(:pipeline_with_stages, tenant: tenant)
       other_opp = create(:opportunity,
@@ -117,11 +127,41 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(foreign_opp.reload.title).to eq("Editada")
     end
 
-    it "consultant no puede actualizar ajenas (403)" do
+    it "consultant no puede actualizar ajenas (404 fuera de policy_scope)" do
       patch "/api/v1/opportunities/#{foreign_opp.id}",
             params: { opportunity: { title: "Hack" } }.to_json,
             headers: auth_headers(consultant)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "conserva temperatura hot cuando el consultor la elige manualmente" do
+      own_opp.update!(temperature: "cold", bant_score: 10, last_activity_at: 30.days.ago)
+
+      patch "/api/v1/opportunities/#{own_opp.id}",
+            params: { opportunity: { temperature: "hot" } }.to_json,
+            headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "attributes", "temperature")).to eq("hot")
+      expect(own_opp.reload.temperature).to eq("hot")
+    end
+
+    it "al crear con temperatura explícita no la sobrescribe el calculador automático" do
+      post "/api/v1/opportunities",
+           params: {
+             opportunity: {
+               contact_id: contact.id,
+               pipeline_stage_id: stage.id,
+               title: "Lead caliente manual",
+               temperature: "hot"
+             }
+           }.to_json,
+           headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:created)
+      expect(json.dig("data", "attributes", "temperature")).to eq("hot")
+      created = tenant.opportunities.order(:id).last
+      expect(created.temperature).to eq("hot")
     end
   end
 
@@ -132,6 +172,36 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
            headers: auth_headers(consultant)
       expect(response).to have_http_status(:ok)
       expect(own_opp.reload.status).to eq("won")
+    end
+
+    it "notifica al dueño cuando un manager mueve la etapa de una opp ajena" do
+      mid_stage = pipeline.pipeline_stages.order(:position)[1]
+
+      expect do
+        post "/api/v1/opportunities/#{foreign_opp.id}/move_stage",
+             params: { pipeline_stage_id: mid_stage.id }.to_json,
+             headers: auth_headers(manager)
+      end.to change {
+        other_consultant.notifications.kind_stage_change.unread.count
+      }.by(1)
+
+      expect(response).to have_http_status(:ok)
+      n = other_consultant.notifications.kind_stage_change.last
+      expect(n.resource_id).to eq(foreign_opp.id)
+    end
+
+    it "no notifica al dueño cuando él mismo mueve su opp" do
+      mid_stage = pipeline.pipeline_stages.order(:position)[1]
+
+      expect do
+        post "/api/v1/opportunities/#{own_opp.id}/move_stage",
+             params: { pipeline_stage_id: mid_stage.id }.to_json,
+             headers: auth_headers(consultant)
+      end.not_to change {
+        consultant.notifications.kind_stage_change.count
+      }
+
+      expect(response).to have_http_status(:ok)
     end
   end
 
@@ -152,6 +222,23 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
     end
   end
 
+  describe "consultores pares (sin red entre ellos)" do
+    let(:manager_user) { create(:user, :manager, tenant: tenant) }
+
+    before do
+      create(:referral_network, tenant: tenant, referrer_user: manager_user, referred_user: consultant)
+      create(:referral_network, tenant: tenant, referrer_user: manager_user, referred_user: other_consultant)
+    end
+
+    it "cada consultor solo ve sus oportunidades en index" do
+      get "/api/v1/opportunities", headers: auth_headers(consultant)
+      expect(json["data"].map { |d| d["id"].to_i }).to eq([own_opp.id])
+
+      get "/api/v1/opportunities", headers: auth_headers(other_consultant)
+      expect(json["data"].map { |d| d["id"].to_i }).to eq([foreign_opp.id])
+    end
+  end
+
   describe "GET /api/v1/opportunities/kanban" do
     it "devuelve array agrupado por stage con opportunities por etapa" do
       get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(manager)
@@ -165,6 +252,12 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
     let(:referred) { create(:user, :consultant, tenant: tenant) }
 
     before do
+      tenant.update!(
+        settings: tenant.settings.merge(
+          "referral_opportunity_visibility" => true,
+          "network_depth" => 3
+        )
+      )
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
     end
 
@@ -201,9 +294,9 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(response).to have_http_status(:forbidden)
     end
 
-    it "consultant sigue sin ver opps fuera de su red" do
+    it "consultant sigue sin ver opps fuera de su red (404)" do
       get "/api/v1/opportunities/#{foreign_opp.id}", headers: auth_headers(consultant)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
     end
   end
 

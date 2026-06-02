@@ -4,7 +4,7 @@
 # OpportunityPolicy
 # ============================================================================
 # - admin/manager: ven y editan todas las oportunidades del tenant.
-# - consultant: ve y edita solo las suyas (owner_user_id). Red de referidos: opt-in tenant.
+# - consultant: edita solo las suyas; ve las suyas + red hasta network_depth (RFC F2).
 # - viewer: solo lectura sobre todas.
 #
 # Reasignar (assign) y mergear son acciones sensibles → solo admin/manager.

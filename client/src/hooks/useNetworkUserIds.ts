@@ -16,8 +16,8 @@ interface MyNetworkPayload {
 
 /**
  * Devuelve el Set de IDs (string) de los usuarios referidos en la red del
- * usuario actual (hasta profundidad 5). Usa React Query: todos los
- * componentes que llamen al hook comparten la misma caché → solo 1 request.
+ * usuario actual (profundidad = network_depth del tenant vía my_network).
+ * Usa React Query: todos los componentes que llamen al hook comparten caché.
  */
 export function useNetworkUserIds(): Set<string> {
   const { data } = useQuery<MyNetworkPayload>({

@@ -16,7 +16,12 @@ module Api
 
       # GET /api/v1/duplicate_flags
       def index
-        scope = policy_scope(DuplicateFlag).includes(:opportunity, :duplicate_of_opportunity, :detected_by_user)
+        scope = policy_scope(DuplicateFlag).includes(
+          :detected_by_user,
+          :resolved_by_user,
+          opportunity:              %i[contact owner_user],
+          duplicate_of_opportunity: %i[contact owner_user]
+        )
         scope = scope.where(resolution: params[:resolution]) if params[:resolution].present?
         render_collection(scope.order(created_at: :desc), with: DuplicateFlagSerializer)
       end
@@ -116,7 +121,12 @@ module Api
       private
 
       def set_flag
-        @flag = current_tenant.duplicate_flags.find(params[:id])
+        @flag = current_tenant.duplicate_flags.includes(
+          :detected_by_user,
+          :resolved_by_user,
+          opportunity:              %i[contact owner_user],
+          duplicate_of_opportunity: %i[contact owner_user]
+        ).find(params[:id])
       end
     end
   end

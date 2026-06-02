@@ -252,12 +252,7 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
     let(:referred) { create(:user, :consultant, tenant: tenant) }
 
     before do
-      tenant.update!(
-        settings: tenant.settings.merge(
-          "referral_opportunity_visibility" => true,
-          "network_depth" => 3
-        )
-      )
+      tenant.update!(settings: tenant.settings.merge("network_depth" => 3))
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
     end
 

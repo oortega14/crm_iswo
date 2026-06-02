@@ -239,6 +239,10 @@ Rails.application.routes.draw do
     end
   end
 
+  # Favicon en :3000 (evita 404 JSON en letter_opener / pestañas del API)
+  get "/icon.png",     to: "favicon#icon"
+  get "/favicon.ico",  to: "favicon#icon"
+
   # Fallback 404 JSON para rutas fuera del API
   match "*unmatched", to: "application#route_not_found", via: :all
 end

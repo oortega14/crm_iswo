@@ -426,9 +426,14 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
                                 Este prospecto ya está registrado
                               </p>
                               <p className="text-amber-700 dark:text-amber-300 mt-1">
-                                por <strong>{duplicateInfo.opportunity.owner_name}</strong> desde{' '}
-                                {formatDate(duplicateInfo.opportunity.created_at)}.
-                                Contacta al administrador para reasignarlo.
+                                La oportunidad está con{' '}
+                                <strong>{duplicateInfo.opportunity.owner_name}</strong> desde{' '}
+                                {formatDate(duplicateInfo.opportunity.created_at)} (RFC §6.2).
+                                Un administrador o manager puede fusionar o reasignar en{' '}
+                                <Link to="/duplicates" className="underline font-medium">
+                                  Duplicados
+                                </Link>
+                                .
                               </p>
                             </div>
                           </div>

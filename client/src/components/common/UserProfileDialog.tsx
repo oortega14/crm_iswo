@@ -8,7 +8,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +18,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
-import { getInitials } from '@/lib/utils'
+import { clearSessionQueryCache } from '@/lib/queryClient'
 import type { User } from '@/types'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -119,6 +118,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
     },
     onSuccess: async () => {
       toast.success('Contraseña actualizada. Inicia sesión de nuevo.')
+      clearSessionQueryCache()
       logout()
       onOpenChange(false)
       try {
@@ -159,13 +159,8 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
           </div>
         ) : (
           <>
-            {/* Avatar + info */}
-            <div className="flex items-center gap-4 py-2">
-              <Avatar className="size-14">
-                <AvatarFallback className="text-lg">{getInitials(me.name)}</AvatarFallback>
-                <AvatarImage src={me.avatar_url} alt={me.name} />
-              </Avatar>
-              <div className="flex-1 min-w-0">
+            <div className="py-2">
+              <div className="min-w-0">
                 <p className="font-semibold truncate">{me.name}</p>
                 <p className="text-sm text-muted-foreground truncate">{me.email}</p>
                 <Badge className={`mt-1 text-xs ${ROLE_CLASSES[me.role] ?? ''}`}>

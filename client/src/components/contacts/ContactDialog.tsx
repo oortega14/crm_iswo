@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactsQueries } from '@/lib/queryClient'
 
 interface ContactDialogProps {
   open: boolean
@@ -52,10 +52,13 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
       })
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
-      await queryClient.invalidateQueries({ queryKey: ['companies'] })
+      await invalidateContactsQueries(queryClient)
       onCreated?.()
-      toast.success(kind === 'company' ? 'Empresa creada exitosamente' : 'Contacto creado exitosamente')
+      toast.success(
+        kind === 'company'
+          ? 'Empresa y prospecto creados en el pipeline'
+          : 'Contacto y prospecto creados en el pipeline'
+      )
       onOpenChange(false)
       setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '', documentId: '' })
       setKind('person')
@@ -90,8 +93,8 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
           <DialogTitle>{kind === 'company' ? 'Nueva Empresa' : 'Nuevo Contacto'}</DialogTitle>
           <DialogDescription>
             {kind === 'company'
-              ? 'Registra una empresa como prospecto. Puedes vincularle personas después.'
-              : 'Completa los datos de la persona. El teléfono debe estar en formato internacional (+57...).'}
+              ? 'Registra la empresa y se abrirá automáticamente como prospecto en Oportunidades.'
+              : 'Completa los datos de la persona. Se creará también en el pipeline (teléfono +57...).'}
           </DialogDescription>
         </DialogHeader>
 

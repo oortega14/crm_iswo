@@ -25,7 +25,9 @@ class LandingContentSanitizer
       return content unless content.is_a?(Hash)
 
       copy = content.deep_dup
-      copy["gjs_html"] = sanitize_html(copy["gjs_html"]) if copy["gjs_html"].present?
+      if copy["gjs_html"].present?
+        copy["gjs_html"] = strip_forms(sanitize_html(copy["gjs_html"]))
+      end
       copy["gjs_css"]  = sanitize_css(copy["gjs_css"]) if copy["gjs_css"].present?
       copy
     end
@@ -36,6 +38,12 @@ class LandingContentSanitizer
         tags: ALLOWED_TAGS,
         attributes: ALLOWED_ATTRIBUTES
       )
+    end
+
+    def strip_forms(html)
+      fragment = Nokogiri::HTML.fragment(html.to_s)
+      fragment.css("form").remove
+      fragment.to_html
     end
 
     def sanitize_css(css)

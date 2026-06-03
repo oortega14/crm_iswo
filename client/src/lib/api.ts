@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
 import { refreshAccessToken } from '@/lib/authSession'
+import { clearSessionQueryCache } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiError } from '@/types'
 import { getSubdomain } from './utils'
@@ -25,9 +26,10 @@ api.interceptors.request.use(
     }
     
     // Backend tenant resolver expects X-Tenant-Slug.
-    // Solo sobreescribir si la petición no trae ya el header (ej. rutas públicas con ?tenant=).
+    // Sesión autenticada primero; localStorage/hostname solo si no hay tenant en store.
     if (!config.headers['X-Tenant-Slug']) {
-      config.headers['X-Tenant-Slug'] = getSubdomain()
+      const fromAuth = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
+      config.headers['X-Tenant-Slug'] = fromAuth || getSubdomain()
     }
 
     // FormData: quitar Content-Type para que el navegador añada boundary (importaciones, uploads)
@@ -105,6 +107,7 @@ api.interceptors.response.use(
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError as Error, null)
+        clearSessionQueryCache()
         useAuthStore.getState().logout()
         
         // Show toast explaining logout

@@ -28,9 +28,10 @@ module Tenants
       { name: "Perdida",    position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
     ].freeze
 
-    # RFC F2: consultores ven su red hasta N niveles (default 3).
+    # RFC F2: profundidad del árbol en /network (default 3). Pipeline: solo opps propias por consultor.
     DEFAULT_TENANT_SETTINGS = {
-      "network_depth" => ConsultantNetworkAccess::DEFAULT_NETWORK_DEPTH
+      "network_depth" => ConsultantNetworkAccess::DEFAULT_NETWORK_DEPTH,
+      "modules"       => %w[opportunities contacts pipeline reminders network exports landings]
     }.freeze
 
     DEFAULT_LEAD_SOURCES = [
@@ -155,6 +156,8 @@ module Tenants
           @field_definitions.each do |attrs|
             TenantFieldDefinition.create!(attrs.merge(tenant: tenant))
           end
+
+          Landings::TenantSetup.apply!(tenant) if defined?(Landings::TenantSetup)
         end
       end
 

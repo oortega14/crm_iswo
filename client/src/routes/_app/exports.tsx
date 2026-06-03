@@ -43,9 +43,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList, mapPipelineResource, mapUserResource } from '@/lib/opportunityApi'
+import { jsonApiPrimaryList, mapPipelineResource, mapUserResource, buildOpportunityExportFilters } from '@/lib/opportunityApi'
+import { buildContactExportFilters, triggerBlobDownload } from '@/lib/contactApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -145,26 +146,21 @@ function mapExportRow(r: JsonApiResource): ExportRow | null {
   }
 }
 
-function buildFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
-  const filters: Record<string, string> = {}
-  const daysByRange: Record<string, number> = {
-    all: 0, week: 7, month: 30, quarter: 90, year: 365,
-  }
-  const days = daysByRange[config.dateRange] ?? 0
-  if (days > 0) {
-    const d = new Date(Date.now() - days * 86400000)
-    filters.updated_at_gteq = d.toISOString()
-  }
+function buildExportFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
   if (config.resource === 'contacts') {
-    if (config.contactKind) filters.kind_eq = config.contactKind
-    if (config.ownerId) filters.owner_user_id_eq = config.ownerId
-    if (config.contactSourceKind) filters.source_kind_eq = config.contactSourceKind
-  } else {
-    if (config.stageId) filters.pipeline_stage_id_eq = config.stageId
-    if (config.ownerId) filters.owner_user_id_eq = config.ownerId
-    if (config.sourceId) filters.lead_source_id_eq = config.sourceId
+    return buildContactExportFilters({
+      dateRange: config.dateRange,
+      contactKind: config.contactKind,
+      ownerId: config.ownerId,
+      contactSourceKind: config.contactSourceKind,
+    })
   }
-  return filters
+  return buildOpportunityExportFilters({
+    stage_id: config.stageId || undefined,
+    owner_id: config.ownerId || undefined,
+    source_id: config.sourceId || undefined,
+    date_range: config.dateRange !== 'all' ? config.dateRange : undefined,
+  })
 }
 
 const INITIAL_CONFIG = {
@@ -181,9 +177,11 @@ const INITIAL_CONFIG = {
 function ExportsPage() {
   const queryClient = useQueryClient()
   const userRole = useAuthStore((s) => s.user?.role)
-  const canCreateExport = userRole === 'admin' || userRole === 'manager'
+  const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager'
+  const canCreateExport = isManagerOrAdmin
   const canImportContacts =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+  const authScope = getAuthQueryScope()
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -238,7 +236,8 @@ function ExportsPage() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: queryKeys.exports.list({ page: 1, items: 50 }),
+    queryKey: queryKeys.exports.list(authScope, { page: 1, items: 50 }),
+    enabled: authScope.length > 0,
     queryFn: async () => {
       const response = await api.get('/exports', {
         params: { page: 1, items: 50 },
@@ -248,11 +247,20 @@ function ExportsPage() {
         .map(mapExportRow)
         .filter((row): row is ExportRow => row !== null)
     },
+    refetchInterval: (query) => {
+      const rows = query.state.data
+      if (!rows?.length) return false
+      const pending = rows.some(
+        (e) => e.uiStatus === 'queued' || e.uiStatus === 'processing',
+      )
+      return pending ? 5_000 : false
+    },
+    refetchIntervalInBackground: true,
   })
 
   const createExportMutation = useMutation({
     mutationFn: async (config: typeof exportConfig) => {
-      const filters = buildFilters(config)
+      const filters = buildExportFilters(config)
       const response = await api.post('/exports', {
         resource: config.resource,
         export_format: config.format,
@@ -272,7 +280,7 @@ function ExportsPage() {
 
   const syncDownloadMutation = useMutation({
     mutationFn: async (config: typeof exportConfig) => {
-      const filters = buildFilters(config)
+      const filters = buildExportFilters(config)
       const response = await api.get(`/${config.resource}/export.${config.format}`, {
         params: { filters },
         responseType: 'blob',
@@ -284,13 +292,11 @@ function ExportsPage() {
       }
     },
     onSuccess: ({ blob, resource, format }) => {
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${resource}_${new Date().toISOString().slice(0, 10)}.${format}`
-      link.click()
-      URL.revokeObjectURL(url)
-      toast.success('Archivo descargado (RFC: export directo)')
+      triggerBlobDownload(
+        blob,
+        `${resource}_${new Date().toISOString().slice(0, 10)}.${format}`,
+      )
+      toast.success('Archivo descargado (exportación directa, RFC §6.7)')
       setIsExportDialogOpen(false)
     },
     onError: (err: unknown) => {
@@ -306,33 +312,19 @@ function ExportsPage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const handleDownload = async (exp: ExportRow) => {
-    if (!exp.fileUrl) return
+    if (!exp.ready && exp.uiStatus !== 'completed') return
     setDownloadingId(exp.id)
     try {
-      const { accessToken } = useAuthStore.getState()
-      const tenantSlug = window.localStorage.getItem('crm-tenant-slug') || ''
-      // fileUrl ya incluye el path completo ("/api/v1/exports/:id/download")
-      const url = exp.fileUrl
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'X-Tenant-Slug': tenantSlug,
-        },
+      const response = await api.get(`/exports/${exp.id}/download`, {
+        responseType: 'blob',
       })
-      if (!res.ok) throw new Error('No se pudo descargar el archivo')
-      const arrayBuffer = await res.arrayBuffer()
-      const mime = exp.format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      const blob = new Blob([arrayBuffer], { type: mime })
-      const objectUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = objectUrl
-      a.download = `export_${exp.resource}_${exp.id}.${exp.format}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(objectUrl)
-    } catch {
-      toast.error('No se pudo descargar el archivo')
+      triggerBlobDownload(
+        response.data as Blob,
+        `export_${exp.resource}_${exp.id}.${exp.format}`,
+      )
+      toast.success('Exportación descargada')
+    } catch (err: unknown) {
+      toast.error(formatRailsError(err, 'No se pudo descargar el archivo'))
     } finally {
       setDownloadingId(null)
     }
@@ -388,7 +380,11 @@ function ExportsPage() {
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Exportaciones e importaciones"
-        description="Exporta contactos u oportunidades e importa contactos masivamente desde Excel (.xlsx)."
+        description={
+          isManagerOrAdmin
+            ? 'RFC §6.7: exportación directa (≤5.000 filas) o asíncrona con descarga segura (7 días). Aplica a todo el tenant.'
+            : 'Importación de contactos vía Excel. Las exportaciones masivas las gestionan admin y manager del tenant.'
+        }
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2 size-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -410,16 +406,24 @@ function ExportsPage() {
           <span className="hidden sm:inline">Importar contactos</span>
           <span className="sm:hidden">Importar</span>
         </Button>
-        <Button size="sm" className="shadow-sm" onClick={() => setIsExportDialogOpen(true)} disabled={!canCreateExport}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva exportación
-        </Button>
+        {canCreateExport && (
+          <Button size="sm" className="shadow-sm" onClick={() => setIsExportDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva exportación
+          </Button>
+        )}
       </PageHeader>
 
-      {!canCreateExport && (
+      {!canCreateExport && userRole === 'consultant' && (
         <p className="text-sm text-muted-foreground">
-          Solo administradores y managers pueden crear exportaciones. Si tienes permiso y no ves el botón, revisa tu
-          sesión.
+          Como consultor puedes importar contactos desde Excel. Para exportar datos del tenant, pide a un manager o
+          administrador.
+        </p>
+      )}
+      {!canCreateExport && userRole === 'viewer' && (
+        <p className="text-sm text-muted-foreground">
+          Tu rol es de solo lectura: no puedes importar ni exportar. Los managers o administradores del tenant gestionan
+          estos procesos.
         </p>
       )}
       {!canImportContacts && (
@@ -523,8 +527,7 @@ function ExportsPage() {
             </div>
           ) : exports.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              No hay exportaciones en el historial activo. Las fallidas o expiradas pueden no listarse según la
-              configuración del servidor.
+              No hay exportaciones en el historial. Las expiradas no se listan; crea una nueva desde el botón superior.
             </div>
           ) : (
             <Table>
@@ -569,11 +572,11 @@ function ExportsPage() {
                     <TableCell className="text-muted-foreground">{bytesLabel(exp.fileSize)}</TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(exp.createdAt)}</TableCell>
                     <TableCell className="text-right">
-                      {exp.fileUrl && (exp.ready || exp.uiStatus === 'completed') ? (
+                      {exp.ready || exp.uiStatus === 'completed' ? (
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={downloadingId === exp.id}
+                          disabled={downloadingId === exp.id || exp.expired}
                           onClick={() => void handleDownload(exp)}
                         >
                           {downloadingId === exp.id
@@ -598,7 +601,8 @@ function ExportsPage() {
           <DialogHeader>
             <DialogTitle>Nueva exportación</DialogTitle>
             <DialogDescription>
-              Se encola un trabajo en el servidor. El archivo generado es Excel (.xlsx). Elige contactos u oportunidades.
+              Descarga directa para volúmenes pequeños, o encola un trabajo async (Sidekiq) para listas grandes.
+              Los archivos async se cifran en reposo y expiran a los 7 días.
             </DialogDescription>
           </DialogHeader>
 

@@ -11,7 +11,11 @@ module Api
       # GET /api/v1/opportunities/:opportunity_id/logs
       def index
         authorize @opportunity, :show?
-        render_collection(@opportunity.opportunity_logs.recent.includes(:user), with: OpportunityLogSerializer)
+        render_collection(
+          @opportunity.opportunity_logs.recent.includes(:user),
+          with: OpportunityLogSerializer,
+          include: [:user]
+        )
       end
 
       # POST /api/v1/opportunities/:opportunity_id/logs

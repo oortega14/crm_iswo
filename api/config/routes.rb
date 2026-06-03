@@ -113,6 +113,7 @@ Rails.application.routes.draw do
           get  "export.csv",  action: :export_download, defaults: { file_format: "csv" }
           get  "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
           post :export
+          delete :bulk_destroy       # { ids: [...] }
         end
 
         resources :logs,
@@ -135,6 +136,7 @@ Rails.application.routes.draw do
 
       # ---- Recordatorios standalone ------------------------------------------
       resources :reminders, only: %i[index show update destroy] do
+        collection { get :stats }
         member { post :complete; post :snooze }
       end
 
@@ -159,6 +161,7 @@ Rails.application.routes.draw do
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
         collection do
+          get :stats
           post :scan
         end
         member do

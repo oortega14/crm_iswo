@@ -16,13 +16,13 @@ import {
   RefreshCw,
   Filter,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -52,13 +52,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
+import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
 import {
   ContactEditDialog,
   contactEditInitialFromSummary,
 } from '@/components/contacts/ContactEditDialog'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { useUser, useUserRole } from '@/stores/auth'
+import { useAuthStore, useUser, useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
 import { ContactsQuickMetrics } from '@/components/contacts/ContactsQuickMetrics'
 import {
@@ -68,12 +69,12 @@ import {
   fetchContactsList,
   fetchContactStats,
   getCompanyLabel,
-  getContactInitials,
   type ContactSegment,
   type ContactSummary,
 } from '@/lib/contactApi'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { getAuthQueryScope, invalidateContactsQueries, queryKeys } from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
 import {
   Select,
   SelectContent,
@@ -97,6 +98,9 @@ type ContactRow = ContactSummary
 
 function ContactsPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const authScope = getAuthQueryScope()
+  const hasContactsModule = tenantHasModule(tenant, 'contacts')
   const userRole = useUserRole()
   const currentUser = useUser()
   const searchFromUrl = useSearch({ from: '/_app/contacts' })
@@ -116,10 +120,11 @@ function ContactsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   const handleRefresh = async () => {
     setRefreshing(true)
-    await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+    await invalidateContactsQueries(queryClient)
     setRefreshing(false)
   }
 
@@ -145,9 +150,11 @@ function ContactsPage() {
   }, [debouncedQ, searchFromUrl.owner, searchFromUrl.segment])
 
   const { data: contactStats, isLoading: statsLoading } = useQuery({
-    queryKey: queryKeys.contacts.stats,
+    queryKey: queryKeys.contacts.stats(authScope),
     queryFn: fetchContactStats,
+    enabled: Boolean(authScope) && hasContactsModule,
     staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const { data: users = [] } = useQuery({
@@ -158,7 +165,7 @@ function ContactsPage() {
         .filter((r) => r.id)
         .map(mapUserResource)
     },
-    enabled: showOwnerFilter,
+    enabled: showOwnerFilter && Boolean(authScope),
     staleTime: 60_000,
   })
 
@@ -197,8 +204,11 @@ function ContactsPage() {
     error: contactsQueryError,
     refetch: refetchContacts,
   } = useQuery({
-    queryKey: queryKeys.contacts.list(listFiltersPerson),
+    queryKey: queryKeys.contacts.list(authScope, listFiltersPerson),
     queryFn: () => fetchContactsList(listFiltersPerson),
+    enabled: Boolean(authScope) && hasContactsModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const {
@@ -208,9 +218,11 @@ function ContactsPage() {
     error: companiesQueryError,
     refetch: refetchCompanies,
   } = useQuery({
-    queryKey: queryKeys.contacts.list(listFiltersCompany),
+    queryKey: queryKeys.contacts.list(authScope, listFiltersCompany),
     queryFn: () => fetchContactsList(listFiltersCompany),
-    enabled: activeTab === 'companies',
+    enabled: Boolean(authScope) && hasContactsModule && activeTab === 'companies',
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const selectedPreview = useMemo(() => {
@@ -248,7 +260,7 @@ function ContactsPage() {
   const deleteContactMutation = useMutation({
     mutationFn: async (contact: ContactRow) => deleteContact(contact.id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      await invalidateContactsQueries(queryClient)
       toast.success('Contacto eliminado')
       setConfirmDeleteContact(null)
       void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
@@ -272,7 +284,7 @@ function ContactsPage() {
       toast.success(`${result.deleted} contacto(s) eliminado(s)`)
       setSelectedIds(new Set())
       setConfirmBulkDelete(false)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      void invalidateContactsQueries(queryClient)
     },
     onError: (err: unknown) => {
       toast.error(formatRailsError(err, 'No se pudieron eliminar los contactos'))
@@ -305,6 +317,17 @@ function ContactsPage() {
   }
 
 
+  if (!hasContactsModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Contactos"
+          description="El módulo de contactos no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
+
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
@@ -323,10 +346,22 @@ function ContactsPage() {
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
         {canCreateContact && (
-          <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo contacto
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setImportDialogOpen(true)}
+              title="Importar contactos desde Excel"
+            >
+              <Upload className="size-3.5" />
+              <span className="hidden sm:inline">Importar</span>
+            </Button>
+            <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo contacto
+            </Button>
+          </>
         )}
       </PageHeader>
 
@@ -518,16 +553,7 @@ function ContactsPage() {
                             </TableCell>
                           )}
                           <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-8 w-8">
-                                <AvatarFallback>
-                                  {getContactInitials(contact.fullName)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="font-medium">
-                                {contact.fullName}
-                              </span>
-                            </div>
+                            <span className="font-medium">{contact.fullName}</span>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 text-muted-foreground">
@@ -810,6 +836,8 @@ function ContactsPage() {
       />
 
       {/* Create Contact Dialog */}
+      <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+
       <ContactDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}

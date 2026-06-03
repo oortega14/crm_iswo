@@ -56,6 +56,7 @@ module Contacts
 
           contact = @tenant.contacts.new(attrs.merge(owner_user: @user))
           contact.save!
+          Contacts::ProspectOpportunityCreator.call(contact: contact, actor: @user)
           created_count += 1
         rescue ActiveRecord::RecordInvalid => e
           errors << { row: line_no, message: e.record.errors.full_messages.join(", ") }

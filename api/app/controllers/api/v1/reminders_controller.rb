@@ -9,6 +9,13 @@ module Api
       before_action :set_opportunity, only: %i[create]
       before_action :set_reminder,    only: %i[show update destroy complete snooze]
 
+      # GET /api/v1/reminders/stats
+      def stats
+        authorize Reminder, :index?
+        payload = Reminders::Stats.new(user: current_user).call
+        render json: { data: payload }, status: :ok
+      end
+
       # GET /api/v1/reminders
       # GET /api/v1/opportunities/:opportunity_id/reminders
       def index

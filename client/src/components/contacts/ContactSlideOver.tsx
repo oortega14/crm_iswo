@@ -10,12 +10,13 @@ import {
   CreditCard,
   StickyNote,
   Radio,
+  Globe,
+  FileText,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,7 +30,7 @@ import { ContactActionButtons } from '@/components/opportunities/ContactActionBu
 import {
   fetchContactDetail,
   getCompanyLabel,
-  getContactInitials,
+  type ContactLandingOrigin,
   type ContactSummary,
 } from '@/lib/contactApi'
 import { queryKeys } from '@/lib/queryClient'
@@ -88,19 +89,40 @@ export function ContactSlideOver({
 
   const goToOpportunities = () => {
     onOpenChange(false)
-    void navigate({ to: '/opportunities', search: { view: 'table', contact: contact.id } })
+    void navigate({
+      to: '/opportunities',
+      search: { view: 'kanban', contact: contact.id },
+    })
   }
+
+  const createOpportunityForContact = () => {
+    onOpenChange(false)
+    void navigate({
+      to: '/opportunities',
+      search: { view: 'kanban', contact: contact.id, add: true },
+    })
+  }
+
+  const openLandingLeads = (origin: ContactLandingOrigin) => {
+    onOpenChange(false)
+    void navigate({
+      to: '/opportunities',
+      search: {
+        view: 'kanban',
+        landing: origin.landing_page_id,
+        ...(origin.opportunity_id ? { selected: origin.opportunity_id } : {}),
+      },
+    })
+  }
+
+  const landingOrigins = contact.landingOrigins ?? []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg p-0">
         <SheetHeader className="p-6 pb-0">
           <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                <AvatarFallback className="text-lg">{getContactInitials(contact.fullName)}</AvatarFallback>
-              </Avatar>
-              <div>
+            <div>
                 <SheetTitle className="text-xl">{contact.fullName}</SheetTitle>
                 {contact.position !== '-' && (
                   <p className="text-sm text-muted-foreground">{contact.position}</p>
@@ -115,7 +137,6 @@ export function ContactSlideOver({
                     </Badge>
                   ) : null}
                 </div>
-              </div>
             </div>
           </div>
 
@@ -275,23 +296,78 @@ export function ContactSlideOver({
               </div>
             </div>
 
-            {(contact.opportunitiesCount ?? 0) > 0 && (
+            {landingOrigins.length > 0 && (
               <>
                 <Separator />
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Globe className="size-3.5" />
+                    Envíos desde landings
+                  </p>
+                  <ul className="space-y-2">
+                    {landingOrigins.map((origin) => (
+                      <li
+                        key={origin.id}
+                        className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-sm"
+                      >
+                        <p className="font-medium truncate">
+                          {origin.landing_title || origin.landing_slug || 'Landing'}
+                        </p>
+                        {origin.created_at && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {formatRelativeTime(origin.created_at)}
+                          </p>
+                        )}
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0 mt-1 text-xs"
+                          onClick={() => openLandingLeads(origin)}
+                        >
+                          <FileText className="size-3 mr-1 inline" />
+                          Ver lead en Oportunidades
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+
+            <Separator />
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Oportunidades
+              </p>
+              {(contact.opportunitiesCount ?? 0) > 0 ? (
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full gap-2 text-muted-foreground"
+                  className="w-full gap-2"
                   onClick={goToOpportunities}
                 >
                   <ExternalLink className="size-4" />
-                  Ver oportunidades en el módulo Oportunidades
-                  {contact.opportunitiesCount > 0 && (
-                    <span className="ml-auto text-xs font-mono">({contact.opportunitiesCount})</span>
-                  )}
+                  Ver en Oportunidades
+                  <span className="ml-auto text-xs font-mono tabular-nums">
+                    ({contact.opportunitiesCount})
+                  </span>
                 </Button>
-              </>
-            )}
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Este contacto aún no tiene leads en el pipeline. Créalo desde el botón de abajo.
+                </p>
+              )}
+              <Button
+                type="button"
+                className="w-full gap-2"
+                onClick={createOpportunityForContact}
+              >
+                <ExternalLink className="size-4" />
+                {contact.opportunitiesCount > 0
+                  ? 'Agregar otra oportunidad'
+                  : 'Agregar a Oportunidades'}
+              </Button>
+            </div>
           </div>
         </ScrollArea>
       </SheetContent>

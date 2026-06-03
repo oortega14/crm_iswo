@@ -17,6 +17,10 @@ class ContactSerializer < ApplicationSerializer
     c.owner_user&.name
   end
 
+  attribute :owner_user_id do |c|
+    c.owner_user_id&.to_s
+  end
+
   attribute :data_classification do |c|
     c.class.data_classification
   end
@@ -41,8 +45,31 @@ class ContactSerializer < ApplicationSerializer
     c.phone_e164.presence || c.phone_normalized.presence
   end
 
-  attribute :opportunities_count do |c|
-    c.opportunities.size
+  attribute :opportunities_count do |c, params|
+    scope = c.opportunities.kept
+    user  = params&.dig(:current_user)
+    if user&.role == "consultant"
+      scope = scope.where(owner_user_id: user.id)
+    end
+    scope.count
+  end
+
+  attribute :landing_origins, if: ->(_r, params) { params && params[:include_landing_origins] } do |c|
+    subs = if c.association(:landing_form_submissions).loaded?
+             c.landing_form_submissions
+           else
+             c.landing_form_submissions.includes(:landing_page).order(created_at: :desc).limit(10)
+           end
+    subs.sort_by { |s| -s.created_at.to_i }.first(10).map do |s|
+      {
+        id:              s.id.to_s,
+        landing_page_id: s.landing_page_id.to_s,
+        landing_title:   s.landing_page&.title,
+        landing_slug:    s.landing_page&.slug,
+        opportunity_id:  s.opportunity_id&.to_s,
+        created_at:      s.created_at&.iso8601
+      }
+    end
   end
 
   belongs_to :owner_user, serializer: :user, record_type: :user

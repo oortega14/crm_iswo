@@ -1,5 +1,5 @@
 import { useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import api from '@/lib/api'
 import { landingUtmSearchSchema, resolvePublicLandingTenant } from '@/lib/landingSearch'
+import { sanitizeLandingCss, stripLandingFormElements } from '@/lib/sanitizeLanding'
 
 interface FieldConfig {
   name: string
@@ -42,6 +43,7 @@ interface PublicLanding {
   slug: string
   seo_title?: string
   seo_description?: string
+  og_image_url?: string
   content: LandingContent
   styles: LandingStyles
 }
@@ -82,6 +84,7 @@ export function PublicLandingPage({ slug }: PublicLandingPageProps) {
   const { tenant: tenantParam, ...utmParams } = parsed.success ? parsed.data : { tenant: undefined }
   const tenantSlug = resolvePublicLandingTenant(tenantParam)
   const [submitted, setSubmitted] = useState(false)
+  const [createdOpportunityId, setCreatedOpportunityId] = useState<string | undefined>()
 
   const tenantHeaders: Record<string, string> = tenantSlug ? { 'X-Tenant-Slug': tenantSlug } : {}
 
@@ -114,17 +117,70 @@ export function PublicLandingPage({ slug }: PublicLandingPageProps) {
   if (isLoading) return <LoadingScreen />
   if (isError || !landing) return <NotFoundScreen />
 
-  const content  = landing.content  ?? {}
-  const styles   = landing.styles   ?? {}
-  const fields   = content.fields?.filter((f) => f.enabled) ?? DEFAULT_FIELDS
+  return (
+    <PublicLandingBody
+      landing={landing}
+      slug={slug}
+      submitted={submitted}
+      createdOpportunityId={createdOpportunityId}
+      onSubmitted={(opportunityId) => {
+        setCreatedOpportunityId(opportunityId)
+        setSubmitted(true)
+      }}
+      utmParams={utmParams}
+      tenantHeaders={tenantHeaders}
+    />
+  )
+}
 
-  const primaryColor  = styles.primary_color    || '#0F172A'
-  const bgColor       = styles.background_color || '#F8FAFC'
-  const headline      = content.headline      || landing.title
-  const subheadline   = content.subheadline   || ''
-  const ctaText       = content.cta_text      || 'Enviar solicitud'
-  const tyTitle       = content.thank_you_title   || '¡Gracias!'
-  const tyMessage     = content.thank_you_message || 'Un asesor te contactará pronto.'
+function PublicLandingBody({
+  landing,
+  slug,
+  submitted,
+  createdOpportunityId,
+  onSubmitted,
+  utmParams,
+  tenantHeaders,
+}: {
+  landing: PublicLanding
+  slug: string
+  submitted: boolean
+  createdOpportunityId?: string
+  onSubmitted: (opportunityId?: string) => void
+  utmParams: Omit<z.infer<typeof landingUtmSearchSchema>, 'tenant'>
+  tenantHeaders: Record<string, string>
+}) {
+  const content = landing.content ?? {}
+  const styles = landing.styles ?? {}
+  const configuredFields = content.fields?.filter((f) => f.enabled) ?? []
+  const fields = configuredFields.length > 0 ? configuredFields : DEFAULT_FIELDS
+
+  const primaryColor = styles.primary_color || '#0F172A'
+  const bgColor = styles.background_color || '#F8FAFC'
+  const headline = content.headline || landing.title
+  const subheadline = content.subheadline || ''
+  const ctaText = content.cta_text || 'Enviar solicitud'
+  const tyTitle = content.thank_you_title || '¡Gracias!'
+  const tyMessage = content.thank_you_message || 'Un asesor te contactará pronto.'
+  const gjsHtml = content.gjs_html?.trim() ?? ''
+  const useGrapeJs = gjsHtml.length > 0
+
+  useEffect(() => {
+    document.title = landing.seo_title?.trim() || landing.title
+    const desc = landing.seo_description?.trim()
+    let meta = document.querySelector('meta[name="description"]')
+    if (desc) {
+      if (!meta) {
+        meta = document.createElement('meta')
+        meta.setAttribute('name', 'description')
+        document.head.appendChild(meta)
+      }
+      meta.setAttribute('content', desc)
+    }
+    return () => {
+      document.title = 'CRM ISWO'
+    }
+  }, [landing.id, landing.title, landing.seo_title, landing.seo_description])
 
   if (submitted) {
     return (
@@ -133,7 +189,30 @@ export function PublicLandingPage({ slug }: PublicLandingPageProps) {
         message={tyMessage}
         primaryColor={primaryColor}
         bgColor={bgColor}
+        opportunityId={createdOpportunityId}
       />
+    )
+  }
+
+  const form = (
+    <LandingForm
+      slug={slug}
+      fields={fields}
+      ctaText={ctaText}
+      primaryColor={primaryColor}
+      utmParams={utmParams}
+      tenantHeaders={tenantHeaders}
+      onSuccess={(opportunityId) => onSubmitted(opportunityId)}
+    />
+  )
+
+  const displayHtml = stripLandingFormElements(gjsHtml)
+
+  if (useGrapeJs) {
+    return (
+      <GrapeJsPublicShell html={displayHtml} css={content.gjs_css ?? ''} bgColor={bgColor}>
+        {form}
+      </GrapeJsPublicShell>
     )
   }
 
@@ -144,16 +223,45 @@ export function PublicLandingPage({ slug }: PublicLandingPageProps) {
       primaryColor={primaryColor}
       bgColor={bgColor}
     >
-      <LandingForm
-        slug={slug}
-        fields={fields}
-        ctaText={ctaText}
-        primaryColor={primaryColor}
-        utmParams={utmParams}
-        tenantHeaders={tenantHeaders}
-        onSuccess={() => setSubmitted(true)}
-      />
+      {form}
     </LandingLayout>
+  )
+}
+
+/** Renderiza HTML/CSS de GrapeJS (sanitizado) + formulario CRM conectado al submit público. */
+function GrapeJsPublicShell({
+  html,
+  css,
+  bgColor,
+  children,
+}: {
+  html: string
+  css: string
+  bgColor: string
+  children: React.ReactNode
+}) {
+  const safeHtml = stripLandingFormElements(html)
+  const safeCss = sanitizeLandingCss(css)
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ backgroundColor: bgColor }}>
+      {safeCss ? (
+        <style dangerouslySetInnerHTML={{ __html: safeCss }} />
+      ) : null}
+      <div
+        className="flex-1 w-full overflow-x-hidden"
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
+      />
+      <div className="border-t bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.06)] px-4 py-8 sm:px-8">
+        <div className="mx-auto w-full max-w-md space-y-2">
+          <p className="text-center text-sm font-medium text-gray-900">Formulario de contacto</p>
+          <p className="text-center text-xs text-gray-500">
+            Al enviar, tu solicitud se registra como oportunidad en el CRM.
+          </p>
+          {children}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -215,7 +323,7 @@ function LandingForm({
   primaryColor: string
   utmParams: Omit<z.infer<typeof landingUtmSearchSchema>, 'tenant'>
   tenantHeaders: Record<string, string>
-  onSuccess: () => void
+  onSuccess: (opportunityId?: string) => void
 }) {
   const schema = buildSchema(fields)
   type FormValues = z.infer<typeof schema>
@@ -229,14 +337,19 @@ function LandingForm({
 
   const submitMutation = useMutation({
     mutationFn: async (data: FormValues) => {
-      await api.post(`/public/landings/${slug}/submit`, {
+      const res = await api.post(`/public/landings/${slug}/submit`, {
         payload: data,
         ...utmParams,
       }, { headers: tenantHeaders })
+      return res.data?.data as {
+        opportunity_id?: number | string
+        contact_id?: number | string
+      } | undefined
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       reset()
-      onSuccess()
+      const oid = data?.opportunity_id != null ? String(data.opportunity_id) : undefined
+      onSuccess(oid)
     },
   })
 
@@ -312,11 +425,13 @@ function ThankYouScreen({
   message,
   primaryColor,
   bgColor,
+  opportunityId,
 }: {
   title: string
   message: string
   primaryColor: string
   bgColor: string
+  opportunityId?: string
 }) {
   return (
     <div
@@ -332,6 +447,11 @@ function ThankYouScreen({
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
         <p className="text-gray-600">{message}</p>
+        {opportunityId && (
+          <p className="mt-4 text-xs text-gray-500">
+            Referencia: oportunidad #{opportunityId}
+          </p>
+        )}
       </div>
     </div>
   )

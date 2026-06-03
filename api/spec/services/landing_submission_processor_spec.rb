@@ -53,6 +53,30 @@ RSpec.describe LandingSubmissionProcessor do
 
         expect(submission.reload.contact).to eq(existing_contact)
       end
+
+      it "aplica datos del formulario al contacto y a la nueva oportunidad" do
+        existing_contact.update!(first_name: "Viejo", last_name: "Nombre", email: "ana@iswo.co")
+        submission.update!(payload: {
+          "first_name" => "Ana",
+          "last_name"  => "Ruiz",
+          "email"      => "ana@iswo.co",
+          "phone"      => "+573001112233",
+          "message"    => "Busco apartamento en Pasto"
+        })
+
+        described_class.new(submission).call
+
+        existing_contact.reload
+        expect(existing_contact.first_name).to eq("Ana")
+        expect(existing_contact.last_name).to eq("Ruiz")
+
+        opp = submission.reload.opportunity
+        expect(opp).to be_present
+        expect(opp.notes).to include("Busco apartamento en Pasto")
+        expect(opp.custom_fields.dig("landing_submission", "payload", "message")).to eq(
+          "Busco apartamento en Pasto"
+        )
+      end
     end
 
     context "ante una excepción" do

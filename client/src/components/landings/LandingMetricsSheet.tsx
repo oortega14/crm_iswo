@@ -17,17 +17,10 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
-import api, { formatRailsError } from '@/lib/api'
+import { formatRailsError } from '@/lib/api'
+import { fetchLandingPageMetrics } from '@/lib/landingPagesApi'
+import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
 import { cn } from '@/lib/utils'
-
-interface LandingMetrics {
-  view_count: number
-  lead_count: number
-  conversion_rate: number
-  period_days: number
-  daily_leads: { date: string; count: number }[]
-  top_utm_sources: { source: string; count: number }[]
-}
 
 interface Props {
   open: boolean
@@ -37,13 +30,14 @@ interface Props {
 }
 
 export function LandingMetricsSheet({ open, onOpenChange, landingId, landingTitle }: Props) {
-  const { data, isLoading, isError, error } = useQuery<LandingMetrics>({
-    queryKey: ['landing-metrics', landingId],
-    queryFn: async () => {
-      const res = await api.get(`/landing_pages/${landingId}/metrics`, { params: { days: 30 } })
-      return res.data.data as LandingMetrics
-    },
-    enabled: open && !!landingId,
+  const authScope = getAuthQueryScope()
+  const metricsDays = 30
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: queryKeys.landingPages.metrics(authScope, landingId ?? '', metricsDays),
+    queryFn: () => fetchLandingPageMetrics(landingId!, metricsDays),
+    enabled: open && Boolean(authScope) && !!landingId,
+    staleTime: 0,
   })
 
   return (

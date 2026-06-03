@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Eye, EyeOff, Building2 } from 'lucide-react'
 import api from '@/lib/api'
+import { clearSessionQueryCache, queryClient } from '@/lib/queryClient'
 import {
   buildTenant,
   buildUserFromSession,
@@ -19,7 +20,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
+import { DEFAULT_TENANT_MODULES } from '@/lib/tenantModules'
 import type { User } from '@/types'
+
+const defaultTenantSettings = {
+  modules: [...DEFAULT_TENANT_MODULES],
+  show_bant: true,
+  network_depth: 3,
+  stale_days: 7,
+}
 
 const loginSchema = z.object({
   tenantSlug: z.string().min(1, 'El identificador de empresa es obligatorio'),
@@ -124,6 +133,7 @@ function LoginPage() {
             primary_color: '#2563eb',
             currency: 'COP',
             timezone: 'America/Bogota',
+            settings: defaultTenantSettings,
             created_at: new Date().toISOString(),
           })
         }
@@ -136,6 +146,7 @@ function LoginPage() {
             primary_color: '#2563eb',
             currency: 'COP',
             timezone: 'America/Bogota',
+            settings: defaultTenantSettings,
             created_at: new Date().toISOString(),
           })
         }
@@ -144,6 +155,7 @@ function LoginPage() {
       return { user, token: accessToken }
     },
     onSuccess: (data) => {
+      clearSessionQueryCache(queryClient)
       login(data.user, data.token)
       toast.success(`Bienvenido, ${data.user.name}`)
       navigate({ to: '/' })

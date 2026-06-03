@@ -17,8 +17,9 @@
     </td>
     <td width="4%"></td>
     <td width="25%" style="text-align:center; padding:12px; background:#fffbeb; border-radius:8px;">
-      <div style="font-size:22px; font-weight:700; color:#d97706;"><%= @kpis[:overdue_count] %></div>
-      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">⏰ Vencidos</div>
+      <div style="font-size:22px; font-weight:700; color:#d97706;"><%= @kpis[:pending_count] %></div>
+      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">⏰ Pendientes</div>
+      <div style="font-size:10px; color:#9ca3af; margin-top:4px;"><%= @kpis[:overdue_count] %> vencidos</div>
     </td>
     <td width="4%"></td>
     <td width="25%" style="text-align:center; padding:12px; background:#f0fdf4; border-radius:8px;">

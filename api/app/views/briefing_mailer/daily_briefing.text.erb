@@ -2,16 +2,28 @@ Hola <%= @user.name.presence || @user.email %>,
 
 Tu briefing del <%= @generated_at.strftime('%d de %B de %Y') rescue 'día' %>:
 
+<% if @day_recommendation.present? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 RECOMENDACIÓN DEL DÍA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<%= @day_recommendation %>
+
+<% end %>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KPIs
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Oportunidades abiertas : <%= @kpis[:total_open] %>
-Leads calientes (🔥)   : <%= @kpis[:hot_count] %>
-Recordatorios vencidos : <%= @kpis[:overdue_count] %>
-Nuevas esta semana     : <%= @kpis[:new_this_week] %>
 <% if @kpis[:pipeline_value].to_f > 0 %>
-Valor del pipeline     : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:pipeline_value].to_i, delimiter: '.') %>
+Valor en pipeline      : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:pipeline_value].to_i, delimiter: '.') %>
 <% end %>
+Cerradas este mes      : <%= @kpis[:won_count] %> ganadas / <%= @kpis[:lost_count] %> perdidas<% if @kpis[:win_rate] %> (win rate <%= @kpis[:win_rate] %>%)<% end %>
+<% if @kpis[:month_closed_value].to_f > 0 %>
+Cierre generado (mes)  : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:month_closed_value].to_i, delimiter: '.') %>
+<% end %>
+BANT promedio          : <%= @kpis[:bant_average] %>/100
+Leads calientes (🔥)   : <%= @kpis[:hot_count] %>
+Recordatorios pendientes: <%= @kpis[:pending_count] %> (<%= @kpis[:overdue_count] %> vencidos, <%= @kpis[:today_count] %> hoy)
+Nuevas esta semana     : <%= @kpis[:new_this_week] %>
 
 <% if @overdue.any? %>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -27,7 +39,8 @@ Valor del pipeline     : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper
 🔥 LEADS CALIENTES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 <% @hot_leads.each do |opp| %>
-• <%= opp.contact&.display_name || opp.title %> · BANT <%= opp.bant_score %><% if opp.pipeline_stage %> · <%= opp.pipeline_stage.name %><% end %>
+<% days = opp.last_activity_at ? ((Time.current - opp.last_activity_at) / 1.day).floor : nil %>
+• <%= opp.contact&.display_name || opp.title %> · BANT <%= opp.bant_score %><% if opp.pipeline_stage %> · <%= opp.pipeline_stage.name %><% end %><% if days %> · <%= days %> día(s) sin actividad<% end %>
 <% end %>
 <% end %>
 

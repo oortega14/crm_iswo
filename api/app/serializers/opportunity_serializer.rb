@@ -103,6 +103,11 @@ class OpportunitySerializer < ApplicationSerializer
     ((Time.current - o.last_activity_at) / 1.day).floor
   end
 
+  # RFC §6.3 — true si el owner de esta oportunidad es referido de alguien en la red del tenant.
+  attribute :from_network do |o, params|
+    params[:referred_user_ids]&.include?(o.owner_user_id) || false
+  end
+
   belongs_to :contact,        serializer: :contact
   belongs_to :pipeline,       serializer: :pipeline
   belongs_to :pipeline_stage, serializer: :pipeline_stage

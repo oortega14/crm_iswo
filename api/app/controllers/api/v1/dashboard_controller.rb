@@ -97,11 +97,11 @@ module Api
                .recent
                .limit(40)
 
+        # Mismo alcance que GET /reminders: vencidos + programados para hoy (RFC §6.4)
+        end_of_today = Time.zone.today.end_of_day
         reminders = policy_scope(Reminder).status_pending
-                        .includes(:user, opportunity: [])
-                        .joins(:opportunity)
-                        .merge(opp_scope)
-                        .where(remind_at: today)
+                        .includes(:user, :opportunity)
+                        .where(remind_at: ..end_of_today)
                         .order(:remind_at)
                         .limit(40)
 
@@ -128,7 +128,7 @@ module Api
       def bant_distribution
         authorize Opportunity, :index?
 
-        scope        = dashboard_opportunities_scope
+        scope        = dashboard_opportunities_scope.open
         low          = scope.where(bant_score: ...40).count
         medium       = scope.where(bant_score: 40...70).count
         high         = scope.where(bant_score: 70..).count
@@ -142,10 +142,12 @@ module Api
         authorize Opportunity, :index?
         authorize Reminder, :index?
 
+        scopes = Dashboard::Scopes.new(current_user, current_tenant, pipeline_id: params[:pipeline_id])
         raw = Opportunities::BriefingBuilder.new(
           current_user,
           current_tenant,
-          opportunity_scope: dashboard_opportunities_scope
+          opportunity_scope: scopes.opportunities,
+          reminder_scope: scopes.reminders
         ).call
 
         render json: { data: Opportunities::BriefingPayload.from(raw) }, status: :ok
@@ -231,10 +233,7 @@ module Api
 
       # Oportunidades visibles según rol (RFC §6.3 / A.8.2). Opcionalmente filtradas por pipeline_id.
       def dashboard_opportunities_scope
-        scope = policy_scope(Opportunity).kept
-        pipe = pipeline_from_optional_param
-        scope = scope.where(pipeline_id: pipe.id) if pipe
-        scope
+        Dashboard::Scopes.new(current_user, current_tenant, pipeline_id: params[:pipeline_id]).opportunities
       end
 
       def pipeline_from_optional_param

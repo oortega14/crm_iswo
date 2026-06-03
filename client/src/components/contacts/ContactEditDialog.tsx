@@ -22,7 +22,7 @@ import {
   updateContact,
   upsertContactInQueryCache,
 } from '@/lib/contactApi'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
 
 export interface ContactEditInitialData {
   kind?: ContactKind
@@ -119,6 +119,7 @@ export function ContactEditDialog({
     },
     onSuccess: async (updated) => {
       upsertContactInQueryCache(queryClient, updated)
+      await invalidateContactSegmentMetrics(queryClient)
       await queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       toast.success('Contacto actualizado')
       onOpenChange(false)

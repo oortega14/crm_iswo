@@ -16,14 +16,14 @@ import {
   mapOpportunityResource,
   mapPipelineResource,
 } from '@/lib/opportunityApi'
-import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
+import { getAuthQueryScope, invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
 import { TemperatureSelector } from './TemperatureSelector'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
-import type { LeadSource, TenantFieldDefinition } from '@/types'
+import type { LeadSource, Opportunity, TenantFieldDefinition } from '@/types'
 
 function mapFieldDefs(raw: unknown): TenantFieldDefinition[] {
   const items = (raw as { data?: unknown[] })?.data ?? []
@@ -83,9 +83,16 @@ interface QuickAddOpportunityProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   prefilledContact?: PrefilledContact
+  /** Tras crear, p. ej. seleccionar el nuevo lead en Oportunidades */
+  onCreated?: (opportunity: Opportunity) => void
 }
 
-export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: QuickAddOpportunityProps) {
+export function QuickAddOpportunity({
+  open,
+  onOpenChange,
+  prefilledContact,
+  onCreated,
+}: QuickAddOpportunityProps) {
   const queryClient = useQueryClient()
   const tenant = useTenant()
   const userRole = useAuthStore((s) => s.user?.role)
@@ -289,11 +296,24 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
       }
       return mapOpportunityResource(raw, jsonApiIncluded(response.data))
     },
-    onSuccess: () => {
+    onSuccess: (newOpp) => {
+      queryClient.setQueriesData<Opportunity[]>(
+        {
+          queryKey: queryKeys.opportunities.all,
+          predicate: (q) => q.queryKey[1] === 'list',
+        },
+        (old) => {
+          if (!old?.length) return [newOpp]
+          if (old.some((o) => o.id === newOpp.id)) return old
+          return [newOpp, ...old]
+        },
+      )
       toast.success('Oportunidad creada exitosamente')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all(getAuthQueryScope()) })
       void invalidateContactSegmentMetrics(queryClient)
+      onCreated?.(newOpp)
       reset()
       setCustomFields({})
       onOpenChange(false)
@@ -307,11 +327,11 @@ export function QuickAddOpportunity({ open, onOpenChange, prefilledContact }: Qu
     createMutation.mutate(data)
   }
 
-  // Solo bloquear si el contacto existente ya tiene una oportunidad abierta.
-  // Si el contacto existe pero no tiene oportunidad, el backend lo reutiliza sin problema.
+  // Con contacto preseleccionado permitimos varias oportunidades abiertas para el mismo contacto.
   const duplicateWarning =
-    (duplicatePhone?.exists && !!duplicatePhone.opportunity) ||
-    (duplicateEmail?.exists && !!duplicateEmail.opportunity)
+    !prefilledContact &&
+    ((duplicatePhone?.exists && !!duplicatePhone.opportunity) ||
+      (duplicateEmail?.exists && !!duplicateEmail.opportunity))
   const duplicateInfo = duplicatePhone?.opportunity ? duplicatePhone : duplicateEmail
 
   const pipelinesReady = !pipelinesLoading && !pipelinesFetching

@@ -24,6 +24,9 @@ module Api
           scope = scope.where(pipeline_stage_id: params[:stage_id])
         end
         scope = scope.where(contact_id: params[:contact_id])               if params[:contact_id].present?
+        if params[:landing_page_id].present?
+          scope = apply_landing_page_filter(scope, params[:landing_page_id])
+        end
         if params[:owner_id].present? && owner_filter_allowed?(params[:owner_id])
           scope = scope.where(owner_user_id: params[:owner_id])
         end
@@ -36,10 +39,13 @@ module Api
           scope = scope.where(temperature: params[:temperature])
         end
 
+        referred_ids = ReferralNetwork.active.pluck(:referred_user_id).to_set
+
         render_collection(
           scope.order(last_activity_at: :desc),
-          with:  OpportunitySerializer,
-          include: [:owner_user, :lead_source, :contact]
+          with:    OpportunitySerializer,
+          include: [:owner_user, :lead_source, :contact],
+          params:  { referred_user_ids: referred_ids }
         )
       end
 
@@ -136,6 +142,33 @@ module Api
         log_action!("destroy", { title: @opportunity.title, contact_id: @opportunity.contact_id })
         @opportunity.discard
         render_no_content
+      end
+
+      # DELETE /api/v1/opportunities/bulk_destroy  — { ids: ["1","2",...] }
+      def bulk_destroy
+        authorize Opportunity, :destroy?
+        ids = Array(params[:ids]).map(&:to_i).uniq.reject(&:zero?)
+        if ids.blank?
+          return render json: { error: "bad_request", message: "ids requeridos" },
+                        status: :bad_request
+        end
+
+        opportunities = policy_scope(Opportunity).kept.where(id: ids)
+        deleted = opportunities.count
+        opportunities.find_each do |opp|
+          opp.opportunity_logs.create!(
+            tenant:       current_tenant,
+            user:         current_user,
+            action:       "destroy",
+            changes_data: LogSanitizer.redact(
+              { title: opp.title, contact_id: opp.contact_id, bulk: true }
+            ),
+            ip_address:   request.remote_ip,
+            user_agent:   request.user_agent
+          )
+        end
+        opportunities.discard_all
+        render json: { data: { deleted: deleted } }, status: :ok
       end
 
       # POST /api/v1/opportunities/:id/move_stage  { pipeline_stage_id }
@@ -466,39 +499,9 @@ module Api
         end
       end
 
-      # Crea DuplicateFlag para cada oportunidad abierta existente del mismo
-      # contacto que no tenga ya un flag con la oportunidad recién creada.
       def flag_duplicates_for!(opportunity, contact)
-        existing_opps = current_tenant.opportunities.kept
-                                      .where(contact_id: contact.id)
-                                      .where.not(id: opportunity.id)
-                                      .where.not(status: %w[won lost merged])
-
-        existing_opps.find_each do |existing|
-          flags = DuplicateFlag.where(tenant_id: current_tenant.id)
-          next if flags.exists?(opportunity_id: opportunity.id, duplicate_of_opportunity_id: existing.id)
-          next if flags.exists?(opportunity_id: existing.id, duplicate_of_opportunity_id: opportunity.id)
-
-          matched = if contact.email.present? && contact.phone_e164.present?
-                      "both"
-                    elsif contact.phone_e164.present?
-                      "phone"
-                    else
-                      "email"
-                    end
-
-          flag = DuplicateFlag.create!(
-            tenant:                   current_tenant,
-            opportunity:              opportunity,
-            duplicate_of_opportunity: existing,
-            detected_by_user:         current_user,
-            matched_on:               matched,
-            match_score:              1.0
-          )
-          notify_duplicate_collision!(flag, existing)
-        rescue ActiveRecord::RecordInvalid => e
-          Rails.logger.warn("[DuplicateFlag] No se pudo crear flag opp=#{opportunity.id} vs #{existing.id}: #{e.message}")
-        end
+        Opportunities::DuplicateFlagsCreator.new(tenant: current_tenant, actor: current_user)
+                                            .call(opportunity, contact)
       end
 
       def notify_new_lead!(opportunity)
@@ -575,39 +578,36 @@ module Api
         owner_id.to_i == current_user.id
       end
 
-      # RFC §6.2: notifica al dueño de la existente y al consultor que registró (quién / desde cuándo).
-      def notify_duplicate_collision!(flag, existing_opp)
-        contact_label = existing_opp.contact&.display_name.presence || "este prospecto"
-        since_label     = existing_opp.created_at&.strftime("%d/%m/%Y") || "—"
-        registrar       = current_user
-        owner           = existing_opp.owner_user
+      # Leads por landing: custom_fields, slug o envíos vinculados (datos legacy).
+      def apply_landing_page_filter(scope, landing_page_id)
+        lid = landing_page_id.to_s
+        landing = current_tenant.landing_pages.find_by(id: lid)
+        slug = landing&.slug.to_s
 
-        if owner.present? && owner.id != registrar.id
-          Notification.create!(
-            tenant:   current_tenant,
-            user:     owner,
-            kind:     "duplicate_found",
-            title:    "Posible duplicado detectado",
-            body:     "#{registrar.name} registró otra oportunidad para #{contact_label} " \
-                      "que ya tienes en tu pipeline.",
-            resource: existing_opp
-          )
-        end
+        opp_ids = LandingFormSubmission
+                  .where(tenant_id: current_tenant.id, landing_page_id: lid)
+                  .where.not(opportunity_id: nil)
+                  .distinct
+                  .pluck(:opportunity_id)
 
-        if registrar.present?
-          owner_label = owner&.name.presence || "otro consultor"
-          Notification.create!(
-            tenant:   current_tenant,
-            user:     registrar,
-            kind:     "duplicate_found",
-            title:    "Prospecto ya registrado",
-            body:     "#{contact_label} ya tiene una oportunidad con #{owner_label} desde #{since_label}.",
-            resource: flag.opportunity
-          )
+        json_parts = [
+          "custom_fields->>'landing_page_id' = ?",
+          "custom_fields->>'landing_page_id' = ?"
+        ]
+        binds = [lid, lid.to_i.to_s]
+        if slug.present?
+          json_parts << "custom_fields->>'landing_slug' = ?"
+          binds << slug
         end
-      rescue ActiveRecord::RecordInvalid => e
-        Rails.logger.warn("[Notification] No se pudo crear notificación de duplicado: #{e.message}")
+        json_sql = json_parts.join(" OR ")
+
+        if opp_ids.any?
+          scope.where("opportunities.id IN (?) OR (#{json_sql})", opp_ids, *binds)
+        else
+          scope.where(json_sql, *binds)
+        end
       end
+
     end
   end
 end

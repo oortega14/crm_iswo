@@ -26,10 +26,16 @@ class DailyBriefingJob < ApplicationJob
   def send_briefings_for(tenant)
     ActsAsTenant.with_tenant(tenant) do
       tenant.users.active.where.not(email: [ nil, "" ]).find_each do |user|
-        builder = Opportunities::BriefingBuilder.new(user, tenant)
+        scopes = Dashboard::Scopes.new(user, tenant)
+        builder = Opportunities::BriefingBuilder.new(
+          user,
+          tenant,
+          opportunity_scope: scopes.opportunities,
+          reminder_scope: scopes.reminders
+        )
         briefing = builder.call
 
-        next if briefing[:kpis][:total_open].zero? && briefing[:overdue_reminders].empty?
+        next if briefing[:kpis][:total_open].zero? && briefing[:kpis][:pending_count].zero?
 
         BriefingMailer.with(briefing: briefing).daily_briefing.deliver_later
       rescue StandardError => e

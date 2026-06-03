@@ -22,6 +22,7 @@ const accentMap: Record<Accent, { wrap: string; icon: string; glow: string }> = 
 }
 
 interface DashboardSectionProps {
+  id?: string
   title: string
   subtitle?: string
   icon: LucideIcon
@@ -32,6 +33,7 @@ interface DashboardSectionProps {
 }
 
 export function DashboardSection({
+  id,
   title,
   subtitle,
   icon: Icon,
@@ -42,7 +44,7 @@ export function DashboardSection({
   const a = accentMap[accent]
 
   return (
-    <section className="space-y-5">
+    <section id={id} className="space-y-5 scroll-mt-20">
       <div
         className={cn(
           'relative overflow-hidden rounded-2xl border p-4 sm:p-5',

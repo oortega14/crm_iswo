@@ -44,7 +44,9 @@ import {
   type ReminderSummary,
 } from '@/lib/reminderApi'
 import { formatDate, cn } from '@/lib/utils'
-import { queryKeys } from '@/lib/queryClient'
+import { getAuthQueryScope, invalidateReminderDashboardQueries, queryKeys } from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
+import { useAuthStore } from '@/stores/auth'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_app/reminders')({
@@ -77,6 +79,9 @@ function isOverdue(remindAt: string, completed: boolean) {
 
 function RemindersPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const authScope = getAuthQueryScope()
+  const hasRemindersModule = tenantHasModule(tenant, 'reminders')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
   const [refreshing, setRefreshing] = useState(false)
@@ -94,13 +99,19 @@ function RemindersPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: queryKeys.reminders.list(listFilters),
+    queryKey: queryKeys.reminders.list(authScope, listFilters),
     queryFn: () => fetchRemindersList(listFilters),
+    enabled: Boolean(authScope) && hasRemindersModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const { data: stats } = useQuery({
-    queryKey: queryKeys.reminders.stats,
+    queryKey: queryKeys.reminders.stats(authScope),
     queryFn: fetchReminderStats,
+    enabled: Boolean(authScope) && hasRemindersModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const reminders = listData?.reminders ?? []
@@ -116,11 +127,7 @@ function RemindersPage() {
   )
 
   const invalidate = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.stats }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.overdue }),
-    ])
+    await invalidateReminderDashboardQueries(queryClient)
   }
 
   const handleRefresh = async () => {
@@ -181,13 +188,19 @@ function RemindersPage() {
   const pendingCount = stats?.pending ?? reminders.filter((r) => !r.completed).length
   const overdueCount =
     stats?.overdue ?? reminders.filter((r) => !r.completed && isOverdue(r.remindAt, r.completed)).length
-  const todayCount = reminders.filter(
-    (r) =>
-      !r.completed &&
-      r.remindAt &&
-      new Date(r.remindAt).toDateString() === new Date().toDateString(),
-  ).length
+  const todayCount = stats?.today ?? 0
   const completedCount = stats?.done ?? reminders.filter((r) => r.completed).length
+
+  if (!hasRemindersModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Recordatorios"
+          description="El módulo de recordatorios no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
 
   return (
     <AppPageShell contentClassName="gap-8">

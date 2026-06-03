@@ -54,6 +54,7 @@ export interface ReminderListResult {
 export interface ReminderStats {
   pending: number
   overdue: number
+  today: number
   done: number
 }
 
@@ -163,25 +164,19 @@ export async function fetchOpportunityReminders(opportunityId: string): Promise<
 }
 
 export async function fetchReminderStats(): Promise<ReminderStats> {
-  const base = { items: 1 }
-  const [pendingRes, overdueRes, doneRes] = await Promise.all([
-    api.get('/reminders', { params: { ...base, status: 'pending' } }),
-    api.get('/reminders', { params: { ...base, status: 'pending', overdue: 'true' } }),
-    api.get('/reminders', { params: { ...base, status: 'done' } }),
-  ])
-  const read = (body: unknown) => parsePaginationMeta(body).total
+  const response = await api.get<{ data: ReminderStats }>('/reminders/stats')
+  const d = response.data.data
   return {
-    pending: read(pendingRes.data),
-    overdue: read(overdueRes.data),
-    done: read(doneRes.data),
+    pending: Number(d?.pending ?? 0),
+    overdue: Number(d?.overdue ?? 0),
+    today: Number(d?.today ?? 0),
+    done: Number(d?.done ?? 0),
   }
 }
 
 export async function fetchOverdueRemindersCount(): Promise<number> {
-  const response = await api.get('/reminders', {
-    params: { status: 'pending', overdue: 'true', items: 1 },
-  })
-  return parsePaginationMeta(response.data).total
+  const stats = await fetchReminderStats()
+  return stats.overdue
 }
 
 export interface CreateReminderInput {

@@ -90,7 +90,9 @@ module Leads
 
       pending_dups = tenant.duplicate_flags.resolution_pending.count
       pending_rem  = tenant.reminders.status_pending.count
-      puts "\n  Resumen: #{pending_dups} duplicados pendientes, #{pending_rem} recordatorios pendientes"
+      referral_n   = ensure_referral_network!(tenant)
+      puts "\n  Resumen: #{pending_dups} duplicados pendientes, #{pending_rem} recordatorios pendientes" \
+           "#{referral_n.positive? ? ", +#{referral_n} enlaces red" : ", red OK (#{tenant.referral_networks.count} enlaces)"}"
       puts "\n  Consultores (login Password123!):"
       consultants = tenant.users.kept.where(role: "consultant", active: true).order(:email)
       if consultants.none?
@@ -269,6 +271,7 @@ module Leads
         RECORDATORIOS /reminders       5 por tenant (2 vencidos)
         DUPLICADOS  /duplicates        2 flags pendientes por tenant (admin/manager)
         CONTACTOS   /contacts         Buscar @leads.iswo.test
+        RED         /network          Árbol admin → manager → consultores
         CAMPANA     Header              new_lead + duplicate_found
 
         Consultores iswo:      laura@iswo.local, carlos@iswo.local

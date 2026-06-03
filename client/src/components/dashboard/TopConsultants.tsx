@@ -1,8 +1,7 @@
 import { Crown, Medal, Trophy } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatCurrency, cn, getInitials } from '@/lib/utils'
+import { formatCurrency, cn } from '@/lib/utils'
 import type { DashboardTopConsultant } from '@/lib/dashboardApi'
 
 interface TopConsultantsProps {
@@ -137,12 +136,6 @@ export function TopConsultants({
                 >
                   <RankIcon index={index} />
                 </div>
-                <Avatar className="size-9 border border-border/50 shadow-sm">
-                  <AvatarImage src={consultant.avatar_url} alt={consultant.name} />
-                  <AvatarFallback className="text-xs font-medium">
-                    {getInitials(consultant.name)}
-                  </AvatarFallback>
-                </Avatar>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium leading-tight text-foreground">
                     {consultant.name}

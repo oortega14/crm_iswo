@@ -3,7 +3,14 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { createAdminClient } from '@/lib/adminApi'
+import {
+  ADMIN_TOKEN_STORAGE_KEY,
+  createAdminClient,
+  formatAdminApiError,
+  resolveAdminToken,
+} from '@/lib/adminApi'
+import { isPlatformTenant, PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
+import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,12 +25,13 @@ import {
 } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 
-const ADMIN_TOKEN_KEY = 'crm-super-admin-token'
-
 export const Route = createFileRoute('/_app/settings/tenant-onboarding')({
   beforeLoad: ({ context }) => {
     if (context.auth.user?.role !== 'admin') {
       throw redirect({ to: '/' })
+    }
+    if (!isPlatformTenant(context.auth.tenant)) {
+      throw redirect({ to: '/settings' })
     }
   },
   component: TenantOnboardingPage,
@@ -39,9 +47,13 @@ type TenantRow = {
 
 function TenantOnboardingPage() {
   const queryClient = useQueryClient()
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const tenantSlug = useAuthStore((s) => s.tenant?.subdomain ?? PLATFORM_TENANT_SLUG)
+  const adminSession = { accessToken, tenantSlug }
   const [adminToken, setAdminToken] = useState(
-    () => window.sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? ''
+    () => window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? '',
   )
+  const effectiveToken = resolveAdminToken(adminToken)
   const [slug, setSlug] = useState('')
   const [name, setName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
@@ -49,16 +61,21 @@ function TenantOnboardingPage() {
   const [adminPassword, setAdminPassword] = useState('')
 
   const saveToken = () => {
-    window.sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken.trim())
+    const trimmed = adminToken.trim()
+    if (!trimmed) {
+      toast.error('Escribe el token antes de guardar')
+      return
+    }
+    window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed)
     toast.success('Token guardado para esta sesión')
     queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
   }
 
-  const { data: tenants = [], isLoading, isError } = useQuery<TenantRow[]>({
-    queryKey: ['admin-tenants', adminToken],
-    enabled: adminToken.trim().length > 0,
+  const { data: tenants = [], isLoading, isError, error: listError } = useQuery<TenantRow[]>({
+    queryKey: ['admin-tenants', effectiveToken],
+    enabled: effectiveToken.length > 0,
     queryFn: async () => {
-      const client = createAdminClient(adminToken.trim())
+      const client = createAdminClient(effectiveToken, adminSession)
       const res = await client.get<{ data: TenantRow[] }>('/admin/tenants')
       return res.data.data ?? []
     },
@@ -67,7 +84,9 @@ function TenantOnboardingPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const client = createAdminClient(adminToken.trim())
+      const token = resolveAdminToken(adminToken)
+      if (!token) throw new Error('Falta el token super-admin')
+      const client = createAdminClient(token, adminSession)
       const res = await client.post<{ data: Record<string, unknown> }>('/admin/tenants', {
         tenant: {
           slug: slug.trim().toLowerCase(),
@@ -88,19 +107,24 @@ function TenantOnboardingPage() {
       setAdminPassword('')
       queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
     },
-    onError: () => toast.error('No se pudo crear el tenant. Verifica el token SUPER_ADMIN.'),
+    onError: (err: unknown) => {
+      toast.error(
+        formatAdminApiError(err, 'No se pudo crear el tenant. Revisa token, slug y email.'),
+      )
+    },
   })
 
   return (
-    <div className="space-y-6 p-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Building2 className="size-6" />
           Onboarding de tenants
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          RFC §9 — activar un tenant nuevo sin modificar código. Requiere{' '}
-          <code className="text-xs bg-muted px-1 rounded">SUPER_ADMIN_TOKEN</code> del API.
+          Solo desde el tenant plataforma <strong>{PLATFORM_TENANT_SLUG}</strong> (admin ISWO).
+          Requiere <code className="text-xs bg-muted px-1 rounded">SUPER_ADMIN_TOKEN</code> en{' '}
+          <code className="text-xs bg-muted px-1 rounded">api/.env</code> y tu sesión activa aquí.
         </p>
       </div>
 
@@ -108,7 +132,9 @@ function TenantOnboardingPage() {
         <CardHeader>
           <CardTitle className="text-base">Token super-admin</CardTitle>
           <CardDescription>
-            Solo personal ISWO. Se guarda en sessionStorage de este navegador.
+            Debe coincidir con <code className="text-xs">SUPER_ADMIN_TOKEN</code> en{' '}
+            <code className="text-xs">api/.env</code>. Pulsa Guardar y comprueba que el listado
+            de abajo cargue antes de crear.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex gap-2">
@@ -167,7 +193,7 @@ function TenantOnboardingPage() {
             <Button
               onClick={() => createMutation.mutate()}
               disabled={
-                !adminToken.trim() ||
+                !effectiveToken ||
                 !slug.trim() ||
                 !name.trim() ||
                 !adminEmail.trim() ||
@@ -191,7 +217,9 @@ function TenantOnboardingPage() {
           ) : isLoading ? (
             <Spinner className="size-6" />
           ) : isError ? (
-            <p className="text-sm text-destructive">Token inválido o sin permisos.</p>
+            <p className="text-sm text-destructive">
+              {formatAdminApiError(listError, 'Token inválido o servidor sin SUPER_ADMIN_TOKEN.')}
+            </p>
           ) : (
             <Table>
               <TableHeader>

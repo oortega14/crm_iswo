@@ -93,6 +93,39 @@ module Leads
         tenant.users.kept.where(role: "admin").first
     end
 
+    def ensure_referral_network!(tenant)
+      users = tenant.users.kept.to_a
+      admin = users.find { |u| u.role == "admin" }
+      manager = users.find { |u| u.role == "manager" }
+      consultants = users.select { |u| u.role == "consultant" }
+      root = admin || manager || users.first
+      return 0 unless root
+
+      created = 0
+      if admin && manager
+        rn = ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: admin, referred_user: manager) do |r|
+          r.depth = 1
+          r.active = true
+        end
+        created += 1 if rn.previously_new_record?
+      end
+
+      parent = manager || admin
+      consultant_ids = consultants.map(&:id)
+      consultants.each do |c|
+        ReferralNetwork.where(tenant: tenant, referred_user: c, referrer_user_id: consultant_ids - [c.id]).delete_all
+        rn = ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: parent, referred_user: c) do |r|
+          r.depth = 1
+          r.active = true
+        end
+        created += 1 if rn.previously_new_record?
+      end
+      created
+    rescue ActiveRecord::RecordInvalid => e
+      Rails.logger.warn("[DemoSupport] referral network: #{e.message}")
+      0
+    end
+
     def demo_opportunities(tenant)
       tenant.opportunities.kept
             .joins(:contact)

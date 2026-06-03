@@ -4,13 +4,12 @@
 # ContactPolicy
 # ============================================================================
 # - admin/manager: ven y editan todos los contactos del tenant.
-# - consultant: ve los propios, los de sus opps y los de opps de su red (solo lectura
-#   en red); puede crear nuevos contactos.
+# - consultant: solo contactos propios o vinculados a sus oportunidades; puede crear.
 # - viewer: solo lectura sobre todos.
 # ============================================================================
 class ContactPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned? || network_visible?)
+  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned?)
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner_or_assigned?
   def destroy?          = admin?
@@ -43,7 +42,4 @@ class ContactPolicy < ApplicationPolicy
       record.opportunities.where(owner_user_id: user&.id).exists?
   end
 
-  def network_visible?
-    ConsultantNetworkAccess.can_view_contact?(user, record)
-  end
 end

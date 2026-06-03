@@ -1,7 +1,8 @@
 import axios, { type AxiosResponse } from 'axios'
 import { getSubdomain } from '@/lib/utils'
+import { clearSessionQueryCache } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
-import type { Tenant, User } from '@/types'
+import type { Tenant, TenantSettings, User } from '@/types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
@@ -30,6 +31,7 @@ type TenantAttributes = {
   brand_color?: string
   currency?: string
   timezone?: string
+  settings?: TenantSettings
   created_at?: string
 }
 
@@ -61,6 +63,7 @@ export const buildTenant = (resource: JsonApiResource<TenantAttributes>): Tenant
     primary_color: attrs.brand_color || '#2563eb',
     currency: attrs.currency || 'COP',
     timezone: attrs.timezone || 'America/Bogota',
+    settings: attrs.settings,
     created_at: attrs.created_at || new Date().toISOString(),
   }
 }
@@ -130,6 +133,7 @@ export async function bootstrapAuth(): Promise<boolean> {
     if (!session) return false
 
     const { login, setTenant } = useAuthStore.getState()
+    clearSessionQueryCache()
     login(session.user, session.token)
 
     try {

@@ -22,9 +22,18 @@ RSpec.describe Exports::ScopedCollection do
       expect(scope.map(&:id)).to include(contact.id, contact2.id)
     end
 
-    it "devuelve todos los contactos cuando no hay filtros" do
-      scope = described_class.new(user: admin, resource: "contacts", filters: {}).resolve
-      expect(scope.map(&:id)).to include(contact.id, contact2.id)
+    it "filtra contactos por kind con Ransack" do
+      person = create(:contact, tenant: tenant, kind: "person", first_name: "Persona")
+      create(:contact, :company, tenant: tenant, company_name: "Empresa SA")
+
+      scope = described_class.new(
+        user: admin,
+        resource: "contacts",
+        filters: { "kind_eq" => "person" }
+      ).resolve
+
+      expect(scope.map(&:id)).to include(person.id)
+      expect(scope.where(kind: "company").count).to eq(0)
     end
   end
 

@@ -24,6 +24,8 @@ export interface TenantSettings {
   stale_days?: number
   /** RFC F2: profundidad de visibilidad de la red para consultores (default 3) */
   network_depth?: number
+  show_bant?: boolean
+  modules?: string[]
   [key: string]: unknown
 }
 
@@ -45,6 +47,7 @@ export type OpportunityTemperature = 'cold' | 'warm' | 'hot'
 
 export interface Opportunity {
   id: string
+  title?: string
   contact_id?: string
   contact_name: string
   contact_email?: string
@@ -75,6 +78,7 @@ export interface Opportunity {
   expected_close_on?: string
   reminder_due_at?: string
   custom_fields?: Record<string, unknown>
+  from_network?: boolean
   created_at: string
   updated_at: string
 }

@@ -12,6 +12,21 @@ export function sanitizeLandingHtml(html: string): string {
   return DOMPurify.sanitize(html, LANDING_HTML_CONFIG) as string
 }
 
+/**
+ * Quita formularios embebidos en GrapeJS: el único formulario activo es el del CRM al pie.
+ */
+export function stripLandingFormElements(html: string): string {
+  const safe = sanitizeLandingHtml(html)
+  if (!safe) return ''
+  if (typeof document === 'undefined') {
+    return safe.replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '')
+  }
+  const tpl = document.createElement('template')
+  tpl.innerHTML = safe
+  tpl.content.querySelectorAll('form').forEach((node) => node.remove())
+  return tpl.innerHTML
+}
+
 /** Evita ruptura de &lt;style&gt; e inyección vía CSS en landings. */
 export function sanitizeLandingCss(css: string): string {
   if (!css) return ''

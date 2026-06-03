@@ -19,7 +19,7 @@ namespace :briefing do
       puts "Usuario: #{user.email}"
       puts "KPIs: abiertas=#{briefing[:kpis][:total_open]} calientes=#{briefing[:kpis][:hot_count]} vencidos=#{briefing[:kpis][:overdue_count]}"
 
-      if briefing[:kpis][:total_open].zero? && briefing[:overdue_reminders].empty?
+      if briefing[:kpis][:total_open].zero? && briefing[:kpis][:pending_count].zero?
         puts "AVISO: sin oportunidades abiertas ni recordatorios vencidos — el job diario no enviaría correo."
         puts "       Se envía igualmente un correo de prueba."
       end

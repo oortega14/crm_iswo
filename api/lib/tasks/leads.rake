@@ -55,16 +55,10 @@ namespace :leads do
   end
 
   def import_landing_lead!(tenant, email, stamp, forced_owner = nil)
-    landing = tenant.landing_pages.published.first ||
-              tenant.landing_pages.first ||
-              tenant.landing_pages.create!(
-                title:        "Landing demo",
-                slug:         "demo-#{stamp}",
-                published:    true,
-                published_at: Time.current,
-                content:      {},
-                styles:       {}
-              )
+    landing = tenant.landing_pages.published.first || tenant.landing_pages.first
+    unless landing
+      raise "Sin landing en #{tenant.slug}. Ejecuta: bundle exec rails landings:sync"
+    end
 
     submission = LandingFormSubmission.create!(
       tenant:       tenant,

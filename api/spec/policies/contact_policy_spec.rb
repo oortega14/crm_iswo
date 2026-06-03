@@ -46,7 +46,7 @@ RSpec.describe ContactPolicy do
       expect(described_class.new(consultant, foreign_contact).show?).to be(false)
     end
 
-    it "consultant puede ver contacto de opp de su red (solo lectura)" do
+    it "consultant no ve contacto de otro consultor aunque sea referido" do
       referred = create(:user, :consultant, tenant: tenant)
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
       pipeline = create(:pipeline_with_stages, tenant: tenant)
@@ -58,8 +58,7 @@ RSpec.describe ContactPolicy do
              contact: network_contact,
              owner_user: referred)
 
-      expect(described_class.new(consultant, network_contact).show?).to be(true)
-      expect(described_class.new(consultant, network_contact).update?).to be(false)
+      expect(described_class.new(consultant, network_contact).show?).to be(false)
     end
   end
 

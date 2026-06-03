@@ -16,12 +16,12 @@ export const Route = createFileRoute('/_app/settings/general')({
 })
 
 const NETWORK_DEPTH_OPTIONS = [
-  { value: 0, label: '0', description: 'Solo oportunidades propias' },
-  { value: 1, label: '1 nivel', description: 'Solo referidos directos' },
+  { value: 0, label: '0', description: 'Solo el consultor en el árbol' },
+  { value: 1, label: '1 nivel', description: 'Referidos directos' },
   { value: 2, label: '2 niveles', description: 'Directos + sus referidos' },
-  { value: 3, label: '3 niveles', description: 'Recomendado — hasta bisnietos' },
+  { value: 3, label: '3 niveles', description: 'Recomendado' },
   { value: 4, label: '4 niveles', description: 'Árbol amplio' },
-  { value: 5, label: '5 niveles', description: 'Máxima visibilidad' },
+  { value: 5, label: '5 niveles', description: 'Máximo en /network' },
 ]
 
 function GeneralSettingsPage() {
@@ -131,8 +131,8 @@ function GeneralSettingsPage() {
             Profundidad de la red de referidos
           </CardTitle>
           <CardDescription>
-            Cuántos niveles de referidos pueden ver los consultores en su árbol.
-            RFC §6.3: "árbol de referidos con visibilidad configurable por profundidad".
+            Profundidad del árbol en la pantalla Red de referidos. No comparte el pipeline
+            entre consultores: cada uno solo ve sus propias oportunidades.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -160,19 +160,13 @@ function GeneralSettingsPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            {networkDepth === 0 ? (
-              <>
-                Con <strong>0 niveles</strong>, cada consultor solo ve sus oportunidades propias
-                (sin opps de referidos en el CRM).
-              </>
-            ) : (
-              <>
-                Con <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong>, cada
-                consultor ve sus oportunidades propias más las de sus referidos hasta{' '}
-                {networkDepth === 1 ? 'el primer nivel' : `${networkDepth} niveles de profundidad`}.
-              </>
-            )}{' '}
-            Los admins y managers siempre ven todo el tenant.
+            Con <strong>{networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}</strong>, el
+            consultor explora su red en <strong>/network</strong>
+            {networkDepth === 0
+              ? ' (solo su nodo).'
+              : ` hasta ${networkDepth === 1 ? 'referidos directos' : `${networkDepth} niveles`}.`}
+            {' '}En Oportunidades y Contactos cada consultor solo ve lo que él creó o le pertenece.
+            Admin y manager ven todo el tenant.
           </p>
         </CardContent>
       </Card>

@@ -10,6 +10,30 @@ RSpec.describe "Api::V1::Reminders", type: :request do
   let(:opportunity) { create(:opportunity, tenant: tenant, owner_user: consultant) }
   let(:other_opp)   { create(:opportunity, tenant: tenant, owner_user: other_consultant) }
 
+  describe "GET /api/v1/reminders/stats" do
+    let!(:pending_today) do
+      create(:reminder, tenant: tenant, user: consultant, opportunity: opportunity,
+             status: "pending", remind_at: Time.zone.today.noon)
+    end
+    let!(:pending_overdue) do
+      create(:reminder, tenant: tenant, user: consultant, opportunity: opportunity,
+             status: "pending", remind_at: 2.hours.ago)
+    end
+    let!(:done_reminder) do
+      create(:reminder, tenant: tenant, user: consultant, opportunity: opportunity, status: "done")
+    end
+
+    it "devuelve conteos pending, overdue, today y done" do
+      get "/api/v1/reminders/stats", headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "pending")).to be >= 2
+      expect(json.dig("data", "overdue")).to be >= 1
+      expect(json.dig("data", "today")).to be >= 1
+      expect(json.dig("data", "done")).to be >= 1
+    end
+  end
+
   describe "GET /api/v1/reminders" do
     let!(:mine) do
       create(:reminder, tenant: tenant, user: consultant, opportunity: opportunity, subject: "Mio")

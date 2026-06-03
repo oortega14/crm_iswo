@@ -10,7 +10,12 @@ module Api
       # No usa acts_as_tenant — opera fuera del scope de tenant.
       # ========================================================================
       class TenantsController < ApplicationController
+        include Devise::Controllers::Helpers
+        include SuperAdminAuthenticatable
+        include IswoPlatformAuthorizable
+
         before_action :authenticate_super_admin!
+        before_action :authenticate_iswo_platform_admin!
 
         # GET /api/v1/admin/tenants — listado para onboarding (super-admin)
         def index
@@ -57,23 +62,29 @@ module Api
             }
           }, status: :created
         rescue ActiveRecord::RecordInvalid => e
+          render_unprocessable_from_record(e)
+        rescue ActiveRecord::RecordNotUnique => e
           render json: {
             error:   "unprocessable_entity",
-            message: e.message,
-            details: e.record&.errors&.as_json(full_messages: true)
+            message: duplicate_tenant_message(e)
           }, status: :unprocessable_entity
         end
 
         private
 
-        def authenticate_super_admin!
-          token = request.headers["X-Admin-Token"].to_s
-          expected = ENV.fetch("SUPER_ADMIN_TOKEN", nil)
+        def render_unprocessable_from_record(exception)
+          record = exception.record
+          render json: {
+            error:   "unprocessable_entity",
+            message: record&.errors&.full_messages&.to_sentence.presence || exception.message,
+            details: record&.errors&.as_json(full_messages: true)
+          }, status: :unprocessable_entity
+        end
 
-          unless expected.present? && ActiveSupport::SecurityUtils.secure_compare(token, expected)
-            render json: { error: "unauthorized", message: "Token de administrador inválido" },
-                   status: :unauthorized
-          end
+        def duplicate_tenant_message(exception)
+          return "Ya existe un tenant con ese slug o email." if exception.message.blank?
+
+          exception.message
         end
 
         def tenant_params

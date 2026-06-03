@@ -42,7 +42,7 @@ RSpec.describe OpportunityPolicy do
       expect(described_class.new(consultant, foreign_opp).show?).to be(false)
     end
 
-    it "consultant ve opps de su red de referidos (solo lectura)" do
+    it "consultant no ve opps de otro consultor aunque sea su referido" do
       referred = create(:user, :consultant, tenant: tenant)
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
       network_opp = create(:opportunity,
@@ -51,7 +51,7 @@ RSpec.describe OpportunityPolicy do
                            pipeline_stage: pipeline.pipeline_stages.first,
                            owner_user: referred)
 
-      expect(described_class.new(consultant, network_opp).show?).to be(true)
+      expect(described_class.new(consultant, network_opp).show?).to be(false)
       expect(described_class.new(consultant, network_opp).update?).to be(false)
     end
   end
@@ -125,16 +125,16 @@ RSpec.describe OpportunityPolicy do
       expect(described_class::Scope.new(viewer, Opportunity).resolve).to match_array([own_opp, foreign_opp])
     end
 
-    it "consultant ve las suyas y las de su red" do
+    it "consultant solo ve las suyas en scope" do
       referred = create(:user, :consultant, tenant: tenant)
       create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
-      network_opp = create(:opportunity,
-                           tenant: tenant,
-                           pipeline: pipeline,
-                           pipeline_stage: pipeline.pipeline_stages.first,
-                           owner_user: referred)
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: pipeline.pipeline_stages.first,
+             owner_user: referred)
 
-      expect(described_class::Scope.new(consultant, Opportunity).resolve).to match_array([own_opp, network_opp])
+      expect(described_class::Scope.new(consultant, Opportunity).resolve).to match_array([own_opp])
     end
 
     it "scope.none sin usuario" do

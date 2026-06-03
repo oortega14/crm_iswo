@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Merge,
@@ -16,7 +16,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -28,10 +27,28 @@ import {
 } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
-import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
-import type { JsonApiResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import api, { formatRailsError } from '@/lib/api'
+import {
+  duplicateFlagsErrorMessage,
+  fetchDuplicateFlagsList,
+  fetchDuplicateFlagsStats,
+  ignoreDuplicateFlag,
+  matchedOnLabel,
+  mergeDuplicateFlag,
+  reassignDuplicateFlag,
+  scanDuplicateFlags,
+  type ContactLite,
+  type DuplicateFlagRow,
+  type OpportunitySummary,
+} from '@/lib/duplicateFlagsApi'
+import {
+  DUPLICATE_FLAGS_POLL_MS,
+  getAuthQueryScope,
+  invalidateDuplicateFlagsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
 import { useAuthStore } from '@/stores/auth'
 import { formatDate } from '@/lib/utils'
 import {
@@ -50,129 +67,6 @@ const PAGE_SIZE = 25
 export const Route = createFileRoute('/_app/duplicates')({
   component: DuplicatesPage,
 })
-
-type ContactLite = {
-  id: number
-  full_name: string
-  email?: string | null
-  phone?: string | null
-}
-
-type OpportunitySummary = {
-  id: string
-  contact_name: string
-  owner_name?: string | null
-  owner_id?: number | null
-  created_at?: string | null
-}
-
-interface DuplicateFlagRow {
-  id: string
-  matchedOn: string
-  matchPercent: number
-  resolution: string
-  pending: boolean
-  detectedAt?: string
-  detectedByName?: string
-  resolvedAt?: string | null
-  resolvedByName?: string | null
-  resolutionNote?: string | null
-  contactNew: ContactLite | null
-  contactExisting: ContactLite | null
-  opportunityNew: OpportunitySummary | null
-  opportunityExisting: OpportunitySummary | null
-}
-
-type PaginationMeta = {
-  page: number
-  pages: number
-  count: number
-  items: number
-}
-
-function parseContact(raw: unknown): ContactLite | null {
-  if (!raw || typeof raw !== 'object') return null
-  const o = raw as Record<string, unknown>
-  const id = typeof o.id === 'number' ? o.id : Number(o.id)
-  if (!Number.isFinite(id)) return null
-  const full_name =
-    typeof o.full_name === 'string' ? o.full_name : [o.first_name, o.last_name].filter(Boolean).join(' ')
-  return {
-    id,
-    full_name: String(full_name || '').trim(),
-    email: o.email != null ? String(o.email) : undefined,
-    phone: o.phone != null ? String(o.phone) : undefined,
-  }
-}
-
-function parseOpportunitySummary(raw: unknown, fallbackId: string): OpportunitySummary | null {
-  if (!raw || typeof raw !== 'object') {
-    return fallbackId ? { id: fallbackId, contact_name: `Oportunidad #${fallbackId}` } : null
-  }
-  const o = raw as Record<string, unknown>
-  const id = o.id != null ? String(o.id) : fallbackId
-  if (!id) return null
-  return {
-    id,
-    contact_name: String(o.contact_name ?? o.title ?? `Oportunidad #${id}`),
-    owner_name: o.owner_name != null ? String(o.owner_name) : null,
-    owner_id: o.owner_id != null ? Number(o.owner_id) : null,
-    created_at: o.created_at != null ? String(o.created_at) : null,
-  }
-}
-
-function matchedOnLabel(m: string): string {
-  switch (m) {
-    case 'phone': return 'Coincidencia por teléfono'
-    case 'email': return 'Coincidencia por email'
-    case 'both':  return 'Coincidencia por email y teléfono'
-    default:      return m || 'Coincidencia detectada'
-  }
-}
-
-function mapDuplicateFlagResource(r: JsonApiResource): DuplicateFlagRow | null {
-  if (!r.id) return null
-  const a = r.attributes ?? {}
-  const rawScore = a.match_score
-  const score =
-    typeof rawScore === 'number'
-      ? rawScore
-      : typeof rawScore === 'string'
-        ? parseFloat(rawScore)
-        : NaN
-  const matchPercent = Number.isFinite(score) ? Math.min(100, Math.round(score * 100)) : 0
-
-  const oppNewId = a.opportunity_a_id != null ? String(a.opportunity_a_id) : ''
-  const oppExId  = a.opportunity_b_id != null ? String(a.opportunity_b_id) : ''
-
-  return {
-    id:                    String(r.id),
-    matchedOn:             typeof a.matched_on === 'string' ? a.matched_on : '',
-    matchPercent,
-    resolution:            typeof a.resolution === 'string' ? a.resolution : 'pending',
-    pending:               Boolean(a.pending),
-    detectedAt:            typeof a.created_at === 'string' ? a.created_at : undefined,
-    detectedByName:        typeof a.detected_by_name === 'string' ? a.detected_by_name : undefined,
-    resolvedAt:            a.resolved_at != null ? String(a.resolved_at) : null,
-    resolvedByName:        typeof a.resolved_by_name === 'string' ? a.resolved_by_name : undefined,
-    resolutionNote:        typeof a.resolution_note === 'string' ? a.resolution_note : null,
-    contactNew:            parseContact(a.contact_a),
-    contactExisting:       parseContact(a.contact_b),
-    opportunityNew:        parseOpportunitySummary(a.opportunity_a, oppNewId),
-    opportunityExisting:   parseOpportunitySummary(a.opportunity_b, oppExId),
-  }
-}
-
-function initials(text: string): string {
-  return text
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '?'
-}
 
 function CollisionSide({
   title,
@@ -193,11 +87,7 @@ function CollisionSide({
   return (
     <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="flex gap-3">
-        <Avatar className="h-10 w-10 shrink-0">
-          <AvatarFallback>{initials(displayName)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1 space-y-1">
+      <div className="min-w-0 space-y-1">
           <p className="truncate font-medium">{displayName}</p>
           {contact?.email ? (
             <p className="truncate text-sm text-muted-foreground">{contact.email}</p>
@@ -231,7 +121,6 @@ function CollisionSide({
               Ver en pipeline
             </Button>
           ) : null}
-        </div>
       </div>
     </div>
   )
@@ -240,6 +129,9 @@ function CollisionSide({
 function DuplicatesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const authScope = getAuthQueryScope()
+  const hasOpportunities = tenantHasModule(tenant, 'opportunities')
   const userRole = useAuthStore((s) => s.user?.role)
   const canResolve = userRole === 'admin' || userRole === 'manager'
 
@@ -262,20 +154,28 @@ function DuplicatesPage() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: queryKeys.duplicateFlags.list({ resolution: resolutionFilter, page }),
-    queryFn: async () => {
-      const params: Record<string, string | number> = { items: PAGE_SIZE, page }
-      if (resolutionFilter === 'pending') params.resolution = 'pending'
-      const response = await api.get('/duplicate_flags', { params })
-      const flags = jsonApiPrimaryList(response.data)
-        .filter((r) => r.id)
-        .map(mapDuplicateFlagResource)
-        .filter((row): row is DuplicateFlagRow => row !== null)
-      const pagination = (
-        response.data as { meta?: { pagination?: PaginationMeta } }
-      )?.meta?.pagination
-      return { flags, pagination }
-    },
+    queryKey: queryKeys.duplicateFlags.list(authScope, { resolution: resolutionFilter, page }),
+    queryFn: () =>
+      fetchDuplicateFlagsList({
+        page,
+        items: PAGE_SIZE,
+        resolution: resolutionFilter === 'pending' ? 'pending' : undefined,
+      }),
+    enabled: Boolean(authScope) && hasOpportunities,
+    staleTime: 0,
+    refetchInterval: canResolve ? DUPLICATE_FLAGS_POLL_MS : false,
+    refetchIntervalInBackground: canResolve,
+    refetchOnWindowFocus: canResolve,
+  })
+
+  const { data: duplicateStats } = useQuery({
+    queryKey: queryKeys.duplicateFlags.stats(authScope),
+    queryFn: fetchDuplicateFlagsStats,
+    enabled: Boolean(authScope) && hasOpportunities,
+    staleTime: 0,
+    refetchInterval: canResolve ? DUPLICATE_FLAGS_POLL_MS : false,
+    refetchIntervalInBackground: canResolve,
+    refetchOnWindowFocus: canResolve,
   })
 
   const flags = listPayload?.flags ?? []
@@ -283,23 +183,36 @@ function DuplicatesPage() {
   const totalCount = pagination?.count ?? flags.length
   const totalPages = pagination?.pages ?? 1
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.duplicateFlags.all })
+  const prevPendingCountRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!canResolve || resolutionFilter !== 'pending' || isLoading) return
+    const prev = prevPendingCountRef.current
+    if (prev !== null && totalCount > prev) {
+      const delta = totalCount - prev
+      toast.info(
+        delta === 1 ? 'Nuevo duplicado detectado' : `${delta} duplicados nuevos detectados`
+      )
+    }
+    prevPendingCountRef.current = totalCount
+  }, [totalCount, canResolve, resolutionFilter, isLoading])
+
+  const invalidate = () => invalidateDuplicateFlagsQueries(queryClient)
 
   const mergeMutation = useMutation({
-    mutationFn: (flagId: string) => api.post(`/duplicate_flags/${flagId}/merge`, {}),
+    mutationFn: mergeDuplicateFlag,
     onSuccess: () => { invalidate(); toast.success('Duplicados fusionados en la oportunidad existente'); setMergeConfirmFlag(null) },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo fusionar')),
   })
 
   const ignoreMutation = useMutation({
-    mutationFn: (flagId: string) => api.post(`/duplicate_flags/${flagId}/ignore`, {}),
+    mutationFn: ignoreDuplicateFlag,
     onSuccess: () => { invalidate(); toast.success('Marcado como no duplicado'); setIgnoreConfirmFlag(null) },
     onError: (err: unknown) => toast.error(formatRailsError(err, 'No se pudo descartar')),
   })
 
   const { data: users = [] } = useQuery({
-    enabled: canResolve,
-    queryKey: ['users', 'reassign-picker'],
+    enabled: Boolean(authScope) && canResolve && hasOpportunities,
+    queryKey: queryKeys.users.list({ forReassignPicker: true }),
     queryFn: async () => {
       const response = await api.get('/users', { params: { items: 200 } })
       return jsonApiPrimaryList(response.data).filter((r) => r.id).map(mapUserResource)
@@ -309,7 +222,7 @@ function DuplicatesPage() {
 
   const reassignMutation = useMutation({
     mutationFn: ({ flagId, userId }: { flagId: string; userId: string }) =>
-      api.post(`/duplicate_flags/${flagId}/reassign`, { new_owner_user_id: userId }),
+      reassignDuplicateFlag(flagId, userId),
     onSuccess: () => {
       invalidate()
       toast.success('Oportunidad reasignada correctamente')
@@ -320,9 +233,8 @@ function DuplicatesPage() {
   })
 
   const scanMutation = useMutation({
-    mutationFn: () => api.post('/duplicate_flags/scan', {}),
-    onSuccess: (res) => {
-      const d = res.data as { scanned: number; created: number }
+    mutationFn: scanDuplicateFlags,
+    onSuccess: (d) => {
       invalidate()
       toast[d.created > 0 ? 'success' : 'info'](
         d.created > 0
@@ -334,6 +246,7 @@ function DuplicatesPage() {
   })
 
   const pendingInView = flags.filter((f) => f.pending).length
+  const pendingTotal = duplicateStats?.pending ?? (resolutionFilter === 'pending' ? totalCount : pendingInView)
 
   const getMatchScoreColor = (score: number) => {
     if (score >= 90) return 'text-red-600'
@@ -341,11 +254,22 @@ function DuplicatesPage() {
     return 'text-primary'
   }
 
+  if (!hasOpportunities) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Duplicados"
+          description="El módulo de oportunidades no está activo en este tenant."
+        />
+      </AppPageShell>
+    )
+  }
+
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Duplicados"
-        description="Colisiones entre oportunidades (RFC §6.2). La alerta en tiempo real aparece al crear una oportunidad; aquí se resuelven."
+        description="Colisiones entre oportunidades (RFC §6.2). Admin y manager ven nuevos registros de consultores en esta lista cada pocos segundos."
       >
         <Select
           value={resolutionFilter}
@@ -387,8 +311,8 @@ function DuplicatesPage() {
                 <AlertTriangle className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <p className="text-2xl font-semibold">{resolutionFilter === 'pending' ? flags.length : pendingInView}</p>
-                <p className="text-xs text-muted-foreground">Pendientes en esta página</p>
+                <p className="text-2xl font-semibold">{pendingTotal}</p>
+                <p className="text-xs text-muted-foreground">Pendientes (tenant)</p>
               </div>
             </div>
           </CardContent>
@@ -431,7 +355,7 @@ function DuplicatesPage() {
       {isError && (
         <Card className="border-destructive/50">
           <CardContent className="py-6 text-sm text-destructive">
-            {formatRailsError(error, 'No se pudieron cargar los duplicados')}
+            {duplicateFlagsErrorMessage(error)}
           </CardContent>
         </Card>
       )}

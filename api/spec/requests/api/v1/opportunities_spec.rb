@@ -116,6 +116,27 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(response.status).to eq(422)
       expect(json["error"]).to eq("unprocessable_entity")
     end
+
+    it "segunda oportunidad del mismo contacto crea flag y notifica admin/manager" do
+      admin_user = create(:user, :admin, tenant: tenant)
+
+      expect {
+        post "/api/v1/opportunities",
+             params: {
+               opportunity: {
+                 contact_id: contact.id,
+                 pipeline_stage_id: stage.id,
+                 title: "Colisión consultor"
+               }
+             }.to_json,
+             headers: auth_headers(other_consultant)
+      }.to change(DuplicateFlag, :count).by(1)
+        .and change { admin_user.notifications.kind_duplicate_found.count }.by(1)
+        .and change { manager.notifications.kind_duplicate_found.count }.by(1)
+
+      expect(response).to have_http_status(:created)
+      expect(DuplicateFlag.last.resolution).to eq("pending")
+    end
   end
 
   describe "PATCH /api/v1/opportunities/:id" do
@@ -266,27 +287,20 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
              title: "Red referido")
     end
 
-    it "consultant ve opps de su red en index y kanban" do
+    it "consultant solo ve sus opps en index y kanban (no las del referido)" do
       get "/api/v1/opportunities", headers: auth_headers(consultant)
       ids = json["data"].map { |d| d["id"].to_i }
-      expect(ids).to match_array([own_opp.id, network_opp.id])
+      expect(ids).to eq([own_opp.id])
 
       get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(consultant)
       opp_ids = json["data"].flat_map { |col| Array(col["opportunities"]).map { |o| o["id"].to_i } }
-      expect(opp_ids).to include(network_opp.id)
+      expect(opp_ids).to include(own_opp.id)
+      expect(opp_ids).not_to include(network_opp.id)
     end
 
-    it "consultant puede abrir detalle de opp de su red (GET show)" do
+    it "consultant no puede abrir detalle de opp de otro consultor (404)" do
       get "/api/v1/opportunities/#{network_opp.id}", headers: auth_headers(consultant)
-      expect(response).to have_http_status(:ok)
-      expect(json.dig("data", "id").to_i).to eq(network_opp.id)
-    end
-
-    it "consultant no puede editar opp de su red (403)" do
-      patch "/api/v1/opportunities/#{network_opp.id}",
-            params: { opportunity: { title: "Hack red" } }.to_json,
-            headers: auth_headers(consultant)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
     end
 
     it "consultant sigue sin ver opps fuera de su red (404)" do
@@ -305,6 +319,32 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
 
     it "manager no puede destruir (403)" do
       delete "/api/v1/opportunities/#{own_opp.id}", headers: auth_headers(manager)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  describe "DELETE /api/v1/opportunities/bulk_destroy" do
+    let(:admin) { create(:user, :admin, tenant: tenant) }
+
+    it "admin elimina varias oportunidades del tenant" do
+      expect {
+        delete "/api/v1/opportunities/bulk_destroy",
+               params: { ids: [own_opp.id, foreign_opp.id] },
+               headers: auth_headers(admin),
+               as: :json
+      }.to change { Opportunity.kept.count }.by(-2)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "deleted")).to eq(2)
+      expect(own_opp.reload.discarded?).to be(true)
+      expect(foreign_opp.reload.discarded?).to be(true)
+    end
+
+    it "consultant recibe forbidden" do
+      delete "/api/v1/opportunities/bulk_destroy",
+             params: { ids: [own_opp.id] },
+             headers: auth_headers(consultant),
+             as: :json
       expect(response).to have_http_status(:forbidden)
     end
   end

@@ -16,6 +16,15 @@ export interface ContactQuickStats {
   stale_days: number
 }
 
+export interface ContactLandingOrigin {
+  id: string
+  landing_page_id: string
+  landing_title?: string
+  landing_slug?: string
+  opportunity_id?: string
+  created_at?: string
+}
+
 export interface ContactSummary {
   id: string
   fullName: string
@@ -36,6 +45,7 @@ export interface ContactSummary {
   sourceLabel?: string
   lastContactedAt?: string
   customFields?: Record<string, unknown>
+  landingOrigins?: ContactLandingOrigin[]
 }
 
 type ContactAttributes = {
@@ -53,10 +63,12 @@ type ContactAttributes = {
   notes?: string
   document_id?: string
   owner_name?: string
+  owner_user_id?: string
   opportunities_count?: number
   source_label?: string
   last_contacted_at?: string
   custom_fields?: Record<string, unknown>
+  landing_origins?: ContactLandingOrigin[]
 }
 
 export interface ContactListFilters {
@@ -97,13 +109,28 @@ export function mapContactResource(resource: JsonApiResource): ContactSummary {
     notes: attrs.notes,
     documentId: attrs.document_id?.trim() || undefined,
     ownerName: attrs.owner_name?.trim() || undefined,
-    ownerId: relOwner?.id != null ? String(relOwner.id) : undefined,
+    ownerId:
+      relOwner?.id != null
+        ? String(relOwner.id)
+        : attrs.owner_user_id != null
+          ? String(attrs.owner_user_id)
+          : undefined,
     sourceLabel: attrs.source_label?.trim() || undefined,
     lastContactedAt: attrs.last_contacted_at,
     customFields:
       attrs.custom_fields != null && typeof attrs.custom_fields === 'object'
         ? (attrs.custom_fields as Record<string, unknown>)
         : undefined,
+    landingOrigins: Array.isArray(attrs.landing_origins)
+      ? attrs.landing_origins.map((o) => ({
+          id: String(o.id ?? ''),
+          landing_page_id: String(o.landing_page_id ?? ''),
+          landing_title: o.landing_title,
+          landing_slug: o.landing_slug,
+          opportunity_id: o.opportunity_id,
+          created_at: o.created_at,
+        }))
+      : undefined,
   }
 }
 
@@ -219,23 +246,30 @@ export async function assignContactOwner(contactId: string, ownerUserId: string)
 export type ContactExportFormat = 'csv' | 'xlsx'
 
 const CONTACT_DATE_RANGE_DAYS: Record<string, number> = {
-  week: 7, month: 30, quarter: 90, year: 365,
+  week: 7,
+  month: 30,
+  quarter: 90,
+  year: 365,
 }
 
-export function buildContactExportFilters(filters: {
-  kind?: ContactKind
-  owner_id?: string
-  date_range?: string
-  source_kind?: string
+/** Filtros Ransack para exportación de contactos (RFC §6.7). */
+export function buildContactExportFilters(config: {
+  dateRange?: string
+  contactKind?: '' | 'person' | 'company'
+  ownerId?: string
+  contactSourceKind?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
-  if (filters.kind) out.kind_eq = filters.kind
-  if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
-  if (filters.source_kind) out.source_kind_eq = filters.source_kind
-  const days = filters.date_range ? (CONTACT_DATE_RANGE_DAYS[filters.date_range] ?? 0) : 0
+  const days =
+    config.dateRange && config.dateRange !== 'all'
+      ? (CONTACT_DATE_RANGE_DAYS[config.dateRange] ?? 0)
+      : 0
   if (days > 0) {
     out.updated_at_gteq = new Date(Date.now() - days * 86_400_000).toISOString()
   }
+  if (config.contactKind) out.kind_eq = config.contactKind
+  if (config.ownerId) out.owner_user_id_eq = config.ownerId
+  if (config.contactSourceKind) out.source_kind_eq = config.contactSourceKind
   return out
 }
 

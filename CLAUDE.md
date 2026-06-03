@@ -16,6 +16,23 @@ Todos los comandos requieren que el servidor Rails esté corriendo en `localhost
 
 ---
 
+## Alcance global del CRM (todos los tenants y roles)
+
+Cualquier cambio de producto o técnico debe aplicarse **en todo el CRM**, no en un tenant
+ni rol aislado:
+
+| Capa | Regla |
+|------|--------|
+| **Multi-tenant** | `ActsAsTenant` + `current_tenant` en API; sin IDs de tenant fijos en código. Cada tenant ve solo sus datos. |
+| **Roles** | Comportamiento explícito para `admin`, `manager`, `consultant` y `viewer` donde aplique: Pundit en API, guards en SPA (`useUserRole`, `roles` en nav). |
+| **Caché SPA** | Claves de React Query con alcance `getAuthQueryScope()` (`subdomain:user:id`) al invalidar o listar datos sensibles. |
+| **Exportaciones (RFC §6.7)** | Crear/descargar masivo: admin/manager. Importar contactos: admin/manager/consultant. Historial async: cada usuario ve los suyos; admin/manager ven todos del tenant. |
+| **Consultores** | Scope propio en contactos/oportunidades/export (`Exports::ScopedCollection`, policies). Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. |
+
+Si un feature solo funciona para un rol o tenant, es un bug salvo excepción documentada en el RFC.
+
+---
+
 ## Decisiones de arquitectura
 
 ### AiClassifier — clasificación de temperatura (RFC §3.2)
@@ -132,7 +149,7 @@ RBAC Pundit y la misma sesión JWT que el resto del CRM:
 | Usuarios | `/settings/users` |
 | Integraciones (Meta, Google, WhatsApp) | `/settings/integrations` |
 | Lead sources | `/settings/lead-sources` |
-| Landings + GrapeJS | `/landings` |
+| Landings + GrapeJS | `/landings` (admin/manager editan; staff consulta) |
 | Exportaciones | `/exports` |
 | Duplicados | `/duplicates` |
 | Auditoría | `/settings/audit` |

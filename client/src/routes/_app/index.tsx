@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp, BarChart2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { queryKeys } from '@/lib/queryClient'
+import { useEffect, useMemo, useState } from 'react'
+import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
+import { tenantHasModule, tenantShowBant } from '@/lib/tenantModules'
 import {
   fetchDashboardActivity,
   fetchDashboardBantDistribution,
@@ -19,12 +20,13 @@ import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
 import { TopConsultants } from '@/components/dashboard/TopConsultants'
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
 import { DailyBriefing } from '@/components/dashboard/DailyBriefing'
+import { RemindersDashboardCard } from '@/components/dashboard/RemindersDashboardCard'
 import { BantDistribution } from '@/components/dashboard/BantDistribution'
 import { LeadSourcesChart } from '@/components/dashboard/LeadSourcesChart'
 import { LeadTemperatureStrip } from '@/components/dashboard/LeadTemperatureStrip'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
-import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
+import { DashboardDateLine } from '@/components/dashboard/DashboardKpiStrip'
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -61,57 +63,76 @@ function DashboardPage() {
 
   const activePipelineId = selectedPipelineId ?? defaultPipeline?.id
   const pipelineFilterKey = activePipelineId ?? 'all'
+  const authScope = getAuthQueryScope()
+
+  const hasOpportunities = tenantHasModule(tenant, 'opportunities')
+  const hasPipeline = tenantHasModule(tenant, 'pipeline')
+  const hasReminders = tenantHasModule(tenant, 'reminders')
+  const showBant = tenantShowBant(tenant)
 
   // staleTime: 0 → siempre refetch al montar o enfocar la ventana
   // refetchOnWindowFocus: true → se actualiza al volver al dashboard
   const dashboardQueryOpts = { staleTime: 0, refetchOnWindowFocus: true } as const
 
   const { data: briefing, isPending: briefingPending, isError: briefingError } = useQuery({
-    queryKey: queryKeys.dashboard.briefing(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.briefing(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardBriefing(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
   const kpisQ = useQuery({
-    queryKey: queryKeys.dashboard.kpis(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.kpis(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardKpis(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
   const pipelineQ = useQuery({
-    queryKey: queryKeys.dashboard.pipeline(activePipelineId),
+    queryKey: queryKeys.dashboard.pipeline(authScope, activePipelineId),
     queryFn: () => fetchDashboardPipeline(activePipelineId),
+    enabled: Boolean(authScope) && hasPipeline && Boolean(activePipelineId),
     ...dashboardQueryOpts,
   })
 
   const consultantsQ = useQuery({
-    queryKey: queryKeys.dashboard.topConsultants(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.topConsultants(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardTopConsultants(activePipelineId),
-    enabled: isManagerOrAbove,
+    enabled: Boolean(authScope) && isManagerOrAbove && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
   const activityQ = useQuery({
-    queryKey: queryKeys.dashboard.activity(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.activity(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardActivity(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
     refetchInterval: 30_000,
     ...dashboardQueryOpts,
   })
 
   const bantQ = useQuery({
-    queryKey: queryKeys.dashboard.bantDistribution(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.bantDistribution(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardBantDistribution(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities && showBant,
     ...dashboardQueryOpts,
   })
 
   const leadSourcesQ = useQuery({
-    queryKey: queryKeys.dashboard.leadSources(pipelineFilterKey),
+    queryKey: queryKeys.dashboard.leadSources(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardLeadSources(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
+  const movementActivity = useMemo(
+    () => (activityQ.data ?? []).filter((item) => item.type !== 'reminder_due'),
+    [activityQ.data],
+  )
+
   const initialLoading =
-    pipelinesLoading || (kpisQ.isPending && !kpisQ.data) || (pipelineQ.isPending && !pipelineQ.data)
+    pipelinesLoading ||
+    (hasOpportunities && kpisQ.isPending && !kpisQ.data) ||
+    (hasPipeline && pipelineQ.isPending && !pipelineQ.data)
 
   if (initialLoading) return <DashboardSkeleton />
 
@@ -129,7 +150,7 @@ function DashboardPage() {
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        title={<WelcomeGreeting name={user?.role === 'consultant' ? user.name : undefined} />}
+        title={tenant?.name ?? 'CRM ISWO'}
         belowTitle={<DashboardDateLine />}
       >
         <Button variant="outline" size="sm" className="gap-2" asChild>
@@ -146,8 +167,8 @@ function DashboardPage() {
         </Button>
       </PageHeader>
 
-      {/* ── Briefing del día — RFC §6.4: recordatorios, leads calientes ── */}
-      <DashboardSection title="Briefing del día" icon={Sparkles} accent="brand">
+      {hasOpportunities && (
+      <DashboardSection title="Ruta del día" icon={Sparkles} accent="brand">
         <DailyBriefing
           data={briefing}
           userName={user?.name}
@@ -156,25 +177,15 @@ function DashboardPage() {
           isError={briefingError}
         />
       </DashboardSection>
+      )}
 
-      {/* ── Pipeline — RFC §3.1: embudo configurable + KPIs BANT ──────── */}
+      {hasPipeline && (
       <DashboardSection
         title="Pipeline"
         subtitle={pipelines.length > 1 ? activePipelineName : undefined}
         icon={TrendingUp}
         accent="brand"
       >
-        <DashboardKpiStrip
-          currency={currency}
-          totalInPipeline={kpisQ.data?.total_in_pipeline ?? 0}
-          pipelineValue={kpisQ.data?.pipeline_value ?? 0}
-          bantAverage={kpisQ.data?.bant_average ?? null}
-          monthClosedValue={kpisQ.data?.month_closed_value ?? 0}
-          winRate={kpisQ.data?.win_rate ?? null}
-          wonCount={kpisQ.data?.won_count ?? 0}
-          lostCount={kpisQ.data?.lost_count ?? 0}
-          loadingKpis={kpisQ.isPending || kpisQ.isFetching}
-        />
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="xl:col-span-2">
             <PipelineFunnel
@@ -197,8 +208,9 @@ function DashboardPage() {
           )}
         </div>
       </DashboardSection>
+      )}
 
-      {/* ── Distribución BANT — RFC §6.1 BANT + orígenes ────────────── */}
+      {hasOpportunities && showBant && (
       <DashboardSection title="Distribución BANT" icon={BarChart2} accent="brand">
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <BantDistribution
@@ -214,48 +226,34 @@ function DashboardPage() {
           />
         </div>
         <LeadTemperatureStrip
-          hotCount={kpisQ.data?.hot_count ?? 0}
-          warmCount={kpisQ.data?.warm_count ?? 0}
-          coldCount={kpisQ.data?.cold_count ?? 0}
-          loading={kpisQ.isPending}
+          hotCount={briefing?.kpis.hot_count ?? kpisQ.data?.hot_count ?? 0}
+          warmCount={briefing?.kpis.warm_count ?? kpisQ.data?.warm_count ?? 0}
+          coldCount={briefing?.kpis.cold_count ?? kpisQ.data?.cold_count ?? 0}
+          loading={briefingPending && kpisQ.isPending}
         />
       </DashboardSection>
+      )}
 
-      {/* ── Seguimiento — RFC §6.4: actividad del día + recordatorios ─── */}
-      <DashboardSection
-        title="Seguimiento comercial"
-        icon={CalendarDays}
-        accent="sky"
-        action={
-          <Button variant="outline" size="sm" className="gap-2 shadow-sm" asChild>
-            <Link to="/reminders">
-              <CalendarDays className="size-4" />
-              Recordatorios
-            </Link>
-          </Button>
-        }
-      >
-        <ActivityFeed
-          data={activityQ.data}
-          isLoading={activityQ.isPending}
-          isError={activityQ.isError}
-          variant="split"
-        />
+      {(hasReminders || hasOpportunities) && (
+      <DashboardSection title="Seguimiento comercial" icon={CalendarDays} accent="sky">
+        <div className="space-y-6">
+          {hasReminders && (
+            <RemindersDashboardCard briefing={briefing} isLoading={briefingPending} />
+          )}
+          {hasOpportunities && (
+            <ActivityFeed
+              data={movementActivity}
+              isLoading={activityQ.isPending}
+              isError={activityQ.isError}
+              variant="movement-only"
+            />
+          )}
+        </div>
       </DashboardSection>
+      )}
 
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
     </AppPageShell>
   )
 }
 
-function WelcomeGreeting({ name }: { name?: string }) {
-  const hour = new Date().getHours()
-  const greeting =
-    hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches'
-  const firstName = name?.split(' ')[0] ?? ''
-  return (
-    <span>
-      {greeting}{firstName ? ', ' : ''}<span className="text-blue-600 dark:text-blue-400">{firstName}</span>
-    </span>
-  )
-}

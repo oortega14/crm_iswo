@@ -14,6 +14,13 @@ module Api
 
       before_action :set_flag, only: %i[show reassign merge ignore]
 
+      # GET /api/v1/duplicate_flags/stats
+      def stats
+        authorize DuplicateFlag, :index?
+        payload = DuplicateFlags::Stats.new(user: current_user).call
+        render json: { data: payload }, status: :ok
+      end
+
       # GET /api/v1/duplicate_flags
       def index
         scope = policy_scope(DuplicateFlag).includes(

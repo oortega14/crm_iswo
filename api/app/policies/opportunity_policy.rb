@@ -4,14 +4,14 @@
 # OpportunityPolicy
 # ============================================================================
 # - admin/manager: ven y editan todas las oportunidades del tenant.
-# - consultant: edita solo las suyas; ve las suyas + red hasta network_depth (RFC F2).
+# - consultant: solo ve y edita oportunidades donde es owner (no las de otros consultores).
 # - viewer: solo lectura sobre todas.
 #
 # Reasignar (assign) y mergear son acciones sensibles → solo admin/manager.
 # ============================================================================
 class OpportunityPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff? && (manager_or_admin? || viewer? || owner? || network_visible?)
+  def show?             = staff? && (manager_or_admin? || viewer? || owner?)
   def create?           = admin? || manager? || consultant?
   def update?           = admin? || manager? || owner?
   def destroy?          = admin?
@@ -41,9 +41,5 @@ class OpportunityPolicy < ApplicationPolicy
 
   def owner?
     record.respond_to?(:owner_user_id) && record.owner_user_id == user&.id
-  end
-
-  def network_visible?
-    ConsultantNetworkAccess.can_view_opportunity?(user, record)
   end
 end

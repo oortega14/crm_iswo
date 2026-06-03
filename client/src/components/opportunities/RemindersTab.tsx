@@ -30,7 +30,7 @@ import {
   type OpportunityReminderRow,
   type ReminderChannel,
 } from '@/lib/reminderApi'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateReminderDashboardQueries, queryKeys } from '@/lib/queryClient'
 
 interface RemindersTabProps {
   opportunityId: string
@@ -51,11 +51,11 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
   const [remindAt, setRemindAt] = useState('')
   const [channel, setChannel] = useState<ReminderChannel>('in_app')
 
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.byOpportunity(opportunityId) })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.stats })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.overdue })
+  const invalidate = async () => {
+    await invalidateReminderDashboardQueries(queryClient)
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.reminders.byOpportunity(opportunityId),
+    })
   }
 
   const createMutation = useMutation({

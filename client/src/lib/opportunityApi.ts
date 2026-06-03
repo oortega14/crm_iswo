@@ -257,10 +257,13 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
       }
     : undefined
 
+  const titleRaw = typeof a.title === 'string' ? a.title.trim() : ''
+
   return {
     id: String(resource.id ?? ''),
+    title: titleRaw || undefined,
     contact_id: relContact?.id ? String(relContact.id) : undefined,
-    contact_name: String(a.contact_name ?? a.title ?? 'Sin nombre'),
+    contact_name: String(a.contact_name ?? titleRaw ?? 'Sin nombre'),
     contact_email: a.contact_email != null ? String(a.contact_email) : undefined,
     contact_phone: a.contact_phone != null ? String(a.contact_phone) : undefined,
     company_name: a.company_name != null ? String(a.company_name) : undefined,
@@ -295,9 +298,24 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     custom_fields: a.custom_fields != null && typeof a.custom_fields === 'object'
       ? (a.custom_fields as Record<string, unknown>)
       : undefined,
+    from_network: a.from_network === true,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
   }
+}
+
+function normalizeOpportunityLogChanges(
+  raw: unknown,
+): import('@/types').OpportunityLog['changes_data'] {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, { from: unknown; to: unknown }> = {}
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (val != null && typeof val === 'object' && !Array.isArray(val)) {
+      const entry = val as Record<string, unknown>
+      out[key] = { from: entry.from ?? null, to: entry.to ?? null }
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /** Mapea un recurso JSON:API `opportunity_log` a nuestro tipo de dominio. */
@@ -316,11 +334,7 @@ export function mapOpportunityLogResource(
       )
     : undefined
 
-  const rawChanges = a.changes_data
-  const changes_data =
-    rawChanges != null && typeof rawChanges === 'object' && !Array.isArray(rawChanges)
-      ? (rawChanges as Record<string, { from: unknown; to: unknown }>)
-      : undefined
+  const changes_data = normalizeOpportunityLogChanges(a.changes_data)
 
   return {
     id: String(resource.id ?? ''),
@@ -359,6 +373,7 @@ export interface OpportunityListFilters {
   pipeline_id?: string
   stage_id?: string
   contact_id?: string
+  landing_page_id?: string
   owner_id?: string
   status?: string
   temperature?: string
@@ -366,10 +381,18 @@ export interface OpportunityListFilters {
   stale_days?: number
 }
 
+const OPPORTUNITY_LIST_PAGE_SIZE = 200
+
 export function buildOpportunityListParams(filters: OpportunityListFilters): URLSearchParams {
   const params = new URLSearchParams()
+  params.set('items', String(OPPORTUNITY_LIST_PAGE_SIZE))
+
   if (filters.contact_id) {
     params.set('contact_id', filters.contact_id)
+    return params
+  }
+  if (filters.landing_page_id) {
+    params.set('landing_page_id', filters.landing_page_id)
     return params
   }
   if (filters.pipeline_id) params.set('pipeline_id', filters.pipeline_id)
@@ -546,6 +569,11 @@ export function triggerBlobDownload(blob: Blob, filename: string) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
+}
+
+export async function bulkDeleteOpportunities(ids: string[]): Promise<{ deleted: number }> {
+  const response = await api.delete('/opportunities/bulk_destroy', { data: { ids } })
+  return (response.data as { data: { deleted: number } }).data
 }
 
 export function opportunityListErrorMessage(err: unknown): string {

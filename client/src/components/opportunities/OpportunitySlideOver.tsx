@@ -17,9 +17,6 @@ import {
   UserRound,
 } from 'lucide-react'
 import api from '@/lib/api'
-import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
-import { getOpportunityOwnership } from '@/lib/opportunityOwnership'
-import { OpportunityOwnershipBadge } from '@/components/opportunities/OpportunityOwnershipBadge'
 import { useUser, useUserRole } from '@/stores/auth'
 import {
   assignOpportunityOwner,
@@ -50,12 +47,10 @@ import {
   getBantScoreColor,
   getStatusColor,
   formatStatusLabel,
-  getInitials,
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -109,7 +104,6 @@ export function OpportunitySlideOver({
   const [valueInput, setValueInput] = useState('')
   const role = useUserRole()
   const currentUser = useUser()
-  const networkUserIds = useNetworkUserIds()
 
   const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
     queryKey: queryKeys.opportunities.detail(opportunityId || ''),
@@ -126,14 +120,6 @@ export function OpportunitySlideOver({
     const ownerId = opportunity.owner_id || opportunity.owner?.id
     return String(ownerId ?? '') === String(currentUser?.id ?? '')
   }, [opportunity, role, currentUser?.id])
-
-  const ownership = useMemo(
-    () =>
-      opportunity
-        ? getOpportunityOwnership(opportunity, currentUser?.id, networkUserIds, role)
-        : null,
-    [opportunity, currentUser?.id, networkUserIds, role],
-  )
 
   const { data: contactForLead } = useQuery({
     queryKey: queryKeys.contacts.detail(opportunity?.contact_id ?? ''),
@@ -176,15 +162,23 @@ export function OpportunitySlideOver({
   }, [editingNotes])
 
   // Fetch activity logs
-  const { data: logs, isLoading: logsLoading } = useQuery({
+  const {
+    data: logs,
+    isLoading: logsLoading,
+    isError: logsError,
+    error: logsErrorDetail,
+  } = useQuery({
     queryKey: queryKeys.opportunities.logs(opportunity?.id || ''),
     queryFn: async () => {
-      const response = await api.get(`/opportunities/${opportunity?.id}/logs`)
+      const response = await api.get(`/opportunities/${opportunity?.id}/logs`, {
+        params: { items: 100 },
+      })
       const rows = jsonApiPrimaryList(response.data)
       const inc = jsonApiIncluded(response.data)
       return rows.map((r) => mapOpportunityLogResource(r, inc))
     },
     enabled: !!opportunity?.id && activeTab === 'activity',
+    staleTime: 30_000,
   })
 
   const { data: reminders, isLoading: remindersLoading } = useQuery({
@@ -263,6 +257,7 @@ export function OpportunitySlideOver({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       if (opportunity?.id) {
         queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
       }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
@@ -300,6 +295,10 @@ export function OpportunitySlideOver({
     onSuccess: (ai_result) => {
       setAiResult(ai_result)
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
       toast.success('Temperatura actualizada según BANT y actividad')
@@ -318,6 +317,7 @@ export function OpportunitySlideOver({
       toast.success('Etapa actualizada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
     },
@@ -333,6 +333,7 @@ export function OpportunitySlideOver({
       toast.success('Consultor asignado')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
     },
@@ -347,6 +348,7 @@ export function OpportunitySlideOver({
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
       if (result.temperature_ai?.ai_used) {
@@ -370,6 +372,10 @@ export function OpportunitySlideOver({
         anthropic_error: res.meta?.anthropic_error ?? null,
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
       const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
@@ -448,7 +454,6 @@ export function OpportunitySlideOver({
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
-                  <OpportunityOwnershipBadge ownership={ownership} />
                   <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} />
                   {opportunity.stage?.name && (
                     <span className="text-xs text-muted-foreground">
@@ -462,16 +467,10 @@ export function OpportunitySlideOver({
               </div>
               <div className="flex items-center gap-2">
                 {opportunity.owner?.name && (
-                  <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[80px]">
-                    {opportunity.owner.name.split(' ')[0]}
+                  <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[120px]">
+                    {opportunity.owner.name}
                   </span>
                 )}
-                <Avatar className="size-8">
-                  <AvatarImage src={opportunity.owner?.avatar_url} />
-                  <AvatarFallback className="text-xs">
-                    {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
-                  </AvatarFallback>
-                </Avatar>
                 {(role === 'admin') && (
                   confirmDelete ? (
                     <div className="flex items-center gap-1">
@@ -903,7 +902,10 @@ export function OpportunitySlideOver({
               </TabsContent>
 
               {/* Activity tab */}
-              <TabsContent value="activity" className="flex-1 overflow-hidden mt-0">
+              <TabsContent
+                value="activity"
+                className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+              >
                 {logsLoading ? (
                   <div className="p-4 flex flex-col gap-3">
                     {[1, 2, 3].map((i) => (
@@ -915,6 +917,15 @@ export function OpportunitySlideOver({
                         </div>
                       </div>
                     ))}
+                  </div>
+                ) : logsError ? (
+                  <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                    <p className="text-sm text-destructive">
+                      No se pudo cargar la actividad
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {(logsErrorDetail as Error)?.message || 'Error de red o permisos'}
+                    </p>
                   </div>
                 ) : (
                   <ActivityLog logs={logs || []} />

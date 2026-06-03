@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatRailsError } from '@/lib/api'
 import { createOpportunityReminder, type ReminderChannel } from '@/lib/reminderApi'
 import { OpportunityLeadPicker } from '@/components/reminders/OpportunityLeadPicker'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateReminderDashboardQueries, queryKeys } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -77,10 +77,8 @@ export function ReminderDialog({
         message: data.description,
       })
     },
-    onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.stats })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.overdue })
+    onSuccess: async (_data, variables) => {
+      await invalidateReminderDashboardQueries(queryClient)
       if (variables.linkedOpportunity) {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.reminders.byOpportunity(variables.linkedOpportunity),

@@ -45,12 +45,23 @@ module Api
           )
         end
 
-        render_collection(scope.includes(:opportunities, :owner_user).order(updated_at: :desc), with: ContactSerializer)
+        render_collection(
+          scope.includes(:opportunities, :owner_user).order(updated_at: :desc),
+          with:   ContactSerializer,
+          params: { current_user: current_user }
+        )
       end
 
       def show
         authorize @contact
-        render_resource(@contact, with: ContactSerializer)
+        contact = policy_scope(Contact).kept
+                  .includes(landing_form_submissions: :landing_page)
+                  .find(@contact.id)
+        render_resource(
+          contact,
+          with:   ContactSerializer,
+          params: { current_user: current_user, include_landing_origins: true }
+        )
       end
 
       def create
@@ -58,7 +69,8 @@ module Api
         @contact = current_tenant.contacts.new(contact_params.merge(owner_user: current_user))
         if @contact.save
           audit_contact!("contact.create", @contact)
-          render_created(@contact, with: ContactSerializer)
+          Contacts::ProspectOpportunityCreator.call(contact: @contact, actor: current_user)
+          render_created(@contact, with: ContactSerializer, params: { current_user: current_user })
         else
           render_unprocessable(@contact)
         end
@@ -69,7 +81,7 @@ module Api
         if @contact.update(contact_params)
           audit_contact!("contact.update", @contact,
                          changed_fields: @contact.previous_changes.except("updated_at").keys)
-          render_resource(@contact, with: ContactSerializer)
+          render_resource(@contact, with: ContactSerializer, params: { current_user: current_user })
         else
           render_unprocessable(@contact)
         end
@@ -210,7 +222,7 @@ module Api
       private
 
       def set_contact
-        @contact = current_tenant.contacts.kept.find(params[:id])
+        @contact = policy_scope(Contact).kept.find(params[:id])
       end
 
       def audit_contact!(action, contact, extra = {})

@@ -48,8 +48,17 @@ export interface DashboardBriefingKpis {
   hot_count: number
   warm_count: number
   cold_count: number
+  /** Pendientes visibles (mismo alcance que GET /reminders?status=pending) */
+  pending_count: number
   overdue_count: number
+  /** Programados para hoy (incluye vencidos de hoy) */
+  today_count: number
   new_this_week: number
+  month_closed_value: number
+  won_count: number
+  lost_count: number
+  win_rate: number | null
+  bant_average: number
 }
 
 export interface DashboardBriefingHotLead {
@@ -61,6 +70,10 @@ export interface DashboardBriefingHotLead {
   stage_name: string | null
   estimated_value: number
   currency: string
+  updated_at?: string | null
+  last_activity_at?: string | null
+  days_without_activity?: number | null
+  custom_fields?: Record<string, unknown>
 }
 
 export interface DashboardBriefingReminder {
@@ -76,13 +89,18 @@ export interface DashboardBriefingStaleLead {
   title: string
   contact_name: string | null
   last_activity_at: string | null
+  stage_name?: string | null
+  custom_fields?: Record<string, unknown>
 }
 
 export interface DashboardBriefing {
   generated_at: string
+  day_recommendation: string
   kpis: DashboardBriefingKpis
   hot_leads: DashboardBriefingHotLead[]
   overdue_reminders: DashboardBriefingReminder[]
+  /** Próximos pendientes (fecha futura), alineado con /reminders */
+  pending_reminders: DashboardBriefingReminder[]
   stale_leads: DashboardBriefingStaleLead[]
 }
 

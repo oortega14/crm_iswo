@@ -37,5 +37,15 @@ RSpec.describe LandingContentSanitizer do
       expect(result["gjs_html"]).not_to include("script")
       expect(result["gjs_css"]).not_to include("javascript:")
     end
+
+    it "elimina formularios embebidos de gjs_html (el formulario vive al pie en el SPA)" do
+      content = {
+        "gjs_html" => '<section><h1>Hola</h1><form><input name="email"></form></section>',
+        "gjs_css"  => ""
+      }
+      result = described_class.sanitize_content!(content)
+      expect(result["gjs_html"]).to include("Hola")
+      expect(result["gjs_html"]).not_to include("<form")
+    end
   end
 end

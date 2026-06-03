@@ -7,7 +7,7 @@ import {
   importContactsFromFile,
   type ContactImportResult,
 } from '@/lib/contactApi'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactsQueries } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -53,7 +53,7 @@ export function ContactImportDialog({ open, onOpenChange }: ContactImportDialogP
   const importMutation = useMutation({
     mutationFn: importContactsFromFile,
     onSuccess: async (data) => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      await invalidateContactsQueries(queryClient)
       setImportResult(data)
       const errCount = data.errors?.length ?? 0
       if (data.created_count > 0 && errCount === 0) {

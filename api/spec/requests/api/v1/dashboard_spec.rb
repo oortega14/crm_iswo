@@ -18,17 +18,27 @@ RSpec.describe "Api::V1::Dashboard", type: :request do
       expect(response).to have_http_status(:ok)
       expect(json["data"]).to include(
         "generated_at",
+        "day_recommendation",
         "kpis",
         "hot_leads",
         "overdue_reminders",
         "stale_leads"
       )
+      expect(json["data"]["day_recommendation"]).to be_a(String)
       expect(json["data"]["kpis"]).to include(
         "total_open",
         "hot_count",
+        "pending_count",
         "overdue_count",
-        "new_this_week"
+        "today_count",
+        "new_this_week",
+        "month_closed_value",
+        "won_count",
+        "lost_count",
+        "win_rate",
+        "bant_average"
       )
+      expect(json["data"]).to include("pending_reminders")
     end
   end
 

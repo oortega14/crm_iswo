@@ -1,7 +1,9 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Target, Users, FileText, LayoutDashboard } from 'lucide-react'
+import { Target, Users, FileText } from 'lucide-react'
+import { useAuthStore, useTenant } from '@/stores/auth'
+import { filterMainNav, filterSettingsNav, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
 import {
   CommandDialog,
   CommandEmpty,
@@ -20,19 +22,26 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void
 }
 
-const pages = [
-  { title: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { title: 'Oportunidades', href: '/opportunities', icon: Target },
-  { title: 'Contactos', href: '/contacts', icon: Users },
-  { title: 'Recordatorios', href: '/reminders', icon: Target },
-  { title: 'Red de Referidos', href: '/network', icon: Target },
-  { title: 'Configuración de Pipelines', href: '/settings/pipelines', icon: Target },
-  { title: 'Usuarios', href: '/settings/users', icon: Users },
-  { title: 'Integraciones', href: '/settings/integrations', icon: Target },
-]
-
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const tenant = useTenant()
+
+  const pages = useMemo(
+    () => [
+      ...filterMainNav(MAIN_NAV_ITEMS, user?.role, tenant).map((item) => ({
+        title: item.label,
+        href: item.href,
+        icon: item.icon,
+      })),
+      ...filterSettingsNav(user?.role, tenant).map((item) => ({
+        title: item.title,
+        href: item.href,
+        icon: item.icon,
+      })),
+    ],
+    [user?.role, tenant],
+  )
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 

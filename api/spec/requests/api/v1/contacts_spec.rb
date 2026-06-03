@@ -113,17 +113,30 @@ RSpec.describe "Api::V1::Contacts", type: :request do
   end
 
   describe "POST /api/v1/contacts" do
-    it "201 y crea con owner=current_user" do
+    it "201 y crea con owner=current_user y oportunidad prospecto en pipeline" do
+      pipe = create(:pipeline_with_stages, tenant: tenant, is_default: true)
+      create(:lead_source, tenant: tenant, kind: "manual")
       payload = { contact: { kind: "person", first_name: "Nuevo", last_name: "Prospect", email: "np@iswo.co" } }.to_json
 
       expect {
         post "/api/v1/contacts", params: payload, headers: auth_headers(consultant)
       }.to change(Contact, :count).by(1)
+        .and change(Opportunity, :count).by(1)
 
       expect(response).to have_http_status(:created)
       created = Contact.last
       expect(created.owner_user_id).to eq(consultant.id)
       expect(json.dig("data", "attributes", "first_name")).to eq("Nuevo")
+
+      opp = Opportunity.order(:id).last
+      expect(opp.contact_id).to eq(created.id)
+      expect(opp.owner_user_id).to eq(consultant.id)
+      expect(opp.pipeline_id).to eq(pipe.id)
+      expect(opp.status).to eq("new_lead")
+
+      get "/api/v1/opportunities", headers: auth_headers(manager)
+      opp_ids = json["data"].map { |d| d["id"].to_i }
+      expect(opp_ids).to include(opp.id)
     end
 
     it "422 con detalles de validación si falta nombre y company" do

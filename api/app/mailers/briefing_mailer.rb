@@ -15,6 +15,8 @@ class BriefingMailer < ApplicationMailer
     @hot_leads     = briefing[:hot_leads]
     @overdue       = briefing[:overdue_reminders]
     @stale_leads   = briefing[:stale_leads]
+    @pending       = briefing[:pending_reminders]
+    @day_recommendation = briefing[:day_recommendation]
     @generated_at  = briefing[:generated_at]
 
     return if @user.email.blank?

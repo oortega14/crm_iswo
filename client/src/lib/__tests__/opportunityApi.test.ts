@@ -318,9 +318,10 @@ describe('toOpportunityUpdatePayload', () => {
 
 // ─── buildOpportunityListParams ───────────────────────────────────────────────
 describe('buildOpportunityListParams', () => {
-  it('con contact_id devuelve solo ese filtro', () => {
+  it('con contact_id devuelve solo ese filtro (y paginación amplia)', () => {
     const params = buildOpportunityListParams({ contact_id: '5', status: 'won' })
     expect(params.get('contact_id')).toBe('5')
+    expect(params.get('items')).toBe('200')
     expect(params.has('status')).toBe(false)
   })
 

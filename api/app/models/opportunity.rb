@@ -16,6 +16,13 @@ class Opportunity < ApplicationRecord
   include TenantScoped
   include Discard::Model
   include DataClassifiable
+  include ExportRansackable
+
+  EXPORT_RANSACKABLE_ATTRIBUTES = %w[
+    pipeline_id pipeline_stage_id owner_user_id lead_source_id
+    status temperature updated_at last_activity_at title
+  ].freeze
+  EXPORT_RANSACKABLE_ASSOCIATIONS = %w[contact].freeze
 
   TEMPERATURES = %w[cold warm hot].freeze
   enum :temperature, TEMPERATURES.zip(TEMPERATURES).to_h, prefix: :temp, default: "cold"

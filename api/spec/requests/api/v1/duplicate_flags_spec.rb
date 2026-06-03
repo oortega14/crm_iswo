@@ -13,6 +13,19 @@ RSpec.describe "Api::V1::DuplicateFlags", type: :request do
   let(:opp_b)     { create(:opportunity, tenant: tenant, contact: contact, pipeline: pipeline, pipeline_stage: pipeline.pipeline_stages.first) }
   let!(:flag)     { create(:duplicate_flag, tenant: tenant, opportunity: opp_a, duplicate_of_opportunity: opp_b) }
 
+  describe "GET /api/v1/duplicate_flags/stats" do
+    let!(:pending_flag) { create(:duplicate_flag, tenant: tenant, resolution: "pending") }
+    let!(:resolved_flag) { create(:duplicate_flag, tenant: tenant, resolution: "merged") }
+
+    it "devuelve conteos pending y total" do
+      get "/api/v1/duplicate_flags/stats", headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "pending")).to be >= 1
+      expect(json.dig("data", "total")).to be >= 2
+    end
+  end
+
   describe "GET /api/v1/duplicate_flags" do
     it "200 con lista de flags" do
       get "/api/v1/duplicate_flags", headers: auth_headers(admin)

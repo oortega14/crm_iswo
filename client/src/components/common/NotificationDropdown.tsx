@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Target, AlertCircle, UserPlus, CheckCheck, Loader2 } from 'lucide-react'
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateDuplicateFlagsQueries, queryKeys } from '@/lib/queryClient'
 import {
   fetchUnreadNotifications,
   markAllNotificationsRead,
@@ -41,12 +42,15 @@ export function NotificationDropdown() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const userRole = useAuthStore((s) => s.user?.role)
+  const isStaff = userRole === 'admin' || userRole === 'manager'
 
   const {
     data: notifications = [],
     isPending,
     isError,
     refetch,
+    dataUpdatedAt,
   } = useQuery({
     queryKey: queryKeys.notifications,
     queryFn: () => fetchUnreadNotifications(20),
@@ -56,6 +60,11 @@ export function NotificationDropdown() {
     refetchOnWindowFocus: true,
     retry: 1,
   })
+
+  useEffect(() => {
+    if (!isStaff || isPending) return
+    void invalidateDuplicateFlagsQueries(queryClient)
+  }, [dataUpdatedAt, isStaff, isPending, queryClient])
 
   const readMutation = useMutation({
     mutationFn: markNotificationRead,

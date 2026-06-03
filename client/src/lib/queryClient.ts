@@ -1,4 +1,21 @@
 import { QueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '@/stores/auth'
+
+/** Polling en bandeja de duplicados (admin/manager), RFC §6.2 tiempo casi real. */
+export const DUPLICATE_FLAGS_POLL_MS = 10_000
+
+/** Alcance de caché por tenant + usuario (evita mezclar datos entre sesiones). */
+export function getAuthQueryScope(): string {
+  const { user, tenant } = useAuthStore.getState()
+  if (!user?.id) return ''
+  const slug = tenant?.subdomain?.trim().toLowerCase() || '_'
+  return `${slug}:user:${user.id}`
+}
+
+/** Vacía la caché de React Query al cambiar de sesión (login/logout). */
+export function clearSessionQueryCache(client: QueryClient = queryClient): void {
+  client.clear()
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +40,8 @@ export const queryKeys = {
   // Opportunities
   opportunities: {
     all: ['opportunities'] as const,
-    list: (filters: Record<string, unknown>) => ['opportunities', 'list', filters] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['opportunities', 'list', authScope, filters] as const,
     detail: (id: string) => ['opportunities', 'detail', id] as const,
     logs: (id: string) => ['opportunities', 'logs', id] as const,
     messages: (id: string) => ['opportunities', 'messages', id] as const,
@@ -31,21 +49,23 @@ export const queryKeys = {
       ['opportunities', 'duplicateCheck', { phone, email }] as const,
   },
   
-  // Contacts
+  // Contacts (authScope — evita mezclar listas/stats entre sesiones)
   contacts: {
     all: ['contacts'] as const,
-    stats: ['contacts', 'stats'] as const,
-    list: (filters: Record<string, unknown>) => ['contacts', 'list', filters] as const,
+    stats: (authScope: string) => ['contacts', 'stats', authScope] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['contacts', 'list', authScope, filters] as const,
     detail: (id: string) => ['contacts', 'detail', id] as const,
   },
   
-  // Reminders
+  // Reminders (authScope — listas/stats por sesión)
   reminders: {
     all: ['reminders'] as const,
-    list: (filters: Record<string, unknown>) => ['reminders', 'list', filters] as const,
-    stats: ['reminders', 'stats'] as const,
-    overdue: ['reminders', 'overdue'] as const,
-    pending: ['reminders', 'pending'] as const,
+    stats: (authScope: string) => ['reminders', 'stats', authScope] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['reminders', 'list', authScope, filters] as const,
+    overdue: (authScope: string) => ['reminders', 'overdue', authScope] as const,
+    pending: (authScope: string) => ['reminders', 'pending', authScope] as const,
     byOpportunity: (opportunityId: string) => ['reminders', 'opportunity', opportunityId] as const,
   },
   
@@ -62,17 +82,19 @@ export const queryKeys = {
     detail: (id: string) => ['users', 'detail', id] as const,
   },
   
-  // Duplicate Flags
+  // Duplicate Flags (authScope — bandeja y badge por sesión)
   duplicateFlags: {
     all: ['duplicateFlags'] as const,
-    list: (filters: Record<string, unknown>) => ['duplicateFlags', 'list', filters] as const,
-    pending: ['duplicateFlags', 'pending'] as const,
+    stats: (authScope: string) => ['duplicateFlags', 'stats', authScope] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['duplicateFlags', 'list', authScope, filters] as const,
   },
   
   // Exports
   exports: {
     all: ['exports'] as const,
-    list: (filters: Record<string, unknown>) => ['exports', 'list', filters] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['exports', 'list', authScope, filters] as const,
   },
   
   // Integrations
@@ -86,35 +108,45 @@ export const queryKeys = {
     all: ['leadSources'] as const,
   },
   
-  // Landing Pages
+  // Landing Pages (authScope — listas y métricas por sesión)
   landingPages: {
     all: ['landingPages'] as const,
+    list: (authScope: string) => ['landingPages', 'list', authScope] as const,
     detail: (id: string) => ['landingPages', 'detail', id] as const,
+    metrics: (authScope: string, id: string, days: number) =>
+      ['landingPages', 'metrics', authScope, id, days] as const,
   },
   
   // Audit Logs
   auditLogs: {
-    list: (filters: Record<string, unknown>) => ['auditLogs', 'list', filters] as const,
+    list: (authScope: string, filters: Record<string, unknown>) =>
+      ['auditLogs', 'list', authScope, filters] as const,
   },
   
   referralNetworks: {
-    tree: (rootUserId: string | null, depth: number) =>
-      ['referralNetworks', 'tree', rootUserId ?? 'me', depth] as const,
-    myNetwork: ['referralNetworks', 'myNetwork'] as const,
-    list: ['referralNetworks', 'list'] as const,
+    all: ['referralNetworks'] as const,
+    tree: (authScope: string, rootUserId: string | null, depth: number) =>
+      ['referralNetworks', 'tree', authScope, rootUserId ?? 'me', depth] as const,
+    list: (authScope: string) => ['referralNetworks', 'list', authScope] as const,
   },
   
-  // Dashboard (pipelineId opcional: filtra KPIs/actividad al embudo seleccionado)
+  // Dashboard (authScope + pipelineId — RFC caché multi-usuario)
   dashboard: {
-    briefing: (pipelineId?: string) => ['dashboard', 'briefing', pipelineId ?? 'all'] as const,
-    kpis: (pipelineId?: string) => ['dashboard', 'kpis', pipelineId ?? 'all'] as const,
-    pipeline: (pipelineId?: string) => ['dashboard', 'pipeline', pipelineId ?? 'default'] as const,
-    activity: (pipelineId?: string) => ['dashboard', 'activity', pipelineId ?? 'all'] as const,
-    bantDistribution: (pipelineId?: string) =>
-      ['dashboard', 'bantDistribution', pipelineId ?? 'all'] as const,
-    topConsultants: (pipelineId?: string) =>
-      ['dashboard', 'topConsultants', pipelineId ?? 'all'] as const,
-    leadSources: (pipelineId?: string) => ['dashboard', 'leadSources', pipelineId ?? 'all'] as const,
+    all: (authScope: string) => ['dashboard', authScope] as const,
+    briefing: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'briefing', authScope, pipelineId ?? 'all'] as const,
+    kpis: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'kpis', authScope, pipelineId ?? 'all'] as const,
+    pipeline: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'pipeline', authScope, pipelineId ?? 'default'] as const,
+    activity: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'activity', authScope, pipelineId ?? 'all'] as const,
+    bantDistribution: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'bantDistribution', authScope, pipelineId ?? 'all'] as const,
+    topConsultants: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'topConsultants', authScope, pipelineId ?? 'all'] as const,
+    leadSources: (authScope: string, pipelineId?: string) =>
+      ['dashboard', 'leadSources', authScope, pipelineId ?? 'all'] as const,
   },
   
   // Search
@@ -130,11 +162,44 @@ export const queryKeys = {
 
 /** Métricas y listas de /contacts (clientes, prospectos, leads calientes, stale). */
 export function invalidateContactSegmentMetrics(client: QueryClient) {
+  return client.invalidateQueries({ queryKey: queryKeys.contacts.all })
+}
+
+/** Tras crear/importar/borrar contactos: listas, stats y dashboard del usuario actual. */
+export function invalidateContactsQueries(client: QueryClient) {
+  const authScope = getAuthQueryScope()
   return Promise.all([
-    client.invalidateQueries({ queryKey: queryKeys.contacts.stats }),
+    invalidateContactSegmentMetrics(client),
+    client.invalidateQueries({ queryKey: queryKeys.opportunities.all }),
+    authScope
+      ? client.invalidateQueries({ queryKey: queryKeys.dashboard.all(authScope) })
+      : client.invalidateQueries({ queryKey: ['dashboard'] }),
+  ])
+}
+
+/** Listado, editor y métricas de /landings tras crear/editar/publicar. */
+export async function invalidateLandingPagesQueries(client: QueryClient) {
+  await client.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+  await client.refetchQueries({ queryKey: queryKeys.landingPages.all, type: 'active' })
+}
+
+/** Bandeja /duplicates y badge del nav tras resolver o escanear. */
+export function invalidateDuplicateFlagsQueries(client: QueryClient) {
+  return client.invalidateQueries({ queryKey: queryKeys.duplicateFlags.all })
+}
+
+/** Árbol y listado de /network tras crear/editar/eliminar enlaces. */
+export function invalidateReferralNetworkQueries(client: QueryClient) {
+  return client.invalidateQueries({ queryKey: queryKeys.referralNetworks.all })
+}
+
+/** Sincroniza bandeja /reminders, badge del nav y briefing/actividad del dashboard (RFC §6.4). */
+export function invalidateReminderDashboardQueries(client: QueryClient) {
+  const authScope = getAuthQueryScope()
+  return Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.reminders.all }),
     client.invalidateQueries({
-      queryKey: queryKeys.contacts.all,
-      predicate: (query) => query.queryKey[1] === 'list',
+      queryKey: authScope ? queryKeys.dashboard.all(authScope) : ['dashboard'],
     }),
   ])
 }

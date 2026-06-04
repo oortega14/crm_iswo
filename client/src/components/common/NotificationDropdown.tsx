@@ -13,19 +13,28 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import { invalidateDuplicateFlagsQueries, queryKeys } from '@/lib/queryClient'
+import {
+  getAuthQueryScope,
+  invalidateDuplicateFlagsQueries,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import {
   fetchUnreadNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  notificationErrorMessage,
   type AppNotification,
 } from '@/lib/notificationApi'
-import { useAuthStore } from '@/stores/auth'
+import { isPlatformTenant } from '@/lib/platformTenant'
+import { useAuthStore, useTenant } from '@/stores/auth'
 import { formatRelativeTime } from '@/lib/utils'
 
 function getIcon(type: AppNotification['type']) {
   switch (type) {
     case 'reminder_due':
+    case 'reminder_created':
+    case 'reminder_upcoming':
       return Bell
     case 'stage_change':
       return Target
@@ -43,18 +52,26 @@ export function NotificationDropdown() {
   const queryClient = useQueryClient()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const userRole = useAuthStore((s) => s.user?.role)
+  const tenant = useTenant()
+  const authScope = getAuthQueryScope()
   const isStaff = userRole === 'admin' || userRole === 'manager'
+  const isCommercial = isAuthenticated && !isPlatformTenant(tenant) && Boolean(authScope)
+
+  const notificationsQueryKey = authScope
+    ? queryKeys.notifications.unread(authScope)
+    : queryKeys.notifications.all
 
   const {
     data: notifications = [],
     isPending,
     isError,
+    error,
     refetch,
-    dataUpdatedAt,
+    isFetching,
   } = useQuery({
-    queryKey: queryKeys.notifications,
+    queryKey: notificationsQueryKey,
     queryFn: () => fetchUnreadNotifications(20),
-    enabled: isAuthenticated,
+    enabled: isCommercial,
     refetchInterval: 15_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
@@ -62,19 +79,47 @@ export function NotificationDropdown() {
   })
 
   useEffect(() => {
-    if (!isStaff || isPending) return
+    if (!isStaff || !notifications.some((n) => n.type === 'duplicate_found')) return
     void invalidateDuplicateFlagsQueries(queryClient)
-  }, [dataUpdatedAt, isStaff, isPending, queryClient])
+  }, [notifications, isStaff, queryClient])
 
   const readMutation = useMutation({
     mutationFn: markNotificationRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: notificationsQueryKey })
+      const previous = queryClient.getQueryData<AppNotification[]>(notificationsQueryKey)
+      queryClient.setQueryData<AppNotification[]>(notificationsQueryKey, (old) =>
+        (old ?? []).filter((n) => n.id !== id),
+      )
+      return { previous }
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(notificationsQueryKey, context.previous)
+      }
+    },
+    onSettled: () => void invalidateNotificationsQueries(queryClient),
   })
 
   const readAllMutation = useMutation({
     mutationFn: markAllNotificationsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: notificationsQueryKey })
+      const previous = queryClient.getQueryData<AppNotification[]>(notificationsQueryKey)
+      queryClient.setQueryData<AppNotification[]>(notificationsQueryKey, [])
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(notificationsQueryKey, context.previous)
+      }
+    },
+    onSettled: () => void invalidateNotificationsQueries(queryClient),
   })
+
+  if (!isCommercial) {
+    return null
+  }
 
   const unreadCount = notifications.length
 
@@ -84,7 +129,7 @@ export function NotificationDropdown() {
       void navigate({ to: '/opportunities', search: { selected: n.opportunityId } })
       return
     }
-    if (n.type === 'reminder_due') {
+    if (n.type === 'reminder_due' || n.type === 'reminder_created' || n.type === 'reminder_upcoming') {
       void navigate({ to: '/reminders' })
       return
     }
@@ -94,14 +139,18 @@ export function NotificationDropdown() {
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => open && void refetch()}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           className="relative"
-          aria-label="Notificaciones"
+          aria-label={
+            unreadCount > 0
+              ? `Notificaciones, ${unreadCount} sin leer`
+              : 'Notificaciones'
+          }
         >
           <Bell className="size-5" />
           {unreadCount > 0 && (
@@ -118,7 +167,9 @@ export function NotificationDropdown() {
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuLabel className="flex items-center justify-between gap-2">
           <span>Notificaciones</span>
-          {isPending && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {(isPending || isFetching) && (
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          )}
         </DropdownMenuLabel>
 
         {unreadCount > 0 && (
@@ -140,7 +191,9 @@ export function NotificationDropdown() {
         <ScrollArea className="h-[300px]">
           {isError ? (
             <div className="flex flex-col items-center justify-center gap-2 px-3 py-8 text-center">
-              <p className="text-sm text-destructive">No se pudieron cargar las notificaciones.</p>
+              <p className="text-sm text-destructive">
+                {notificationErrorMessage(error, 'No se pudieron cargar las notificaciones.')}
+              </p>
               <Button variant="outline" size="sm" onClick={() => void refetch()}>
                 Reintentar
               </Button>

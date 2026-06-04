@@ -1,7 +1,10 @@
 import type { Tenant } from '@/types'
 
-/** Tenant plataforma ISWO — único autorizado para onboarding de otros tenants (RFC F5). */
-export const PLATFORM_TENANT_SLUG = 'iswo'
+/** Único tenant plataforma — onboarding de otros tenants (RFC F5). */
+export const PLATFORM_TENANT_SLUG = 'super-admin'
+
+/** Home del super-admin: alta de tenants, no dashboard comercial. */
+export const PLATFORM_HOME = '/settings/tenant-onboarding'
 
 export function isPlatformTenant(tenant: Tenant | null | undefined): boolean {
   const slug = tenant?.subdomain?.trim().toLowerCase()

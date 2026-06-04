@@ -14,7 +14,11 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useState } from 'react'
-import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
+import {
+  invalidateContactSegmentMetrics,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import { moveOpportunityStage } from '@/lib/opportunityApi'
 import { KanbanColumn } from './KanbanColumn'
 import { OpportunityCard } from './OpportunityCard'
@@ -133,6 +137,7 @@ export function KanbanBoard({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
     },
   })
 

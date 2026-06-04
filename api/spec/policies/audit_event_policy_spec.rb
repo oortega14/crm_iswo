@@ -50,5 +50,50 @@ RSpec.describe AuditEventPolicy do
     it "nil user no ve nada" do
       expect(described_class::Scope.new(nil, AuditEvent).resolve).to be_empty
     end
+
+    context "tenant plataforma super-admin" do
+      let(:platform_tenant) do
+        ActsAsTenant.without_tenant do
+          Tenant.find_or_create_by!(slug: PlatformTenant::SLUG) do |t|
+            t.name = "Super Admin"
+            t.active = true
+            t.settings = { "modules" => [] }
+          end
+        end
+      end
+      let(:platform_admin) do
+        ActsAsTenant.without_tenant do
+          User.find_or_create_by!(tenant: platform_tenant, email: "platform-audit@super-admin.local") do |u|
+            u.name = "Platform Admin"
+            u.role = "admin"
+            u.password = "Password123!"
+            u.active = true
+            u.confirmed_at = Time.current
+          end
+        end
+      end
+      let!(:tenant_event) do
+        AuditEvent.create!(tenant: platform_tenant, action: "login", entity_type: "User", entity_id: 1)
+      end
+      let!(:global_event) do
+        AuditEvent.create!(
+          tenant:      nil,
+          user:        platform_admin,
+          action:      "tenant_onboard",
+          entity_type: "Tenant",
+          entity_id:   99,
+          metadata:    { slug: "nuevo-tenant" }
+        )
+      end
+      let!(:other_tenant_event) do
+        AuditEvent.create!(tenant: tenant, action: "login", entity_type: "User", entity_id: 2)
+      end
+
+      it "incluye eventos del tenant plataforma y globales (tenant_id NULL)" do
+        resolved = described_class::Scope.new(platform_admin, AuditEvent).resolve
+        expect(resolved).to include(tenant_event, global_event)
+        expect(resolved).not_to include(other_tenant_event)
+      end
+    end
   end
 end

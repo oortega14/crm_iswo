@@ -22,7 +22,11 @@ module Api
                             .limit(limit)
         scope = scope.unread if params[:unread] == "true"
 
-        render json: NotificationSerializer.new(scope).serializable_hash, status: :ok
+        payload = NotificationSerializer.new(scope).serializable_hash
+        payload[:meta] = {
+          unread_count: current_user.notifications.where(tenant: current_tenant).unread.count
+        }
+        render json: payload, status: :ok
       end
 
       # PATCH /api/v1/notifications/:id/read

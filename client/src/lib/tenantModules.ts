@@ -1,4 +1,5 @@
 import type { Tenant } from '@/types'
+import { isPlatformTenant } from '@/lib/platformTenant'
 
 export const DEFAULT_TENANT_MODULES = [
   'opportunities',
@@ -13,10 +14,11 @@ export const DEFAULT_TENANT_MODULES = [
 export type TenantModule = (typeof DEFAULT_TENANT_MODULES)[number]
 
 export function tenantModules(tenant: Tenant | null | undefined): string[] {
+  // RFC F5: tenant plataforma sin módulos comerciales.
+  if (isPlatformTenant(tenant)) return []
+
   const raw = tenant?.settings?.modules
-  if (Array.isArray(raw) && raw.length > 0) {
-    return raw.map(String)
-  }
+  if (Array.isArray(raw)) return raw.map(String)
   return [...DEFAULT_TENANT_MODULES]
 }
 

@@ -15,23 +15,32 @@ module Api
     # ========================================================================
     class SessionsController < Devise::SessionsController
       include TenantResolver
+      include LoginTenantResolvable
       include ErrorHandler
       include RefreshTokenCookies
 
       skip_before_action :verify_signed_out_user, only: :destroy
       skip_before_action :assert_is_devise_resource!, only: :refresh
+      skip_before_action :resolve_tenant!, only: %i[create refresh]
+      before_action :resolve_login_tenant_from_credentials!, only: :create
+      before_action :resolve_refresh_tenant!, only: :refresh
       respond_to :json
 
       # POST /api/v1/sessions
       def create
-        self.resource = warden.authenticate!(auth_options)
-        sign_in(resource_name, resource)
-        issue_refresh_cookie(resource)
-        log_session_audit("login", resource)
+        return if performed?
+        return render_login_tenant_required unless @current_tenant
 
-        render json: user_payload(resource).merge(
-          meta: { tenant: { id: current_tenant.id, slug: current_tenant.slug } }
-        ), status: :ok
+        ActsAsTenant.with_tenant(@current_tenant) do
+          self.resource = warden.authenticate!(auth_options)
+          sign_in(resource_name, resource)
+          issue_refresh_cookie(resource)
+          log_session_audit("login", resource)
+
+          render json: user_payload(resource).merge(
+            meta: tenant_meta
+          ), status: :ok
+        end
       end
 
       # DELETE /api/v1/sessions
@@ -48,6 +57,9 @@ module Api
 
       # POST /api/v1/sessions/refresh
       def refresh
+        return if performed?
+        return render_login_tenant_required unless @current_tenant
+
         token = normalize_refresh_cookie(cookies.encrypted[:refresh_token])
         user  = find_user_for_refresh(token)
 
@@ -61,10 +73,12 @@ module Api
           return render_invalid_refresh
         end
 
-        sign_in(user, store: false)
-        issue_refresh_cookie(user)
+        ActsAsTenant.with_tenant(@current_tenant) do
+          sign_in(user, store: false)
+          issue_refresh_cookie(user)
 
-        render json: user_payload(user), status: :ok
+          render json: user_payload(user).merge(meta: tenant_meta), status: :ok
+        end
       end
 
       private
@@ -109,6 +123,42 @@ module Api
 
       def respond_to_on_destroy
         head :no_content
+      end
+
+      def resolve_refresh_tenant!
+        slug = tenant_slug_from_header || tenant_slug_from_subdomain
+        if slug.present?
+          tenant = ActsAsTenant.without_tenant { Tenant.kept.find_by(slug: slug) }
+          return render_tenant_not_found(slug) unless tenant
+          return render_tenant_inactive unless tenant.active?
+
+          set_request_tenant!(tenant)
+          return
+        end
+
+        token = normalize_refresh_cookie(cookies.encrypted[:refresh_token])
+        user  = find_user_for_refresh(token)
+        tenant = ActsAsTenant.without_tenant { user&.tenant }
+        return render_invalid_refresh unless tenant&.active?
+
+        set_request_tenant!(tenant)
+      end
+
+      def tenant_meta
+        {
+          tenant: {
+            id:   current_tenant.id,
+            slug: current_tenant.slug,
+            name: current_tenant.name
+          }
+        }
+      end
+
+      def render_login_tenant_required
+        render json: {
+          error:   "tenant_missing",
+          message: "No se pudo resolver el tenant para esta sesión."
+        }, status: :bad_request
       end
 
       def log_session_audit(action, user, tenant = nil)

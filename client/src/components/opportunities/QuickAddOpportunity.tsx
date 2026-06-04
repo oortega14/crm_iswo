@@ -16,7 +16,12 @@ import {
   mapOpportunityResource,
   mapPipelineResource,
 } from '@/lib/opportunityApi'
-import { getAuthQueryScope, invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
+import {
+  getAuthQueryScope,
+  invalidateContactSegmentMetrics,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import { debounce, formatDate } from '@/lib/utils'
 import { TemperatureSelector } from './TemperatureSelector'
 import { Button } from '@/components/ui/button'
@@ -312,6 +317,7 @@ export function QuickAddOpportunity({
       void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all(getAuthQueryScope()) })
+      void invalidateNotificationsQueries(queryClient)
       void invalidateContactSegmentMetrics(queryClient)
       onCreated?.(newOpp)
       reset()

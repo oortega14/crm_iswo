@@ -326,7 +326,16 @@ def seed_landing_pages(tenant)
 end
 
 # ---------------------------------------------------------------------------
-# Ejecución
+# Tenant plataforma — super-admin (onboarding de otros tenants)
+# ---------------------------------------------------------------------------
+
+puts "\n[Super Admin — tenant plataforma]"
+platform = Tenants::PlatformSeeder.call!
+puts "  → #{platform.tenant.name} (#{platform.tenant.slug}) — #{platform.created ? 'creado' : 'ya existía'}"
+puts "     admin: #{platform.admin_user.email}"
+
+# ---------------------------------------------------------------------------
+# Ejecución verticales F5
 # ---------------------------------------------------------------------------
 
 VERTICALS.each do |config|
@@ -423,8 +432,9 @@ else
 end
 
 puts "\nCredenciales de prueba (password: Password123!):"
-puts "  admin@iswo.local       → ISWO (ve todas las oportunidades)"
+puts "  admin@super-admin.local → Super Admin (onboarding de tenants)"
+puts "  admin@iswo.local       → ISWO (vertical consultoría ISO)"
 puts "  admin@micasita.local   → Mi Casita"
 puts "  admin@libranzas.local  → Libranzas"
-puts "  laura@iswo.local       → consultor (solo sus leads asignados)"
+puts "  laura@iswo.local       → consultor ISWO (solo sus leads asignados)"
 puts "Listo.\n"

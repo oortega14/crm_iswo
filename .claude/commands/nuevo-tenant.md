@@ -13,22 +13,23 @@ Pregunta al usuario:
 
 ## Paso 2 — Autenticación como super-admin
 
+Inicia sesión en el SPA como admin del tenant plataforma `super-admin`, o usa JWT + header de tenant:
+
 ```bash
-# El token de super-admin se pasa por header, no requiere login normal
-# Verifica que SUPER_ADMIN_TOKEN esté en api/.env
-grep SUPER_ADMIN_TOKEN api/.env
+# Login → extrae Bearer y usa X-Tenant-Slug: super-admin
+curl -si -X POST http://localhost:3000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Slug: super-admin" \
+  -d '{"user":{"email":"admin@super-admin.local","password":"Password123!"}}'
 ```
 
-Si no existe, agrega temporalmente:
-```bash
-echo "SUPER_ADMIN_TOKEN=dev-super-admin-token-iswo" >> api/.env
-```
+Crea el tenant vía API de admin (requiere sesión admin de super-admin):
 
-Crea el tenant vía API de admin:
 ```bash
 curl -s -X POST http://localhost:3000/api/v1/admin/tenants \
   -H "Content-Type: application/json" \
-  -H "X-Super-Admin-Token: dev-super-admin-token-iswo" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "X-Tenant-Slug: super-admin" \
   -d '{
     "tenant": {
       "name": "<NOMBRE>",

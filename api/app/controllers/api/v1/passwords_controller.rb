@@ -7,14 +7,19 @@ module Api
     # ========================================================================
     class PasswordsController < ApplicationController
       include TenantResolver
+      include LoginTenantResolvable
       include ErrorHandler
       include RefreshTokenCookies
 
+      skip_before_action :resolve_tenant!, only: :forgot
+      before_action :resolve_login_tenant_from_credentials!, only: :forgot
       before_action :authenticate_user!, only: :change
       before_action :ensure_password_change_allowed!, only: :change
 
       # POST /api/v1/password/forgot  { email }
       def forgot
+        return if performed?
+
         user = current_tenant.users.find_by(email: params[:email].to_s.downcase.strip)
         Users::PasswordResetIssuer.new(user: user).call
         # Respuesta uniforme aunque no exista para no leakear cuentas

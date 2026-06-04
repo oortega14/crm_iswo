@@ -33,7 +33,11 @@ import {
   upsertOpportunityInQueryCache,
 } from '@/lib/opportunityApi'
 import { fetchOpportunityReminders } from '@/lib/reminderApi'
-import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
+import {
+  invalidateContactSegmentMetrics,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import {
   fetchAiCapabilities,
   classifyOpportunityTemperature,
@@ -261,6 +265,7 @@ export function OpportunitySlideOver({
       }
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
@@ -320,6 +325,7 @@ export function OpportunitySlideOver({
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
     },
     onError: () => toast.error('No se pudo cambiar la etapa'),
   })

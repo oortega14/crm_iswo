@@ -30,7 +30,11 @@ import {
   type OpportunityReminderRow,
   type ReminderChannel,
 } from '@/lib/reminderApi'
-import { invalidateReminderDashboardQueries, queryKeys } from '@/lib/queryClient'
+import {
+  invalidateNotificationsQueries,
+  invalidateReminderDashboardQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 
 interface RemindersTabProps {
   opportunityId: string
@@ -53,6 +57,7 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
 
   const invalidate = async () => {
     await invalidateReminderDashboardQueries(queryClient)
+    void invalidateNotificationsQueries(queryClient)
     void queryClient.invalidateQueries({
       queryKey: queryKeys.reminders.byOpportunity(opportunityId),
     })

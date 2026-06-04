@@ -76,6 +76,14 @@ function mapAuditEventResource(resource: JsonApiResource): AuditEventRow | null 
 export function formatAuditAction(action: string): string {
   const trimmed = action.trim()
   if (!trimmed) return '—'
+  const labels: Record<string, string> = {
+    tenant_onboard: 'Alta de tenant',
+    tenant_activate: 'Activación de tenant',
+    tenant_deactivate: 'Desactivación de tenant',
+    login: 'Inicio de sesión',
+    logout: 'Cierre de sesión',
+  }
+  if (labels[trimmed]) return labels[trimmed]
   return trimmed.replace(/\./g, ' · ')
 }
 

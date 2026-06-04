@@ -26,8 +26,21 @@ api.interceptors.request.use(
     }
     
     // Backend tenant resolver expects X-Tenant-Slug.
-    // Sesión autenticada primero; localStorage/hostname solo si no hay tenant en store.
-    if (!config.headers['X-Tenant-Slug']) {
+    // Login / forgot: sin header → el API resuelve empresa por correo (no usar localStorage stale).
+    const requestUrl = String(config.url ?? '')
+    const method = (config.method ?? 'get').toLowerCase()
+    const isCredentialRequest =
+      !token &&
+      method === 'post' &&
+      (requestUrl.includes('/sessions') || requestUrl.includes('/password/forgot'))
+
+    if (isCredentialRequest) {
+      if (typeof config.headers.delete === 'function') {
+        config.headers.delete('X-Tenant-Slug')
+      } else {
+        delete config.headers['X-Tenant-Slug']
+      }
+    } else if (!config.headers['X-Tenant-Slug']) {
       const fromAuth = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
       config.headers['X-Tenant-Slug'] = fromAuth || getSubdomain()
     }
@@ -153,6 +166,9 @@ export function formatRailsError(err: unknown, fallback = 'Error en la petición
       const slug = (d as { error?: string }).error
       const msg = (d as { message?: string }).message
       if (typeof msg === 'string' && msg.trim()) return msg
+      if (err.response?.status === 401) {
+        return msg || 'Correo o contraseña incorrectos. Verifica tus credenciales.'
+      }
       if (slug === 'tenant_not_found' || slug === 'tenant_missing' || slug === 'tenant_inactive') {
         return msg || 'No se pudo identificar la empresa. Revisa el identificador o contacta al administrador.'
       }

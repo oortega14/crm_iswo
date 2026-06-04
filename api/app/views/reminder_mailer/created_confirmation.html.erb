@@ -1,0 +1,8 @@
+<h2 style="margin-top:0;">Hola <%= @user.name.presence || @user.email %>,</h2>
+
+<%= render "reminder_context",
+           intro: "Registramos tu recordatorio en el CRM:" %>
+
+<p style="margin-top:24px;">
+  Te avisaremos de nuevo cuando esté por vencer y al momento de la fecha programada.
+</p>

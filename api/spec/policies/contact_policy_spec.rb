@@ -21,6 +21,47 @@ RSpec.describe ContactPolicy do
     end
   end
 
+  describe "show?" do
+    it "admin, manager y viewer pueden ver cualquier contacto" do
+      [admin, manager, viewer].each do |u|
+        expect(described_class.new(u, foreign_contact).show?).to be(true)
+      end
+    end
+
+    it "consultant puede ver contacto propio o con opp asignada" do
+      expect(described_class.new(consultant, own_contact).show?).to be(true)
+
+      pipeline = create(:pipeline_with_stages, tenant: tenant)
+      shared = create(:contact, tenant: tenant)
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: pipeline.pipeline_stages.first,
+             contact: shared,
+             owner_user: consultant)
+      expect(described_class.new(consultant, shared).show?).to be(true)
+    end
+
+    it "consultant NO puede ver contacto ajeno sin opp" do
+      expect(described_class.new(consultant, foreign_contact).show?).to be(false)
+    end
+
+    it "consultant no ve contacto de otro consultor aunque sea referido" do
+      referred = create(:user, :consultant, tenant: tenant)
+      create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
+      pipeline = create(:pipeline_with_stages, tenant: tenant)
+      network_contact = create(:contact, tenant: tenant, owner_user: referred)
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: pipeline.pipeline_stages.first,
+             contact: network_contact,
+             owner_user: referred)
+
+      expect(described_class.new(consultant, network_contact).show?).to be(false)
+    end
+  end
+
   describe "create?" do
     it "admin, manager, consultant pueden crear" do
       [admin, manager, consultant].each do |u|

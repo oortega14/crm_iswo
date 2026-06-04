@@ -18,11 +18,11 @@ module Api
 
       def create
         authorize LeadSource
-        record = current_tenant.lead_sources.new(permitted)
-        if record.save
-          render_created(record, with: LeadSourceSerializer)
+        @lead_source = current_tenant.lead_sources.new(permitted)
+        if @lead_source.save
+          render_created(@lead_source, with: LeadSourceSerializer)
         else
-          render_unprocessable(record)
+          render_unprocessable(@lead_source)
         end
       end
 
@@ -48,7 +48,7 @@ module Api
       end
 
       def permitted
-        params.require(:lead_source).permit(:name, :kind, :active, metadata: {})
+        params.require(:lead_source).permit(:name, :kind, :active)
       end
     end
   end

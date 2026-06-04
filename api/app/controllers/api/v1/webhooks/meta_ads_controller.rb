@@ -27,7 +27,7 @@ module Api
 
         # GET /api/v1/webhooks/meta (hub verify)
         def verify
-          if params["hub.verify_token"] == ENV["META_VERIFY_TOKEN"]
+          if ActiveSupport::SecurityUtils.secure_compare(params["hub.verify_token"].to_s, ENV["META_VERIFY_TOKEN"].to_s)
             render plain: params["hub.challenge"], status: :ok
           else
             head :forbidden
@@ -60,6 +60,7 @@ module Api
         # dejamos pasar (útil en dev). En prod DEBE estar seteado.
         def verify_signature!
           secret = ENV["META_APP_SECRET"].to_s
+          return head :forbidden if secret.blank? && Rails.env.production?
           return if secret.blank?
 
           signature = request.headers["X-Hub-Signature-256"].to_s

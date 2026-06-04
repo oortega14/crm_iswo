@@ -17,6 +17,12 @@
       queue: critical
       description: Dispara recordatorios vencidos (SLA ≤ 5 min)
 
+    reminder_upcoming_notification_job:
+      cron: "* * * * *"              # cada minuto
+      class: ReminderUpcomingNotificationJob
+      queue: critical
+      description: Aviso previo por correo/in-app antes de remind_at
+
     ad_sync_job:
       cron: "*/15 * * * *"           # cada 15 min
       class: AdSyncJob
@@ -34,6 +40,12 @@
       class: RefreshDuplicateCacheJob
       queue: low
       description: Reconstruye índices de phone_normalized
+
+    daily_briefing_job:
+      cron: "0 7 * * 1-5"            # 07:00 AM lunes–viernes
+      class: DailyBriefingJob
+      queue: low
+      description: Envía resumen diario (leads calientes, recordatorios, KPIs) a cada usuario
 
 production:
   :concurrency: 25

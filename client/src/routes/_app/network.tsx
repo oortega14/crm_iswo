@@ -11,12 +11,13 @@ import {
   Plus,
   Trash2,
   ArrowRight,
+  PowerOff,
+  Power,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
@@ -44,7 +45,22 @@ import {
 import { cn } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import {
+  createReferralEdge,
+  deleteReferralEdge,
+  fetchReferralNetworkList,
+  fetchReferralTree,
+  referralNetworkErrorMessage,
+  setReferralEdgeActive,
+  type ReferralTreePayload,
+  type ReferralTreeUser,
+} from '@/lib/referralNetworkApi'
+import {
+  getAuthQueryScope,
+  invalidateReferralNetworkQueries,
+  queryKeys,
+} from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
 import { useAuthStore, useTenant } from '@/stores/auth'
 import { toast } from 'sonner'
 import { AppPageShell } from '@/components/layout/AppPageShell'
@@ -53,32 +69,6 @@ import { PageHeader } from '@/components/layout/PageHeader'
 export const Route = createFileRoute('/_app/network')({
   component: NetworkPage,
 })
-
-type ReferralTreeUser = {
-  id: number
-  name: string
-  role: string
-  active: boolean
-}
-
-type ReferralTreeEdge = {
-  referrer_id: number
-  referred_id: number
-  depth: number
-  referred: ReferralTreeUser | null
-}
-
-type ReferralTreePayload = {
-  root: ReferralTreeUser | null
-  edges: ReferralTreeEdge[]
-}
-
-type ReferralEdgeRecord = {
-  id: string
-  depth: number
-  referrer: { id: number; name: string; email: string } | null
-  referred: { id: number; name: string; email: string } | null
-}
 
 interface ConsultantNode {
   id: string
@@ -246,13 +236,15 @@ function uniqueEdges(nodes: ConsultantNode[]): Array<{ a: ConsultantNode; b: Con
 function NetworkPage() {
   const currentUser = useAuthStore((s) => s.user)
   const tenant      = useTenant()
+  const authScope = getAuthQueryScope()
+  const hasNetworkModule = tenantHasModule(tenant, 'network')
   const qc = useQueryClient()
   const canPickRoot = currentUser?.role === 'admin' || currentUser?.role === 'manager'
   const canCreate   = canPickRoot
   const canDelete   = currentUser?.role === 'admin'
   const isConsultant = currentUser?.role === 'consultant'
 
-  // RFC F2: profundidad de visibilidad del tenant (default 3)
+  // RFC F2: profundidad del árbol de referidos (default 3); no amplía el pipeline CRM
   const networkDepth: number = (tenant?.settings?.network_depth as number | undefined) ?? 3
 
   const [searchTerm, setSearchTerm]     = useState('')
@@ -267,7 +259,7 @@ function NetworkPage() {
 
   // Lista de usuarios para el picker (admin/manager)
   const { data: staffUsers } = useQuery({
-    enabled: !!canPickRoot,
+    enabled: Boolean(authScope) && canPickRoot && hasNetworkModule,
     queryKey: queryKeys.users.list({ q: '', forReferralPicker: true }),
     queryFn: async () => {
       const response = await api.get('/users', { params: { items: 500 } })
@@ -285,34 +277,19 @@ function NetworkPage() {
     error: treeQueryError,
     refetch,
   } = useQuery({
-    queryKey: queryKeys.referralNetworks.tree(rootUserId, treeDepth),
-    queryFn: async (): Promise<ReferralTreePayload> => {
-      const response = rootUserId
-        ? await api.get('/referral_networks/tree', { params: { root_user_id: rootUserId, depth: treeDepth } })
-        : await api.get('/referral_networks/my_network')
-      const data = response.data?.data as ReferralTreePayload | undefined
-      if (!data) throw new Error('Respuesta sin datos de red')
-      return data
-    },
+    queryKey: queryKeys.referralNetworks.tree(authScope, rootUserId, treeDepth),
+    queryFn: () => fetchReferralTree({ rootUserId, depth: treeDepth }),
+    enabled: Boolean(authScope) && hasNetworkModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   // Listado plano de aristas para obtener IDs (necesarios para eliminar)
   const { data: edgeList } = useQuery({
-    enabled: canDelete,
-    queryKey: queryKeys.referralNetworks.list,
-    queryFn: async (): Promise<ReferralEdgeRecord[]> => {
-      const response = await api.get('/referral_networks')
-      const rows = jsonApiPrimaryList(response.data)
-      return rows.map((r) => {
-        const attrs = r.attributes as { depth?: number; referrer?: ReferralEdgeRecord['referrer']; referred?: ReferralEdgeRecord['referred'] } | undefined
-        return {
-          id: r.id,
-          depth: attrs?.depth ?? 1,
-          referrer: attrs?.referrer ?? null,
-          referred: attrs?.referred ?? null,
-        }
-      })
-    },
+    enabled: Boolean(authScope) && canDelete && hasNetworkModule,
+    queryKey: queryKeys.referralNetworks.list(authScope),
+    queryFn: fetchReferralNetworkList,
+    staleTime: 0,
   })
 
   // Mapa pair → edge_id para saber qué borrar
@@ -340,13 +317,11 @@ function NetworkPage() {
 
   // Crear relación
   const createMutation = useMutation({
-    mutationFn: async ({ referrerId, referredId }: { referrerId: string; referredId: string }) =>
-      api.post('/referral_networks', {
-        referral_network: { referrer_user_id: referrerId, referred_user_id: referredId, depth: 1 },
-      }),
+    mutationFn: ({ referrerId, referredId }: { referrerId: string; referredId: string }) =>
+      createReferralEdge(referrerId, referredId),
     onSuccess: () => {
       toast.success('Relación de referido creada')
-      void qc.invalidateQueries({ queryKey: ['referralNetworks'] })
+      void invalidateReferralNetworkQueries(qc)
       setAddOpen(false)
       setAddReferrer('')
       setAddReferred('')
@@ -356,14 +331,25 @@ function NetworkPage() {
 
   // Eliminar relación
   const deleteMutation = useMutation({
-    mutationFn: async (edgeId: string) => api.delete(`/referral_networks/${edgeId}`),
+    mutationFn: deleteReferralEdge,
     onSuccess: () => {
       toast.success('Relación eliminada')
-      void qc.invalidateQueries({ queryKey: ['referralNetworks'] })
+      void invalidateReferralNetworkQueries(qc)
       setDeleteEdge(null)
       setSelectedNode(null)
     },
     onError: (err) => toast.error(formatRailsError(err, 'No se pudo eliminar la relación')),
+  })
+
+  // Activar / desactivar relación
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ edgeId, active }: { edgeId: string; active: boolean }) =>
+      setReferralEdgeActive(edgeId, active),
+    onSuccess: (_, { active }) => {
+      toast.success(active ? 'Conexión activada' : 'Conexión desactivada')
+      void invalidateReferralNetworkQueries(qc)
+    },
+    onError: (err) => toast.error(formatRailsError(err, 'No se pudo actualizar la conexión')),
   })
 
   const graphNodes = useMemo(() => {
@@ -391,10 +377,21 @@ function NetworkPage() {
 
   useEffect(() => {
     if (!treeError || !treeQueryError) return
-    toast.error(formatRailsError(treeQueryError, 'No se pudo cargar la red de referidos'))
+    toast.error(referralNetworkErrorMessage(treeQueryError))
   }, [treeError, treeQueryError])
 
   const isLoading = treeLoading
+
+  if (!hasNetworkModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Red de referidos"
+          description="El módulo de red de referidos no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
 
   return (
     <AppPageShell contentClassName="gap-6">
@@ -467,17 +464,17 @@ function NetworkPage() {
                 <NetworkIcon className="h-4 w-4 text-indigo-600" />
               </div>
               <div>
-                <p className="text-sm font-medium">Visibilidad de oportunidades (RFC F2)</p>
-                {isConsultant ? (
-                  <p className="text-xs text-muted-foreground">
-                    Ves las oportunidades de tu red hasta <strong>{networkDepth} niveles</strong> de profundidad
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Los consultores ven oportunidades de su red hasta <strong>{networkDepth} niveles</strong>.
-                    {canDelete && ' Ajusta la profundidad para todos los consultores del tenant.'}
-                  </p>
-                )}
+                <p className="text-sm font-medium">Profundidad del árbol (RFC F2)</p>
+                <p className="text-xs text-muted-foreground">
+                  {isConsultant
+                    ? 'En Oportunidades solo ves tus leads. Aquí el árbol muestra hasta '
+                    : 'Los consultores solo ven sus oportunidades en el pipeline. El árbol muestra hasta '}
+                  <strong>
+                    {networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}
+                  </strong>{' '}
+                  de referidos{networkDepth === 0 ? ' (solo tú en el árbol)' : ''}.
+                  {canDelete && !isConsultant && ' Ajusta la profundidad para todo el tenant.'}
+                </p>
               </div>
             </div>
             {canDelete && (
@@ -492,7 +489,7 @@ function NetworkPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4, 5, 7, 10].map((d) => (
+                    {[0, 1, 2, 3, 4, 5, 7, 10].map((d) => (
                       <SelectItem key={d} value={String(d)}>{d} nivel{d !== 1 ? 'es' : ''}</SelectItem>
                     ))}
                   </SelectContent>
@@ -565,7 +562,7 @@ function NetworkPage() {
             ) : treeError ? (
               <div className="h-[240px] flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <p className="text-sm text-destructive">
-                  {formatRailsError(treeQueryError, 'Error al cargar la red')}
+                  {referralNetworkErrorMessage(treeQueryError)}
                 </p>
                 <Button variant="outline" size="sm" onClick={() => void refetch()}>Reintentar</Button>
               </div>
@@ -682,27 +679,15 @@ function NetworkPage() {
           <CardContent>
             {selectedNode ? (
               <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarFallback className={cn('text-white text-sm', {
-                      'bg-indigo-500': selectedNode.role === 'admin',
-                      'bg-violet-500': selectedNode.role === 'manager',
-                      'bg-sky-500':    selectedNode.role === 'consultant',
-                      'bg-slate-400':  !['admin','manager','consultant'].includes(selectedNode.role),
-                    })}>
-                      {initialsFromName(selectedNode.name || selectedNode.id)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <h3 className="font-medium text-sm truncate">{selectedNode.name || `Usuario ${selectedNode.id}`}</h3>
-                    <div className="flex gap-1 mt-0.5 flex-wrap">
-                      <Badge variant={roleBadgeVariant(selectedNode.role)} className="text-xs">
-                        {selectedNode.role || 'sin rol'}
-                      </Badge>
-                      {!selectedNode.active && (
-                        <Badge variant="destructive" className="text-xs">Inactivo</Badge>
-                      )}
-                    </div>
+                <div className="min-w-0">
+                  <h3 className="font-medium text-sm truncate">{selectedNode.name || `Usuario ${selectedNode.id}`}</h3>
+                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                    <Badge variant={roleBadgeVariant(selectedNode.role)} className="text-xs">
+                      {selectedNode.role || 'sin rol'}
+                    </Badge>
+                    {!selectedNode.active && (
+                      <Badge variant="destructive" className="text-xs">Inactivo</Badge>
+                    )}
                   </div>
                 </div>
 
@@ -716,6 +701,8 @@ function NetworkPage() {
                       if (!other) return null
                       const edgeId = edgeIdByPair.get(`${selectedNode.id}_${connId}`)
                         || edgeIdByPair.get(`${connId}_${selectedNode.id}`)
+                      const edge = edgeId ? edgeList?.find((e) => e.id === edgeId) : undefined
+                      const isActive = edge?.active ?? true
                       return (
                         <div
                           key={connId}
@@ -727,16 +714,34 @@ function NetworkPage() {
                             onClick={() => setSelectedNode(other)}
                           >
                             <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                            <span className="text-sm truncate">{other.name || `Usuario ${other.id}`}</span>
+                            <span className={cn('text-sm truncate', !isActive && 'text-muted-foreground line-through')}>
+                              {other.name || `Usuario ${other.id}`}
+                            </span>
+                            {!isActive && (
+                              <span className="text-[10px] text-muted-foreground shrink-0">(inactiva)</span>
+                            )}
                           </button>
                           {canDelete && edgeId && (
-                            <button
-                              type="button"
-                              className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
-                              onClick={() => setDeleteEdge({ id: edgeId, name: other.name || other.id })}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                title={isActive ? 'Desactivar conexión' : 'Activar conexión'}
+                                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                                onClick={() => toggleActiveMutation.mutate({ edgeId, active: !isActive })}
+                              >
+                                {isActive
+                                  ? <PowerOff className="h-3.5 w-3.5" />
+                                  : <Power className="h-3.5 w-3.5 text-emerald-600" />
+                                }
+                              </button>
+                              <button
+                                type="button"
+                                className="opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive/80 transition-opacity"
+                                onClick={() => setDeleteEdge({ id: edgeId, name: other.name || other.id })}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </>
                           )}
                         </div>
                       )

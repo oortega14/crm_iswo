@@ -13,7 +13,13 @@ class ReferralNetworkPolicy < ApplicationPolicy
   def create?     = manager_or_admin?
   def update?     = manager_or_admin?
   def destroy?    = admin?
-  def tree?       = staff?
+  def tree?(root_user_id = nil)
+    return false unless staff?
+
+    rid = (root_user_id || user&.id).to_i
+    manager_or_admin? || viewer? || rid == user.id
+  end
+
   def my_network? = staff?
 
   class Scope < ApplicationPolicy::Scope

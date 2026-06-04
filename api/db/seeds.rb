@@ -8,7 +8,8 @@
 #   - Mi Casita  → crédito de vivienda e inmobiliaria
 #   - Libranzas  → crédito por descuento de nómina
 #
-# Idempotente: usa find_or_create_by! en todo, seguro correrlo varias veces.
+# Idempotente: tenants, usuarios, pipelines (sin landings de plantilla en F5 ni contactos/opps demo).
+# Leads demo (5 por tenant): bundle exec rails leads:demo_pack  — o SEED_DEMO_LEADS=1 db:seed
 # ============================================================================
 
 puts "\n=== Seeds F5 — CRM ISWO ===\n\n"
@@ -51,10 +52,11 @@ VERTICALS = [
     stages: [
       { name: "Prospecto",          position: 0, probability: 10,  color: "#94A3B8" },
       { name: "Diagnóstico",        position: 1, probability: 25,  color: "#60A5FA" },
-      { name: "Propuesta Enviada",  position: 2, probability: 45,  color: "#818CF8" },
-      { name: "Negociación",        position: 3, probability: 70,  color: "#F59E0B" },
-      { name: "Contrato Firmado",   position: 4, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Perdida",            position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",         position: 2, probability: 40,  color: "#22C55E" },
+      { name: "Propuesta Enviada",  position: 3, probability: 55,  color: "#818CF8" },
+      { name: "Negociación",        position: 4, probability: 70,  color: "#F59E0B" },
+      { name: "Contrato Firmado",   position: 5, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Perdida",            position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "web",      name: "Sitio Web ISWO" },
@@ -68,12 +70,8 @@ VERTICALS = [
       { name: "Admin ISWO",       email: "admin@iswo.local",      role: "admin",      password: "Password123!" },
       { name: "Gerente Comercial", email: "gerente@iswo.local",   role: "manager",    password: "Password123!" },
       { name: "Laura Ríos",        email: "laura@iswo.local",     role: "consultant", password: "Password123!" },
-      { name: "Carlos Mejía",      email: "carlos@iswo.local",    role: "consultant", password: "Password123!" }
-    ],
-    demo_contacts: [
-      { first_name: "Marcela",  last_name: "Torres",   email: "marcela@ejemplo.co",  phone_e164: "+573001234001", company_name: "Constructora Omega" },
-      { first_name: "Ricardo",  last_name: "Patiño",   email: "ricardo@ejemplo.co",  phone_e164: "+573001234002", company_name: "Clínica San Rafael" },
-      { first_name: "Valentina",last_name: "Herrera",  email: "valentina@ejemplo.co",phone_e164: "+573001234003", company_name: "Alimentos del Valle" }
+      { name: "Carlos Mejía",      email: "carlos@iswo.local",    role: "consultant", password: "Password123!" },
+      { name: "Observador ISWO",   email: "viewer@iswo.local",    role: "viewer",     password: "Password123!" }
     ]
   },
 
@@ -114,11 +112,12 @@ VERTICALS = [
     stages: [
       { name: "Interesado",            position: 0, probability: 10,  color: "#94A3B8" },
       { name: "Visita Agendada",       position: 1, probability: 25,  color: "#60A5FA" },
-      { name: "Visita Realizada",      position: 2, probability: 40,  color: "#818CF8" },
-      { name: "Oferta Presentada",     position: 3, probability: 60,  color: "#F59E0B" },
-      { name: "En Proceso Escritura",  position: 4, probability: 85,  color: "#F97316" },
-      { name: "Escriturado",           position: 5, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Perdida",               position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",            position: 2, probability: 40,  color: "#22C55E" },
+      { name: "Visita Realizada",      position: 3, probability: 55,  color: "#818CF8" },
+      { name: "Oferta Presentada",     position: 4, probability: 70,  color: "#F59E0B" },
+      { name: "En Proceso Escritura",  position: 5, probability: 85,  color: "#F97316" },
+      { name: "Escriturado",           position: 6, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Perdida",               position: 7, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "web",      name: "Sitio Web Mi Casita" },
@@ -135,11 +134,6 @@ VERTICALS = [
       { name: "Andrés Morales",     email: "andres@micasita.local",   role: "consultant", password: "Password123!" },
       { name: "Diana Castillo",     email: "diana@micasita.local",    role: "consultant", password: "Password123!" },
       { name: "Felipe Guzmán",      email: "felipe@micasita.local",   role: "consultant", password: "Password123!" }
-    ],
-    demo_contacts: [
-      { first_name: "Jorge",    last_name: "Salcedo",   email: "jorge@ejemplo.co",   phone_e164: "+573101234001", company_name: nil, document_id: "12345678" },
-      { first_name: "Patricia", last_name: "Villamizar",email: "patricia@ejemplo.co",phone_e164: "+573101234002", company_name: nil, document_id: "87654321" },
-      { first_name: "Sergio",   last_name: "Córdoba",   email: "sergio@ejemplo.co",  phone_e164: "+573101234003", company_name: nil, document_id: "11223344" }
     ]
   },
 
@@ -180,10 +174,11 @@ VERTICALS = [
     stages: [
       { name: "Solicitud Recibida",     position: 0, probability: 15,  color: "#94A3B8" },
       { name: "Documentación",          position: 1, probability: 30,  color: "#60A5FA" },
-      { name: "Estudio de Crédito",     position: 2, probability: 50,  color: "#818CF8" },
-      { name: "Aprobado",               position: 3, probability: 80,  color: "#F59E0B" },
-      { name: "Desembolsado",           position: 4, probability: 100, color: "#16A34A", closed_won:  true },
-      { name: "Rechazado / Perdido",    position: 5, probability: 0,   color: "#DC2626", closed_lost: true }
+      { name: "Calificada",             position: 2, probability: 45,  color: "#22C55E" },
+      { name: "Estudio de Crédito",     position: 3, probability: 60,  color: "#818CF8" },
+      { name: "Aprobado",               position: 4, probability: 80,  color: "#F59E0B" },
+      { name: "Desembolsado",           position: 5, probability: 100, color: "#16A34A", closed_won:  true },
+      { name: "Rechazado / Perdido",    position: 6, probability: 0,   color: "#DC2626", closed_lost: true }
     ],
     lead_sources: [
       { kind: "whatsapp", name: "WhatsApp" },
@@ -199,11 +194,6 @@ VERTICALS = [
       { name: "María Forero",        email: "maria@libranzas.local",    role: "consultant", password: "Password123!" },
       { name: "Luis Pedraza",        email: "luis@libranzas.local",     role: "consultant", password: "Password123!" },
       { name: "Sandra Ospina",       email: "sandra@libranzas.local",   role: "consultant", password: "Password123!" }
-    ],
-    demo_contacts: [
-      { first_name: "Hernando", last_name: "Roa",      email: "hernando@ejemplo.co", phone_e164: "+573201234001", company_name: "Empresa Pública Departamental", document_id: "55667788" },
-      { first_name: "Carmen",   last_name: "Duarte",   email: "carmen@ejemplo.co",   phone_e164: "+573201234002", company_name: "Hospital Universitario",         document_id: "99887766" },
-      { first_name: "Nelson",   last_name: "Jiménez",  email: "nelson@ejemplo.co",   phone_e164: "+573201234003", company_name: "Ministerio de Educación",        document_id: "44332211" }
     ]
   }
 ].freeze
@@ -287,70 +277,16 @@ def seed_users(tenant, users_config)
   end
 end
 
-def seed_demo_contacts(tenant, contacts_config, owner_user)
-  contacts_config.map do |c|
-    contact = Contact.find_or_initialize_by(tenant: tenant, email: c[:email])
-    contact.assign_attributes(
-      first_name:   c[:first_name],
-      last_name:    c[:last_name],
-      phone_e164:   c[:phone_e164],
-      company_name: c[:company_name],
-      document_id:  c[:document_id],
-      kind:         "person",
-      owner_user:   owner_user
-    )
-    contact.save!
-    contact
+def seed_field_definitions(tenant)
+  fields = Tenants::Onboarder::VERTICAL_FIELDS[tenant.slug] || []
+  return if fields.empty?
+
+  fields.each do |attrs|
+    TenantFieldDefinition.find_or_initialize_by(tenant: tenant, key: attrs[:key]).tap do |d|
+      d.assign_attributes(attrs.except(:key))
+      d.save!
+    end
   end
-end
-
-def seed_duplicate_flags(tenant, contacts, pipeline, admin_user)
-  # Ya existe al menos un flag pendiente → idempotente, nada que hacer
-  return if DuplicateFlag.where(tenant: tenant, resolution: "pending").exists?
-
-  stage = pipeline.pipeline_stages.order(:position).first
-  return unless stage
-
-  # Encuentra el contacto con exactamente 1 opp abierta para crear la segunda
-  contact = contacts.find do |c|
-    Opportunity.where(tenant: tenant, contact: c)
-               .where.not(status: %w[won lost merged])
-               .count == 1
-  end
-  return unless contact
-
-  existing_opp = Opportunity.where(tenant: tenant, contact: contact)
-                             .where.not(status: %w[won lost merged])
-                             .first
-  return unless existing_opp
-
-  title = "Duplicado de #{contact.first_name} (demo)"
-  duplicate_opp = Opportunity.find_or_initialize_by(tenant: tenant, contact: contact, title: title)
-  unless duplicate_opp.persisted?
-    duplicate_opp.assign_attributes(
-      pipeline:        pipeline,
-      pipeline_stage:  stage,
-      owner_user:      admin_user,
-      status:          "new_lead",
-      estimated_value: existing_opp.estimated_value,
-      currency:        tenant.currency
-    )
-    duplicate_opp.save!
-  end
-
-  return if duplicate_opp.id == existing_opp.id
-
-  DuplicateFlag.find_or_create_by!(
-    tenant:                   tenant,
-    opportunity:              duplicate_opp,
-    duplicate_of_opportunity: existing_opp
-  ) do |f|
-    f.detected_by_user = admin_user
-    f.matched_on       = contact.phone_e164.present? ? "phone" : "email"
-    f.match_score      = 1.0
-  end
-rescue ActiveRecord::RecordInvalid => e
-  puts "     [duplicados] skip: #{e.message}"
 end
 
 def seed_referral_networks(tenant, users)
@@ -369,62 +305,37 @@ def seed_referral_networks(tenant, users)
     end
   end
 
-  # Distribuir consultores: mitad referidos por manager/admin, mitad entre sí
+  # RFC §6.3: cada consultor cuelga del manager/admin (no en cadena entre pares).
+  # Así un consultor solo ve sus opps + las de referidos directos/indirectos que él refirió.
   parent = manager || admin
-  consultants.each_with_index do |c, i|
-    referrer = i.zero? ? parent : consultants[i - 1]
-    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: referrer, referred_user: c) do |rn|
-      rn.depth = 1; rn.active = true
+  consultant_ids = consultants.map(&:id)
+  consultants.each do |c|
+    ReferralNetwork.where(tenant: tenant, referred_user: c, referrer_user_id: consultant_ids - [c.id]).delete_all
+    ReferralNetwork.find_or_create_by!(tenant: tenant, referrer_user: parent, referred_user: c) do |rn|
+      rn.depth = 1
+      rn.active = true
     end
   end
+
 rescue ActiveRecord::RecordInvalid => e
   puts "     [referral] skip: #{e.message}"
 end
 
-def seed_demo_opportunities(tenant, contacts, pipeline, owner_user)
-  stage_list = pipeline.pipeline_stages.order(:position).to_a
-  won_stage  = stage_list.find(&:closed_won)
-  open_stage = stage_list.reject { |s| s.closed_won || s.closed_lost }
-
-  configs = [
-    { status: "won",      stage: won_stage  || stage_list.last, value: 8_000_000,  bant: 82, closed: true,  days_ago: 5  },
-    { status: "proposal", stage: open_stage[2] || stage_list[2], value: 3_500_000, bant: 65, closed: false, days_ago: 2  },
-    { status: "new_lead", stage: open_stage[0] || stage_list[0], value: 1_200_000, bant: 40, closed: false, days_ago: 0  },
-  ]
-
-  contacts.each_with_index do |contact, i|
-    cfg   = configs[i] || configs.last
-    stage = cfg[:stage] || stage_list.first
-    opp   = Opportunity.find_or_initialize_by(tenant: tenant, contact: contact, title: "Oportunidad #{contact.first_name}")
-    opp.assign_attributes(
-      pipeline:          pipeline,
-      pipeline_stage:    stage,
-      owner_user:        owner_user,
-      status:            cfg[:status],
-      estimated_value:   cfg[:value],
-      bant_score:        cfg[:bant],
-      last_activity_at:  cfg[:days_ago].days.ago,
-      closed_at:         cfg[:closed] ? cfg[:days_ago].days.ago : nil
-    )
-    opp.save!
-
-    # Log de creación para que aparezca en el activity feed de hoy
-    if cfg[:days_ago] == 0
-      OpportunityLog.find_or_create_by(
-        tenant:      tenant,
-        opportunity: opp,
-        action:      "create",
-        user:        owner_user
-      ) do |log|
-        log.changes_data = { title: opp.title, pipeline_stage_id: stage.id }
-        log.ip_address   = "127.0.0.1"
-      end
-    end
-  end
+def seed_landing_pages(tenant)
+  Landings::TenantSetup.apply!(tenant)
 end
 
 # ---------------------------------------------------------------------------
-# Ejecución
+# Tenant plataforma — super-admin (onboarding de otros tenants)
+# ---------------------------------------------------------------------------
+
+puts "\n[Super Admin — tenant plataforma]"
+platform = Tenants::PlatformSeeder.call!
+puts "  → #{platform.tenant.name} (#{platform.tenant.slug}) — #{platform.created ? 'creado' : 'ya existía'}"
+puts "     admin: #{platform.admin_user.email}"
+
+# ---------------------------------------------------------------------------
+# Ejecución verticales F5
 # ---------------------------------------------------------------------------
 
 VERTICALS.each do |config|
@@ -445,20 +356,31 @@ VERTICALS.each do |config|
     users = seed_users(tenant, config[:users])
     puts "     #{users.size} usuarios (#{config[:users].map { |u| u[:role] }.join(', ')})"
 
-    # Usar el primer consultant como propietario del demo; si no hay, usar el admin
-    demo_owner = users.find { |u| u.role == "consultant" } || users.first
-
-    contacts = seed_demo_contacts(tenant, config[:demo_contacts], demo_owner)
-    puts "     #{contacts.size} contactos de demo"
-
-    seed_demo_opportunities(tenant, contacts, pipeline, demo_owner)
-    puts "     #{contacts.size} oportunidades de demo"
-
-    seed_duplicate_flags(tenant, contacts, pipeline, users.find { |u| u.role == 'admin' } || users.first)
-    puts "     #{DuplicateFlag.where(tenant: tenant).count} flag(s) de duplicados de demo"
+    seed_field_definitions(tenant)
+    puts "     #{TenantFieldDefinition.where(tenant: tenant).count} campos personalizados (vertical)"
 
     seed_referral_networks(tenant, users)
     puts "     Red de referidos sembrada (#{ReferralNetwork.where(tenant: tenant).count} relaciones)"
+
+    seed_landing_pages(tenant)
+    lp_count = LandingPage.where(tenant: tenant).count
+    puts "     #{lp_count} landing pages (módulo activo; F5 sin plantillas precargadas)"
+
+  end
+end
+
+# Quita plantillas de producto en verticales F5; no recrea landings en iswo/micasita/libranzas
+puts "\n[Landings — verticales F5 sin plantillas]"
+ActsAsTenant.without_tenant do
+  Landings::TenantSetup::VERTICAL_SEED_SLUGS.each do |slug|
+    tenant = Tenant.find_by(slug: slug)
+    next unless tenant
+
+    ActsAsTenant.with_tenant(tenant) do
+      Landings::TenantSetup.apply!(tenant)
+      n = LandingPage.where(tenant: tenant).count
+      puts "  → #{slug}: #{n} landing(s)"
+    end
   end
 end
 
@@ -475,9 +397,44 @@ ActsAsTenant.without_tenant do
   puts "Lead sources:  #{LeadSource.count}"
   puts "Contactos:     #{Contact.count}"
   puts "Oportunidades: #{Opportunity.count}"
+  puts "Recordatorios: #{Reminder.count}"
+  puts "Actividad:     #{OpportunityLog.count} logs"
+  puts "Landings:      #{LandingPage.count} (#{LandingPage.where(published: true).count} publicadas)"
+
+  demo_pattern = "%@leads.iswo.test"
+  puts "\nPor tenant (F5):"
+  %w[iswo micasita libranzas].each do |slug|
+    tenant = Tenant.find_by(slug: slug)
+    next unless tenant
+
+    ActsAsTenant.with_tenant(tenant) do
+      demo_n = Contact.kept.where("email LIKE ?", demo_pattern).count
+      opp_n  = Opportunity.kept.count
+      puts "  #{slug}: #{opp_n} oportunidades, #{demo_n} contactos demo"
+    end
+  end
 end
+
+if ENV["SEED_DEMO_LEADS"].to_s.match?(/\A(1|true|yes)\z/i)
+  puts "\n[SEED_DEMO_LEADS] Cargando pack de 5 leads por tenant F5..."
+  Leads::DemoPack.run!(tenant_slugs: %w[iswo micasita libranzas])
+else
+  demo_any = ActsAsTenant.without_tenant do
+    Contact.kept.where("email LIKE ?", "%@leads.iswo.test").exists?
+  end
+  unless demo_any
+    puts "\n--- Leads de demostración (no incluidos en db:seed) ---"
+    puts "  cd api && TENANTS=iswo bundle exec rails leads:demo_pack"
+    puts "  # o los 3 tenants: bundle exec rails leads:demo_full"
+    puts "  # verificar:        bundle exec rails leads:status"
+    puts "  # opcional en seed: SEED_DEMO_LEADS=1 bundle exec rails db:seed"
+  end
+end
+
 puts "\nCredenciales de prueba (password: Password123!):"
-puts "  admin@iswo.local       → ISWO"
+puts "  admin@super-admin.local → Super Admin (onboarding de tenants)"
+puts "  admin@iswo.local       → ISWO (vertical consultoría ISO)"
 puts "  admin@micasita.local   → Mi Casita"
 puts "  admin@libranzas.local  → Libranzas"
+puts "  laura@iswo.local       → consultor ISWO (solo sus leads asignados)"
 puts "Listo.\n"

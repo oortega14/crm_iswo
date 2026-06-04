@@ -7,7 +7,7 @@ RSpec.describe LandingPage, type: :model do
   subject { build(:landing_page, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to have_many(:landing_form_submissions).dependent(:destroy) }
   end
 
@@ -29,8 +29,8 @@ RSpec.describe LandingPage, type: :model do
     end
 
     it "permite mismo slug en tenants distintos", :without_tenant do
-      t1 = create(:tenant, slug: "t1")
-      t2 = create(:tenant, slug: "t2")
+      t1 = create(:tenant, slug: "tenant-uno")
+      t2 = create(:tenant, slug: "tenant-dos")
       ActsAsTenant.with_tenant(t1) { create(:landing_page, tenant: t1, slug: "oferta") }
       ActsAsTenant.with_tenant(t2) { expect(build(:landing_page, tenant: t2, slug: "oferta")).to be_valid }
     end
@@ -54,6 +54,19 @@ RSpec.describe LandingPage, type: :model do
       page.update!(published: false)
       expect(page.published_at).to be_nil
     end
+
+    it "sanitiza gjs_html y gjs_css al guardar" do
+      page = create(
+        :landing_page,
+        tenant: tenant,
+        content: {
+          "gjs_html" => '<p>Hola</p><script>evil()</script>',
+          "gjs_css"  => "p { color: red; } javascript:evil()"
+        }
+      )
+      expect(page.content["gjs_html"]).not_to include("script")
+      expect(page.content["gjs_css"]).not_to include("javascript:")
+    end
   end
 
   describe "scopes" do
@@ -67,9 +80,24 @@ RSpec.describe LandingPage, type: :model do
   end
 
   describe "#public_url" do
-    it "arma URL con slug del tenant y del landing" do
-      page = build(:landing_page, tenant: tenant, slug: "black-friday")
+    let(:page) { build(:landing_page, tenant: tenant, slug: "black-friday") }
+
+    it "en production usa subdominio crm.iswo.com.co" do
+      allow(Rails.env).to receive(:production?).and_return(true)
       expect(page.public_url).to eq("https://#{tenant.slug}.crm.iswo.com.co/black-friday")
+    end
+
+    it "en development simula subdominio .localhost" do
+      allow(Rails.env).to receive(:production?).and_return(false)
+      expect(page.public_url).to eq("http://#{tenant.slug}.localhost:3001/black-friday")
+    end
+
+    it "respeta LANDING_PUBLIC_HOST si está definido" do
+      original = ENV["LANDING_PUBLIC_HOST"]
+      ENV["LANDING_PUBLIC_HOST"] = "https://landings.test"
+      expect(page.public_url).to eq("https://landings.test/black-friday")
+    ensure
+      ENV["LANDING_PUBLIC_HOST"] = original
     end
   end
 end

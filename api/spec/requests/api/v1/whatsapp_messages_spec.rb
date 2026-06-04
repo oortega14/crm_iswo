@@ -14,8 +14,23 @@ RSpec.describe "Api::V1::WhatsappMessages (oportunidad)", type: :request do
   let(:contact) { create(:contact, tenant: tenant) }
   let(:opportunity) { create(:opportunity, tenant: tenant, contact: contact, owner_user: admin) }
 
+  # El .env de desarrollo puede tener WHATSAPP_PROVIDER=openwa que interfiere
+  # con la selección del adapter. Lo limpiamos para estos tests.
+  around do |example|
+    old_provider = ENV.delete("WHATSAPP_PROVIDER")
+    old_number   = ENV.delete("TWILIO_WHATSAPP_NUMBER")
+    example.run
+  ensure
+    ENV["WHATSAPP_PROVIDER"]      = old_provider if old_provider
+    ENV["TWILIO_WHATSAPP_NUMBER"] = old_number   if old_number
+  end
+
   describe "POST /api/v1/opportunities/:opportunity_id/whatsapp_messages" do
     it "usa el número de la integración Twilio como remitente y acepta el mensaje" do
+      # El controller llama WhatsappDeliveryJob.perform_now (inline).
+      # Lo stubamos para evitar la conexión HTTP real a Twilio bloqueada por WebMock.
+      allow(WhatsappDeliveryJob).to receive(:perform_now)
+
       post "/api/v1/opportunities/#{opportunity.id}/whatsapp_messages",
            params:  { to_number: contact.phone_e164, body: "Hola prueba" }.to_json,
            headers: auth_headers(admin)

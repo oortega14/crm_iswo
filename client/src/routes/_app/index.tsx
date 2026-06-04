@@ -1,32 +1,36 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQueries } from '@tanstack/react-query'
-import {
-  ArrowRight,
-  CalendarDays,
-  LayoutGrid,
-  Plus,
-  TrendingUp,
-} from 'lucide-react'
-import { useState } from 'react'
-import { queryKeys } from '@/lib/queryClient'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp, BarChart2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
+import { tenantHasModule, tenantShowBant } from '@/lib/tenantModules'
 import {
   fetchDashboardActivity,
   fetchDashboardBantDistribution,
+  fetchDashboardBriefing,
   fetchDashboardKpis,
+  fetchDashboardLeadSources,
   fetchDashboardPipeline,
   fetchDashboardTopConsultants,
 } from '@/lib/dashboardApi'
+import { jsonApiPrimaryList, mapPipelineResource } from '@/lib/opportunityApi'
+import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { PipelineFunnel } from '@/components/dashboard/PipelineFunnel'
-import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
-import { BantDistribution } from '@/components/dashboard/BantDistribution'
 import { TopConsultants } from '@/components/dashboard/TopConsultants'
+import { ActivityFeed } from '@/components/dashboard/ActivityFeed'
+import { DailyBriefing } from '@/components/dashboard/DailyBriefing'
+import { RemindersDashboardCard } from '@/components/dashboard/RemindersDashboardCard'
+import { BantDistribution } from '@/components/dashboard/BantDistribution'
+import { LeadSourcesChart } from '@/components/dashboard/LeadSourcesChart'
+import { LeadTemperatureStrip } from '@/components/dashboard/LeadTemperatureStrip'
 import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
 import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton'
-import { DashboardDateLine, DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip'
+import { DashboardDateLine } from '@/components/dashboard/DashboardKpiStrip'
 import { DashboardSection } from '@/components/dashboard/DashboardSection'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/')({
   component: DashboardPage,
@@ -34,50 +38,120 @@ export const Route = createFileRoute('/_app/')({
 
 function DashboardPage() {
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const tenant = useAuthStore((s) => s.tenant)
+  const user = useAuthStore((s) => s.user)
+  const currency = tenant?.currency ?? 'COP'
+  const isManagerOrAbove = user?.role === 'admin' || user?.role === 'manager'
 
-  const [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ] = useQueries({
-    queries: [
-      {
-        queryKey: queryKeys.dashboard.kpis,
-        queryFn: fetchDashboardKpis,
-      },
-      {
-        queryKey: queryKeys.dashboard.pipeline,
-        queryFn: fetchDashboardPipeline,
-      },
-      {
-        queryKey: queryKeys.dashboard.activity,
-        queryFn: fetchDashboardActivity,
-        refetchInterval: 30_000,
-      },
-      {
-        queryKey: queryKeys.dashboard.bantDistribution,
-        queryFn: fetchDashboardBantDistribution,
-      },
-      {
-        queryKey: queryKeys.dashboard.topConsultants,
-        queryFn: fetchDashboardTopConsultants,
-      },
-    ],
+  const { data: pipelines = [], isPending: pipelinesLoading } = useQuery({
+    queryKey: queryKeys.pipelines.all,
+    queryFn: async () => {
+      const response = await api.get('/pipelines')
+      return jsonApiPrimaryList(response.data).filter((r) => r.id).map(mapPipelineResource)
+    },
+    staleTime: 60 * 1000,
   })
 
-  const allPending = [kpisQ, pipelineQ, activityQ, bantQ, consultantsQ].every((q) => q.isPending)
+  const defaultPipeline = pipelines.find((p) => p.is_default) ?? pipelines[0]
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | undefined>(undefined)
 
-  const totalInPipeline = kpisQ.data?.total_in_pipeline ?? 0
-  const pipelineValue   = kpisQ.data?.pipeline_value    ?? 0
-  const monthClosedValue = kpisQ.data?.month_closed_value ?? 0
-  const bantAverage      = kpisQ.data?.bant_average      ?? null
+  useEffect(() => {
+    if (!selectedPipelineId && defaultPipeline?.id) {
+      setSelectedPipelineId(defaultPipeline.id)
+    }
+  }, [defaultPipeline?.id, selectedPipelineId])
 
-  if (allPending) {
-    return <DashboardSkeleton />
-  }
+  const activePipelineId = selectedPipelineId ?? defaultPipeline?.id
+  const pipelineFilterKey = activePipelineId ?? 'all'
+  const authScope = getAuthQueryScope()
+
+  const hasOpportunities = tenantHasModule(tenant, 'opportunities')
+  const hasPipeline = tenantHasModule(tenant, 'pipeline')
+  const hasReminders = tenantHasModule(tenant, 'reminders')
+  const showBant = tenantShowBant(tenant)
+
+  // staleTime: 0 → siempre refetch al montar o enfocar la ventana
+  // refetchOnWindowFocus: true → se actualiza al volver al dashboard
+  const dashboardQueryOpts = { staleTime: 0, refetchOnWindowFocus: true } as const
+
+  const { data: briefing, isPending: briefingPending, isError: briefingError } = useQuery({
+    queryKey: queryKeys.dashboard.briefing(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardBriefing(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
+    ...dashboardQueryOpts,
+  })
+
+  const kpisQ = useQuery({
+    queryKey: queryKeys.dashboard.kpis(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardKpis(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
+    ...dashboardQueryOpts,
+  })
+
+  const pipelineQ = useQuery({
+    queryKey: queryKeys.dashboard.pipeline(authScope, activePipelineId),
+    queryFn: () => fetchDashboardPipeline(activePipelineId),
+    enabled: Boolean(authScope) && hasPipeline && Boolean(activePipelineId),
+    ...dashboardQueryOpts,
+  })
+
+  const consultantsQ = useQuery({
+    queryKey: queryKeys.dashboard.topConsultants(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardTopConsultants(activePipelineId),
+    enabled: Boolean(authScope) && isManagerOrAbove && hasOpportunities,
+    ...dashboardQueryOpts,
+  })
+
+  const activityQ = useQuery({
+    queryKey: queryKeys.dashboard.activity(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardActivity(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
+    refetchInterval: 30_000,
+    ...dashboardQueryOpts,
+  })
+
+  const bantQ = useQuery({
+    queryKey: queryKeys.dashboard.bantDistribution(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardBantDistribution(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities && showBant,
+    ...dashboardQueryOpts,
+  })
+
+  const leadSourcesQ = useQuery({
+    queryKey: queryKeys.dashboard.leadSources(authScope, pipelineFilterKey),
+    queryFn: () => fetchDashboardLeadSources(activePipelineId),
+    enabled: Boolean(authScope) && hasOpportunities,
+    ...dashboardQueryOpts,
+  })
+
+  const movementActivity = useMemo(
+    () => (activityQ.data ?? []).filter((item) => item.type !== 'reminder_due'),
+    [activityQ.data],
+  )
+
+  const initialLoading =
+    pipelinesLoading ||
+    (hasOpportunities && kpisQ.isPending && !kpisQ.data) ||
+    (hasPipeline && pipelineQ.isPending && !pipelineQ.data)
+
+  if (initialLoading) return <DashboardSkeleton />
+
+  const pipelineOptions = pipelines.map((p) => ({
+    id: p.id,
+    name: p.name,
+    is_default: p.is_default,
+  }))
+
+  const activePipelineName =
+    pipelineOptions.find((p) => p.id === activePipelineId)?.name ?? 'Pipeline'
 
   return (
     <AppPageShell contentClassName="space-y-10">
+
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <PageHeader
-        title="Panel principal"
+        title={tenant?.name ?? 'CRM ISWO'}
         belowTitle={<DashboardDateLine />}
-        description="Dos vistas claras: cuánto estás moviendo en ventas y qué tienes agendado para hoy."
       >
         <Button variant="outline" size="sm" className="gap-2" asChild>
           <Link to="/opportunities" search={{ view: 'kanban' }}>
@@ -93,69 +167,93 @@ function DashboardPage() {
         </Button>
       </PageHeader>
 
-        <DashboardSection
-          title="Pipeline y cierres"
-          subtitle="Valor en pipeline, cierres del mes, embudo y ranking — todo lo que cuenta para ingresos."
-          icon={TrendingUp}
-          accent="brand"
-        >
-        <DashboardKpiStrip
-          totalInPipeline={totalInPipeline}
-          pipelineValue={pipelineValue}
-          bantAverage={bantAverage}
-          monthClosedValue={monthClosedValue}
-          loadingPipeline={kpisQ.isPending}
-          loadingBant={kpisQ.isPending}
-          loadingConsultants={kpisQ.isPending}
+      {hasOpportunities && (
+      <DashboardSection title="Ruta del día" icon={Sparkles} accent="brand">
+        <DailyBriefing
+          data={briefing}
+          userName={user?.name}
+          currency={currency}
+          isLoading={briefingPending}
+          isError={briefingError}
         />
+      </DashboardSection>
+      )}
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:gap-8 xl:items-start">
-          <div className="flex flex-col gap-6 xl:col-span-7 2xl:col-span-8">
+      {hasPipeline && (
+      <DashboardSection
+        title="Pipeline"
+        subtitle={pipelines.length > 1 ? activePipelineName : undefined}
+        icon={TrendingUp}
+        accent="brand"
+      >
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+          <div className="xl:col-span-2">
             <PipelineFunnel
+              currency={currency}
               data={pipelineQ.data}
               isLoading={pipelineQ.isPending}
               isError={pipelineQ.isError}
+              pipelines={pipelineOptions}
+              selectedPipelineId={activePipelineId}
+              onPipelineChange={setSelectedPipelineId}
             />
           </div>
-
-          <div className="flex flex-col gap-6 xl:col-span-5 2xl:col-span-4">
-            <BantDistribution
-              data={bantQ.data}
-              isLoading={bantQ.isPending}
-              isError={bantQ.isError}
-            />
+          {isManagerOrAbove && (
             <TopConsultants
+              currency={currency}
               data={consultantsQ.data}
               isLoading={consultantsQ.isPending}
               isError={consultantsQ.isError}
             />
-          </div>
+          )}
         </div>
       </DashboardSection>
+      )}
 
-      <DashboardSection
-        title="Seguimiento comercial"
-        subtitle="Recordatorios para hoy y movimiento en oportunidades. Prioriza el seguimiento."
-        icon={CalendarDays}
-        accent="sky"
-        action={
-          <Button variant="outline" size="sm" className="gap-2 shadow-sm" asChild>
-            <Link to="/reminders">
-              <CalendarDays className="size-4" />
-              Recordatorios
-            </Link>
-          </Button>
-        }
-      >
-        <ActivityFeed
-          data={activityQ.data}
-          isLoading={activityQ.isPending}
-          isError={activityQ.isError}
-          variant="split"
+      {hasOpportunities && showBant && (
+      <DashboardSection title="Distribución BANT" icon={BarChart2} accent="brand">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <BantDistribution
+            data={bantQ.data}
+            isLoading={bantQ.isPending}
+            isError={bantQ.isError}
+          />
+          <LeadSourcesChart
+            currency={currency}
+            data={leadSourcesQ.data}
+            isLoading={leadSourcesQ.isPending}
+            isError={leadSourcesQ.isError}
+          />
+        </div>
+        <LeadTemperatureStrip
+          hotCount={briefing?.kpis.hot_count ?? kpisQ.data?.hot_count ?? 0}
+          warmCount={briefing?.kpis.warm_count ?? kpisQ.data?.warm_count ?? 0}
+          coldCount={briefing?.kpis.cold_count ?? kpisQ.data?.cold_count ?? 0}
+          loading={briefingPending && kpisQ.isPending}
         />
       </DashboardSection>
+      )}
+
+      {(hasReminders || hasOpportunities) && (
+      <DashboardSection title="Seguimiento comercial" icon={CalendarDays} accent="sky">
+        <div className="space-y-6">
+          {hasReminders && (
+            <RemindersDashboardCard briefing={briefing} isLoading={briefingPending} />
+          )}
+          {hasOpportunities && (
+            <ActivityFeed
+              data={movementActivity}
+              isLoading={activityQ.isPending}
+              isError={activityQ.isError}
+              variant="movement-only"
+            />
+          )}
+        </div>
+      </DashboardSection>
+      )}
 
       <QuickAddOpportunity open={quickAddOpen} onOpenChange={setQuickAddOpen} />
     </AppPageShell>
   )
 }
+

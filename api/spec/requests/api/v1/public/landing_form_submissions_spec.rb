@@ -16,18 +16,25 @@ RSpec.describe "Api::V1::Public::LandingFormSubmissions", type: :request do
       }.to_json
     end
 
-    it "201 sin autenticación; crea submission y dispara processor" do
-      processor = instance_double(LandingSubmissionProcessor, call_later: true)
-      expect(LandingSubmissionProcessor).to receive(:new).and_return(processor) if defined?(LandingSubmissionProcessor)
+    it "201 sin autenticación; crea submission, oportunidad y devuelve ids" do
+      pipeline = create(:pipeline_with_stages, tenant: tenant, is_default: true)
+      create(:lead_source, tenant: tenant, kind: "web", name: "Web")
 
       expect {
         post "/api/v1/public/landings/#{landing.slug}/submit",
              params: body,
              headers: { "Content-Type" => "application/json", "X-Tenant-Slug" => tenant.slug }
       }.to change(LandingFormSubmission, :count).by(1)
+        .and change(Opportunity, :count).by(1)
 
       expect(response).to have_http_status(:created)
       expect(json.dig("data", "status")).to eq("received")
+      expect(json.dig("data", "opportunity_id")).to be_present
+      expect(json.dig("data", "contact_id")).to be_present
+
+      opp = Opportunity.find(json.dig("data", "opportunity_id"))
+      expect(opp.custom_fields["landing_page_id"]).to eq(landing.id.to_s)
+      expect(opp.pipeline_id).to eq(pipeline.id)
     end
 
     it "incrementa lead_count de la landing" do

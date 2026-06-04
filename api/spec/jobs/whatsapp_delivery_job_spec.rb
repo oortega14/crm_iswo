@@ -22,13 +22,16 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
     end
 
     it "ejecuta dentro del scope del tenant del mensaje" do
+      # Forzar la materialización del mensaje ANTES de limpiar el tenant,
+      # ya que `let` es lazy y el create necesita el tenant context.
+      msg_id = message.id
       ActsAsTenant.current_tenant = nil
       expect(WhatsApp::MessageSender).to receive(:new) do |msg|
         expect(ActsAsTenant.current_tenant).to eq(msg.tenant)
         instance_double(WhatsApp::MessageSender, deliver: true)
       end
 
-      described_class.new.perform(message.id)
+      described_class.new.perform(msg_id)
     end
 
     it "no hace nada si el mensaje no existe" do
@@ -47,6 +50,38 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
     it "configura retry_on Faraday::Error hasta 5 intentos" do
       handler = described_class.rescue_handlers.find { |(klass, _)| klass == "Faraday::Error" }
       expect(handler).to be_present
+    end
+
+    context "con reminder_id (recordatorio WhatsApp)" do
+      let(:reminder) do
+        opp = create(:opportunity, tenant: tenant)
+        create(:reminder, :whatsapp, tenant: tenant, opportunity: opp)
+      end
+
+      it "marca el reminder como sent cuando el mensaje se entrega" do
+        sender = instance_double(WhatsApp::MessageSender)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+        allow(sender).to receive(:deliver) do
+          message.update!(status: "sent", sent_at: Time.current)
+          true
+        end
+
+        described_class.new.perform(message.id, reminder.id)
+        expect(reminder.reload.status).to eq("sent")
+      end
+
+      it "marca el reminder como failed cuando el mensaje falla" do
+        sender = instance_double(WhatsApp::MessageSender)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+        allow(sender).to receive(:deliver) do
+          message.update_columns(status: "failed", error_message: "provider down")
+          false
+        end
+
+        described_class.new.perform(message.id, reminder.id)
+        expect(reminder.reload.status).to eq("failed")
+        expect(reminder.last_error).to include("provider down")
+      end
     end
   end
 end

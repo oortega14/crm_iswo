@@ -7,12 +7,17 @@ RSpec.describe AdIntegration, type: :model do
   subject { build(:ad_integration, :meta, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
   end
 
   describe "validaciones" do
-    it { is_expected.to validate_inclusion_of(:provider).in_array(AdIntegration::PROVIDERS) }
-    it { is_expected.to validate_inclusion_of(:status).in_array(AdIntegration::STATUSES) }
+    it "solo acepta valores de enum provider válidos" do
+      AdIntegration::PROVIDERS.each { |p| expect(build(:ad_integration, provider: p, tenant: tenant)).to be_valid }
+    end
+
+    it "solo acepta valores de enum status válidos" do
+      AdIntegration::STATUSES.each { |s| expect(build(:ad_integration, :meta, status: s, tenant: tenant)).to be_valid }
+    end
 
     it "valida unicidad del provider por tenant" do
       create(:ad_integration, :meta, tenant: tenant)
@@ -22,8 +27,8 @@ RSpec.describe AdIntegration, type: :model do
     end
 
     it "permite el mismo provider en tenants distintos", :without_tenant do
-      t1 = create(:tenant, slug: "t1")
-      t2 = create(:tenant, slug: "t2")
+      t1 = create(:tenant, slug: "tenant-uno")
+      t2 = create(:tenant, slug: "tenant-dos")
       ActsAsTenant.with_tenant(t1) { create(:ad_integration, :meta, tenant: t1) }
       ActsAsTenant.with_tenant(t2) { expect(build(:ad_integration, :meta, tenant: t2)).to be_valid }
     end

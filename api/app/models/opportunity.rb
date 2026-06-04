@@ -16,6 +16,16 @@ class Opportunity < ApplicationRecord
   include TenantScoped
   include Discard::Model
   include DataClassifiable
+  include ExportRansackable
+
+  EXPORT_RANSACKABLE_ATTRIBUTES = %w[
+    pipeline_id pipeline_stage_id owner_user_id lead_source_id
+    status temperature updated_at last_activity_at title
+  ].freeze
+  EXPORT_RANSACKABLE_ASSOCIATIONS = %w[contact].freeze
+
+  TEMPERATURES = %w[cold warm hot].freeze
+  enum :temperature, TEMPERATURES.zip(TEMPERATURES).to_h, prefix: :temp, default: "cold"
 
   STATUSES = {
     "new_lead"  => "new_lead",
@@ -64,22 +74,35 @@ class Opportunity < ApplicationRecord
 
   # ---- Callbacks ------------------------------------------------------------
   before_validation :set_last_activity_at, on: :create
-  before_save :track_close_transition
+  before_save       :track_close_transition
+  after_commit      :enqueue_google_conversion_upload, on: %i[create update]
 
   # ---- Scopes ---------------------------------------------------------------
-  scope :open,        -> { where.not(status: %w[won lost]) }
+  scope :open,        -> { where.not(status: %w[won lost merged]) }
   scope :won,         -> { where(status: "won") }
   scope :lost,        -> { where(status: "lost") }
   scope :by_owner,    ->(user_id) { where(owner_user_id: user_id) }
   scope :stale,       ->(days = 7) { where(last_activity_at: ..days.days.ago) }
+  scope :hot,         -> { where(temperature: "hot") }
+  scope :warm,        -> { where(temperature: "warm") }
+  scope :cold,        -> { where(temperature: "cold") }
 
   # ---- Helpers --------------------------------------------------------------
   def terminal?
-    status_won? || status_lost?
+    status_won? || status_lost? || status_merged?
   end
 
-  def touch_activity!
+  def touch_activity!(recalc_temperature: true)
     update_column(:last_activity_at, Time.current)
+    sync_temperature_from_signals! if recalc_temperature
+  end
+
+  # Recalcula frío/tibio/caliente según BANT y días sin actividad (sin llamar a IA).
+  def sync_temperature_from_signals!
+    return unless defined?(Opportunities::TemperatureCalculator)
+
+    reload
+    Opportunities::TemperatureCalculator.new(self).apply!
   end
 
   # BANT detallado vive en custom_fields["bant_data"] (no hay columna dedicada).
@@ -124,5 +147,11 @@ class Opportunity < ApplicationRecord
       self.closed_at = nil
       self.close_reason = nil
     end
+  end
+
+  def enqueue_google_conversion_upload
+    return unless saved_change_to_status?(to: "won")
+
+    UploadGoogleConversionJob.perform_later(id)
   end
 end

@@ -10,7 +10,7 @@
 class OpportunitySerializer < ApplicationSerializer
   set_type :opportunity
 
-  attributes :title, :status, :estimated_value, :bant_score,
+  attributes :title, :status, :temperature, :qualified, :estimated_value, :bant_score,
              :expected_close_date, :closed_at, :lost_reason, :notes,
              :last_activity_at, :custom_fields, :discarded_at, :currency
 
@@ -36,6 +36,24 @@ class OpportunitySerializer < ApplicationSerializer
 
   attribute :contact_phone do |o|
     o.contact&.phone_e164
+  end
+
+  attribute :contact_city do |o|
+    o.contact&.city.presence
+  end
+
+  attribute :contact_last_contacted_at do |o|
+    c = o.contact
+    next nil unless c&.has_attribute?(:last_contacted_at)
+
+    t = c[:last_contacted_at]
+    t&.iso8601
+  end
+
+  # Nombre del origen (lead_source de la opp o etiqueta del contacto)
+  attribute :lead_source_label do |o|
+    o.lead_source&.name.presence ||
+      (o.contact&.has_attribute?(:source_label) ? o.contact[:source_label].presence : nil)
   end
 
   attribute :pipeline_stage_id do |o|
@@ -83,6 +101,11 @@ class OpportunitySerializer < ApplicationSerializer
     next nil unless o.last_activity_at
 
     ((Time.current - o.last_activity_at) / 1.day).floor
+  end
+
+  # RFC §6.3 — true si el owner de esta oportunidad es referido de alguien en la red del tenant.
+  attribute :from_network do |o, params|
+    params[:referred_user_ids]&.include?(o.owner_user_id) || false
   end
 
   belongs_to :contact,        serializer: :contact

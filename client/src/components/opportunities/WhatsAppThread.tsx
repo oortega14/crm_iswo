@@ -5,7 +5,6 @@ import { useAuthStore } from '@/stores/auth'
 import { Send, Phone, Video, Trash2, Check, CheckCheck, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   AlertDialog,
@@ -40,7 +39,6 @@ interface WhatsAppThreadProps {
   opportunityId: string
   contactName: string
   contactPhone: string
-  contactAvatar?: string
   messages: ThreadMessage[]
 }
 
@@ -48,7 +46,6 @@ export function WhatsAppThread({
   opportunityId,
   contactName,
   contactPhone,
-  contactAvatar,
   messages,
 }: WhatsAppThreadProps) {
   const queryClient = useQueryClient()
@@ -180,16 +177,6 @@ export function WhatsAppThread({
       )}
       <div className="flex shrink-0 items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
         <div className="flex items-center gap-3 min-w-0">
-          <Avatar className="h-10 w-10 border-2 border-primary-foreground/20 shrink-0">
-            <AvatarImage src={contactAvatar} />
-            <AvatarFallback className="bg-primary-foreground/15 text-primary-foreground">
-              {contactName
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .slice(0, 2)}
-            </AvatarFallback>
-          </Avatar>
           <div className="min-w-0">
             <p className="font-medium truncate">{contactName}</p>
             <p className="text-xs text-primary-foreground/80 truncate">

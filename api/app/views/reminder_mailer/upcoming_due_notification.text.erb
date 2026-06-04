@@ -1,0 +1,12 @@
+Hola <%= @user.name.presence || @user.email %>,
+
+Tu recordatorio está por vencer (aprox. <%= @minutes_until %> min) y aún no lo has completado:
+
+  <%= @reminder.subject %>
+  Programado: <%= @reminder.remind_at %>
+
+<% if @reminder.message.present? -%>
+<%= @reminder.message %>
+
+<% end -%>
+Abre el CRM para atenderlo o posponerlo.

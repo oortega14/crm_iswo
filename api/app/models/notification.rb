@@ -4,14 +4,20 @@
 # Notification — registro de notificación in-app por usuario
 # ============================================================================
 # Se crea desde:
-#   - ReminderNotificationJob (canal in_app)
+#   - ReminderNotificationJob (todos los canales → campana in-app)
+#   - Notifications::NewLeadNotifier (LeadImporter, landing, alta manual por otro usuario)
+#   - Notifications::StageChangeNotifier
+#   - detección de duplicados en OpportunitiesController
 # Se consume desde:
 #   - GET /api/v1/notifications
 # ============================================================================
 class Notification < ApplicationRecord
   include TenantScoped
 
-  KINDS = %w[reminder_due new_lead stage_change duplicate_found].freeze
+  KINDS = %w[
+    reminder_due reminder_created reminder_upcoming
+    new_lead stage_change duplicate_found
+  ].freeze
   enum :kind, KINDS.zip(KINDS).to_h, prefix: true, default: "reminder_due"
 
   belongs_to :tenant

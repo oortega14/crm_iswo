@@ -1,0 +1,60 @@
+Hola <%= @user.name.presence || @user.email %>,
+
+Tu briefing del <%= @generated_at.strftime('%d de %B de %Y') rescue 'día' %>:
+
+<% if @day_recommendation.present? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 RECOMENDACIÓN DEL DÍA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<%= @day_recommendation %>
+
+<% end %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KPIs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Oportunidades abiertas : <%= @kpis[:total_open] %>
+<% if @kpis[:pipeline_value].to_f > 0 %>
+Valor en pipeline      : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:pipeline_value].to_i, delimiter: '.') %>
+<% end %>
+Cerradas este mes      : <%= @kpis[:won_count] %> ganadas / <%= @kpis[:lost_count] %> perdidas<% if @kpis[:win_rate] %> (win rate <%= @kpis[:win_rate] %>%)<% end %>
+<% if @kpis[:month_closed_value].to_f > 0 %>
+Cierre generado (mes)  : <%= @kpis[:currency] %> <%= ActiveSupport::NumberHelper.number_to_delimited(@kpis[:month_closed_value].to_i, delimiter: '.') %>
+<% end %>
+BANT promedio          : <%= @kpis[:bant_average] %>/100
+Leads calientes (🔥)   : <%= @kpis[:hot_count] %>
+Recordatorios pendientes: <%= @kpis[:pending_count] %> (<%= @kpis[:overdue_count] %> vencidos, <%= @kpis[:today_count] %> hoy)
+Nuevas esta semana     : <%= @kpis[:new_this_week] %>
+
+<% if @overdue.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⏰ RECORDATORIOS VENCIDOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @overdue.each do |r| %>
+• <%= r.subject %> (vencía <%= r.remind_at.strftime('%d/%m %H:%M') %>)<% if r.opportunity %> — <%= r.opportunity.title.truncate(50) %><% end %>
+<% end %>
+<% end %>
+
+<% if @hot_leads.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔥 LEADS CALIENTES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @hot_leads.each do |opp| %>
+<% days = opp.last_activity_at ? ((Time.current - opp.last_activity_at) / 1.day).floor : nil %>
+• <%= opp.contact&.display_name || opp.title %> · BANT <%= opp.bant_score %><% if opp.pipeline_stage %> · <%= opp.pipeline_stage.name %><% end %><% if days %> · <%= days %> día(s) sin actividad<% end %>
+<% end %>
+<% end %>
+
+<% if @stale_leads.any? %>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧊 SIN ACTIVIDAD RECIENTE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<% @stale_leads.each do |opp| %>
+• <%= opp.contact&.display_name || opp.title %> · última actividad: <%= opp.last_activity_at&.strftime('%d/%m/%Y') || '—' %>
+<% end %>
+<% end %>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Abre el CRM: <%= ENV.fetch('APP_URL', 'https://app.iswo.com.co') %>/opportunities
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Este correo fue generado automáticamente por CRM ISWO.

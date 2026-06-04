@@ -1,17 +1,48 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toast } from 'sonner'
-import { X, Building, MessageSquare, FileText, Bell, History, Pencil } from 'lucide-react'
-import api from '@/lib/api'
 import {
+  X,
+  MessageSquare,
+  FileText,
+  Bell,
+  History,
+  Pencil,
+  Trash2,
+  Sparkles,
+  Loader2,
+  Gauge,
+  RefreshCw,
+  UserRound,
+} from 'lucide-react'
+import api from '@/lib/api'
+import { useUser, useUserRole } from '@/stores/auth'
+import {
+  assignOpportunityOwner,
+  fetchOpportunityDetail,
   jsonApiIncluded,
   jsonApiPrimaryList,
+  jsonApiPrimaryOne,
   mapOpportunityLogResource,
-  mapOpportunityReminderResource,
+  mapOpportunityResource,
+  mapUserResource,
+  moveOpportunityStage,
+  recalculateOpportunityBant,
   toOpportunityUpdatePayload,
+  upsertOpportunityInQueryCache,
 } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { fetchOpportunityReminders } from '@/lib/reminderApi'
+import {
+  invalidateContactSegmentMetrics,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
+import {
+  fetchAiCapabilities,
+  classifyOpportunityTemperature,
+  describeClassifyFallback,
+} from '@/lib/aiApi'
 import {
   cn,
   formatCurrency,
@@ -20,57 +51,143 @@ import {
   getBantScoreColor,
   getStatusColor,
   formatStatusLabel,
-  getInitials,
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BantSliders } from './BantSliders'
+import { TemperatureSelector } from './TemperatureSelector'
+import { TemperatureBadge } from './TemperatureBadge'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
-import { ContactActionButtons } from './ContactActionButtons'
-import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import type { Opportunity } from '@/types'
+import { OpportunityLeadSummary } from './OpportunityLeadSummary'
+import {
+  ContactEditDialog,
+  contactEditInitialFromSummary,
+} from '@/components/contacts/ContactEditDialog'
+import { fetchContactDetail } from '@/lib/contactApi'
+import type { Opportunity, OpportunityTemperature, Pipeline, TenantFieldDefinition } from '@/types'
 
 interface OpportunitySlideOverProps {
-  opportunity?: Opportunity
+  opportunityId?: string
+  opportunityPreview?: Opportunity
+  pipeline?: Pipeline
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
 export function OpportunitySlideOver({
-  opportunity,
+  opportunityId,
+  opportunityPreview,
+  pipeline,
   open,
   onOpenChange,
 }: OpportunitySlideOverProps) {
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState('overview')
   const [editContactOpen, setEditContactOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [aiResult, setAiResult] = useState<{
+    temperature?: string
+    reasoning: string
+    next_action: string
+    ai_used: boolean
+    fallback_reason?: string | null
+    anthropic_error?: string | null
+  } | null>(null)
+  const [notesValue, setNotesValue] = useState('')
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+  const [editingValue, setEditingValue] = useState(false)
+  const [valueInput, setValueInput] = useState('')
+  const role = useUserRole()
+  const currentUser = useUser()
+
+  const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
+    queryKey: queryKeys.opportunities.detail(opportunityId || ''),
+    queryFn: () => fetchOpportunityDetail(opportunityId!),
+    enabled: open && !!opportunityId,
+    staleTime: 0,
+  })
+
+  const opportunity = opportunityDetail ?? opportunityPreview
+
+  const canEditBusiness = useMemo(() => {
+    if (!opportunity || role === 'viewer') return false
+    if (role === 'admin' || role === 'manager') return true
+    const ownerId = opportunity.owner_id || opportunity.owner?.id
+    return String(ownerId ?? '') === String(currentUser?.id ?? '')
+  }, [opportunity, role, currentUser?.id])
+
+  const { data: contactForLead } = useQuery({
+    queryKey: queryKeys.contacts.detail(opportunity?.contact_id ?? ''),
+    queryFn: () => fetchContactDetail(opportunity!.contact_id!),
+    enabled: open && !!opportunity?.contact_id,
+    staleTime: 30_000,
+  })
+
+  const canEditLead = canEditBusiness && !!opportunity?.contact_id
+
+  const { data: aiCaps } = useQuery({
+    queryKey: queryKeys.ai.capabilities,
+    queryFn: fetchAiCapabilities,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const claudeAvailable = aiCaps?.available ?? false
+
+  const { data: assignableUsers = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapUserResource)
+    },
+    enabled: open && (role === 'admin' || role === 'manager'),
+    staleTime: 60_000,
+  })
+
+  useEffect(() => {
+    setNotesValue(opportunity?.notes ?? '')
+    setValueInput(String(opportunity?.estimated_value ?? 0))
+    setAiResult(null)
+    if (open) setActiveTab('overview')
+  }, [opportunity?.id, opportunity?.notes, opportunity?.estimated_value, open])
+
+  useEffect(() => {
+    if (editingNotes) notesRef.current?.focus()
+  }, [editingNotes])
 
   // Fetch activity logs
-  const { data: logs, isLoading: logsLoading } = useQuery({
+  const {
+    data: logs,
+    isLoading: logsLoading,
+    isError: logsError,
+    error: logsErrorDetail,
+  } = useQuery({
     queryKey: queryKeys.opportunities.logs(opportunity?.id || ''),
     queryFn: async () => {
-      const response = await api.get(`/opportunities/${opportunity?.id}/logs`)
+      const response = await api.get(`/opportunities/${opportunity?.id}/logs`, {
+        params: { items: 100 },
+      })
       const rows = jsonApiPrimaryList(response.data)
       const inc = jsonApiIncluded(response.data)
       return rows.map((r) => mapOpportunityLogResource(r, inc))
     },
     enabled: !!opportunity?.id && activeTab === 'activity',
+    staleTime: 30_000,
   })
 
-  // Fetch reminders (JSON:API)
   const { data: reminders, isLoading: remindersLoading } = useQuery({
     queryKey: queryKeys.reminders.byOpportunity(opportunity?.id || ''),
-    queryFn: async () => {
-      const response = await api.get(`/opportunities/${opportunity?.id}/reminders`)
-      return jsonApiPrimaryList(response.data).map(mapOpportunityReminderResource)
-    },
+    queryFn: () => fetchOpportunityReminders(opportunity!.id),
     enabled: !!opportunity?.id && activeTab === 'reminders',
   })
 
@@ -132,14 +249,153 @@ export function OpportunitySlideOver({
         JSON.stringify({ opportunity: payload }),
         { headers: { 'Content-Type': 'application/json' } },
       )
-      return response.data.data
+      return response.data
     },
-    onSuccess: () => {
+    onSuccess: (body) => {
+      const row = jsonApiPrimaryOne(body)
+      if (row?.id) {
+        const updated = mapOpportunityResource(row)
+        upsertOpportunityInQueryCache(queryClient, updated)
+      }
       toast.success('Oportunidad actualizada')
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await api.delete(`/opportunities/${opportunity?.id}`)
+    },
+    onSuccess: () => {
+      toast.success('Oportunidad eliminada')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      onOpenChange(false)
+    },
+    onError: () => {
+      toast.error('No se pudo eliminar la oportunidad')
+    },
+  })
+
+  const parseClassifyResponse = (data: {
+    ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
+  }) => data.ai_result
+
+  const syncTemperatureMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/opportunities/${opportunity?.id}/sync_temperature`)
+      return parseClassifyResponse(response.data)
+    },
+    onSuccess: (ai_result) => {
+      setAiResult(ai_result)
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      toast.success('Temperatura actualizada según BANT y actividad')
+    },
+    onError: () => {
+      toast.error('No se pudo recalcular la temperatura')
+    },
+  })
+
+  const moveStageMutation = useMutation({
+    mutationFn: async (stageId: string) => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      await moveOpportunityStage(opportunity.id, stageId)
+    },
+    onSuccess: () => {
+      toast.success('Etapa actualizada')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
+    },
+    onError: () => toast.error('No se pudo cambiar la etapa'),
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: async (ownerUserId: string) => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      await assignOpportunityOwner(opportunity.id, ownerUserId)
+    },
+    onSuccess: () => {
+      toast.success('Consultor asignado')
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+    },
+    onError: () => toast.error('No se pudo reasignar'),
+  })
+
+  const recalculateBantMutation = useMutation({
+    mutationFn: async () => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      return recalculateOpportunityBant(opportunity.id)
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      if (result.temperature_ai?.ai_used) {
+        toast.success('BANT recalculado y temperatura actualizada con Claude')
+      } else {
+        toast.success('Puntuación BANT recalculada')
+      }
+    },
+    onError: () => toast.error('No se pudo recalcular BANT'),
+  })
+
+  const classifyMutation = useMutation({
+    mutationFn: async () => {
+      if (!opportunity?.id) throw new Error('Oportunidad no válida')
+      return classifyOpportunityTemperature(opportunity.id)
+    },
+    onSuccess: (res) => {
+      const ai_result = res.ai_result
+      setAiResult({
+        ...ai_result,
+        anthropic_error: res.meta?.anthropic_error ?? null,
+      })
+      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+      if (opportunity?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      }
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
+      if (usedAi) {
+        toast.success(`Clasificado con Claude (${res.meta?.model ?? aiCaps?.model ?? 'IA'})`)
+      } else {
+        toast.warning(
+          describeClassifyFallback(ai_result.fallback_reason, res.meta?.anthropic_error),
+          { duration: 8000 },
+        )
+      }
+    },
+    onError: () => {
+      toast.error('No se pudo clasificar con Claude')
     },
   })
 
@@ -159,7 +415,20 @@ export function OpportunitySlideOver({
     updateMutation.mutate({ bant_data: { [dim]: { score } } })
   }
 
+  if (!open || !opportunityId) return null
+
+  if (!opportunity && detailLoading) {
+    return (
+      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-lg flex-col border-l bg-background p-6">
+        <Skeleton className="h-8 w-48 mb-4" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    )
+  }
+
   if (!opportunity) return null
+
+  const pipelineStages = pipeline?.stages ?? []
 
   return (
     <>
@@ -172,7 +441,7 @@ export function OpportunitySlideOver({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 bg-black/50"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); setConfirmDelete(false) }}
           />
 
           {/* Panel */}
@@ -183,42 +452,63 @@ export function OpportunitySlideOver({
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="fixed inset-y-0 right-0 z-50 flex max-h-[100dvh] w-full max-w-lg min-h-0 flex-col border-l bg-background shadow-xl"
           >
-            {/* Header */}
+            {/* Header — negocio (estado / temperatura) */}
             <div className="flex items-start justify-between gap-4 border-b px-4 py-4">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-lg font-semibold truncate">
-                    {opportunity.contact_name}
-                  </h2>
+                <p className="text-xs text-muted-foreground mb-1">Oportunidad</p>
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge className={cn(getStatusColor(opportunity.status))}>
                     {formatStatusLabel(opportunity.status)}
                   </Badge>
-                  {opportunity.contact_id && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="shrink-0 text-muted-foreground hover:text-foreground"
-                      onClick={() => setEditContactOpen(true)}
-                      title="Editar contacto"
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
+                  <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} />
+                  {opportunity.stage?.name && (
+                    <span className="text-xs text-muted-foreground">
+                      · {opportunity.stage.name}
+                    </span>
                   )}
                 </div>
-                {opportunity.company_name && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Building className="size-3.5" />
-                    {opportunity.company_name}
-                  </p>
+                {opportunity.title && opportunity.title !== opportunity.contact_name && (
+                  <p className="text-sm text-muted-foreground mt-1 truncate">{opportunity.title}</p>
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  <AvatarImage src={opportunity.owner?.avatar_url} />
-                  <AvatarFallback className="text-xs">
-                    {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
-                  </AvatarFallback>
-                </Avatar>
+                {opportunity.owner?.name && (
+                  <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[120px]">
+                    {opportunity.owner.name}
+                  </span>
+                )}
+                {(role === 'admin') && (
+                  confirmDelete ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-destructive">¿Eliminar?</span>
+                      <Button
+                        variant="destructive"
+                        size="icon-sm"
+                        onClick={() => deleteMutation.mutate()}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setConfirmDelete(true)}
+                      title="Eliminar oportunidad"
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )
+                )}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -258,23 +548,72 @@ export function OpportunitySlideOver({
               <TabsContent value="overview" className="flex-1 overflow-hidden mt-0">
                 <ScrollArea className="h-full">
                   <div className="p-4 flex flex-col gap-6">
+                    <OpportunityLeadSummary
+                      opportunity={opportunity}
+                      contactDetail={contactForLead}
+                      canEditLead={canEditLead}
+                      onEditLead={() => setEditContactOpen(true)}
+                      onOpenWhatsApp={() => setActiveTab('whatsapp')}
+                    />
+
+                    <Separator />
+
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                        Contactar
-                      </label>
-                      <ContactActionButtons
-                        phone={opportunity.contact_phone}
-                        email={opportunity.contact_email}
-                        onOpenWhatsAppInApp={() => setActiveTab('whatsapp')}
-                      />
-                      {(opportunity.contact_phone || opportunity.contact_email) && (
-                        <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
-                          {opportunity.contact_phone ? (
-                            <span className="font-mono">{opportunity.contact_phone}</span>
-                          ) : null}
-                          {opportunity.contact_email ? (
-                            <span className="truncate">{opportunity.contact_email}</span>
-                          ) : null}
+                      <h3 className="text-sm font-semibold text-foreground mb-1">Negocio</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Etapa, temperatura, BANT, valor y notas de la oportunidad.
+                      </p>
+                    </div>
+
+                    {/* Etapa y propietario (RFC: move_stage, assign) */}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                          Etapa del pipeline
+                        </label>
+                        {!canEditBusiness || pipelineStages.length === 0 ? (
+                          <p className="text-sm">{opportunity.stage?.name ?? '—'}</p>
+                        ) : (
+                          <Select
+                            value={opportunity.stage_id || undefined}
+                            onValueChange={(stageId) => moveStageMutation.mutate(stageId)}
+                            disabled={moveStageMutation.isPending}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Seleccionar etapa" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {pipelineStages.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                      {(role === 'admin' || role === 'manager') && (
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                            <UserRound className="inline size-3 mr-1" />
+                            Consultor asignado
+                          </label>
+                          <Select
+                            value={opportunity.owner_id || opportunity.owner?.id || undefined}
+                            onValueChange={(uid) => assignMutation.mutate(uid)}
+                            disabled={assignMutation.isPending}
+                          >
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Asignar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {assignableUsers.map((u) => (
+                                <SelectItem key={u.id} value={u.id}>
+                                  {u.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       )}
                     </div>
@@ -284,11 +623,142 @@ export function OpportunitySlideOver({
                     {/* Value */}
                     <div>
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                        Valor estimado
+                        Valor estimado ({opportunity.currency})
                       </label>
-                      <p className="text-2xl font-semibold font-mono mt-1">
-                        {formatCurrency(opportunity.estimated_value, opportunity.currency)}
+                      {canEditBusiness && editingValue ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          className="mt-1 font-mono"
+                          value={valueInput}
+                          onChange={(e) => setValueInput(e.target.value)}
+                          onBlur={() => {
+                            setEditingValue(false)
+                            const num = Number(valueInput)
+                            if (Number.isFinite(num) && num !== opportunity.estimated_value) {
+                              updateMutation.mutate({ estimated_value: num })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                            if (e.key === 'Escape') {
+                              setValueInput(String(opportunity.estimated_value ?? 0))
+                              setEditingValue(false)
+                            }
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <p
+                          className={cn(
+                            'text-2xl font-semibold font-mono mt-1',
+                            canEditBusiness && 'cursor-pointer hover:text-primary',
+                          )}
+                          onClick={() => canEditBusiness && setEditingValue(true)}
+                        >
+                          {formatCurrency(opportunity.estimated_value, opportunity.currency)}
+                        </p>
+                      )}
+                    </div>
+
+                    <Separator />
+
+                    {/* Temperatura */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Temperatura del lead
+                        </label>
+                        {canEditBusiness && (
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1 px-2 text-xs"
+                              onClick={() => { setAiResult(null); syncTemperatureMutation.mutate() }}
+                              disabled={syncTemperatureMutation.isPending || classifyMutation.isPending}
+                              title="Reglas BANT + actividad (sin Claude)"
+                            >
+                              {syncTemperatureMutation.isPending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <Gauge className="size-3" />
+                              )}
+                              Reglas
+                            </Button>
+                            {claudeAvailable && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="default"
+                                className="h-7 gap-1 px-2.5 text-xs bg-violet-600 text-white hover:bg-violet-700"
+                                onClick={() => { setAiResult(null); classifyMutation.mutate() }}
+                                disabled={classifyMutation.isPending || syncTemperatureMutation.isPending}
+                                title={`Clasificar con Claude (${aiCaps?.model})`}
+                              >
+                                {classifyMutation.isPending ? (
+                                  <Loader2 className="size-3 animate-spin" />
+                                ) : (
+                                  <Sparkles className="size-3" />
+                                )}
+                                Clasificar con Claude AI
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <TemperatureSelector
+                        value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
+                        disabled={
+                          !canEditBusiness ||
+                          updateMutation.isPending ||
+                          classifyMutation.isPending ||
+                          syncTemperatureMutation.isPending
+                        }
+                        onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
+                      />
+                      <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
+                        {claudeAvailable ? (
+                          <>
+                            <strong className="text-foreground">Claude AI</strong> analiza BANT, etapa,
+                            origen y actividad. «Reglas» usa solo umbrales locales.
+                            {aiCaps?.auto_on_bant_recalc ? ' Auto-clasifica al recalcular BANT.' : ''}
+                          </>
+                        ) : (
+                          <>
+                            «Reglas» calcula la temperatura según BANT y días de actividad.
+                          </>
+                        )}
                       </p>
+                      {aiResult && (
+                        <div
+                          className={cn(
+                            'mt-2 rounded-lg border p-2.5 text-xs space-y-1.5',
+                            aiResult.ai_used
+                              ? 'border-violet-300 bg-violet-50/80 dark:bg-violet-950/30 dark:border-violet-700'
+                              : 'border-border bg-muted/40',
+                          )}
+                        >
+                          {aiResult.ai_used && (
+                            <Badge className="bg-violet-600 text-white text-[10px]">Claude</Badge>
+                          )}
+                          <p className="text-foreground/80 leading-relaxed">{aiResult.reasoning}</p>
+                          {aiResult.next_action && (
+                            <p className="font-medium text-violet-700 dark:text-violet-400">
+                              → {aiResult.next_action}
+                            </p>
+                          )}
+                          {!aiResult.ai_used && (
+                            <p className="text-muted-foreground italic text-[10px]">
+                              {describeClassifyFallback(
+                                aiResult.fallback_reason,
+                                aiResult.anthropic_error,
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <Separator />
@@ -298,16 +768,43 @@ export function OpportunitySlideOver({
                       <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
                         Puntuación BANT
                       </label>
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm">Total</span>
-                        <Badge
-                          className={cn(
-                            'text-lg font-mono',
-                            getBantScoreColor(opportunity.bant_score)
+                      <div className="flex items-center justify-between mb-4 gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">Total</span>
+                          {opportunity.qualified != null && (
+                            <Badge variant={opportunity.qualified ? 'success' : 'secondary'} className="text-[10px]">
+                              {opportunity.qualified ? 'Calificada' : 'Sin calificar'}
+                            </Badge>
                           )}
-                        >
-                          {opportunity.bant_score}
-                        </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {canEditBusiness && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 text-xs"
+                              onClick={() => recalculateBantMutation.mutate()}
+                              disabled={recalculateBantMutation.isPending}
+                              title="Recalcula según criterios BANT del tenant (RFC)"
+                            >
+                              {recalculateBantMutation.isPending ? (
+                                <Loader2 className="size-3 animate-spin" />
+                              ) : (
+                                <RefreshCw className="size-3" />
+                              )}
+                              Recalcular
+                            </Button>
+                          )}
+                          <Badge
+                            className={cn(
+                              'text-lg font-mono',
+                              getBantScoreColor(opportunity.bant_score),
+                            )}
+                          >
+                            {opportunity.bant_score}
+                          </Badge>
+                        </div>
                       </div>
                       <BantSliders
                         budget={opportunity.bant_budget}
@@ -315,54 +812,106 @@ export function OpportunitySlideOver({
                         need={opportunity.bant_need}
                         timeline={opportunity.bant_timeline}
                         onUpdate={handleBantUpdate}
-                        disabled={updateMutation.isPending}
+                        disabled={!canEditBusiness || updateMutation.isPending}
                       />
                     </div>
 
-                    <Separator />
-
-                    {/* Dates */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Creado
-                        </label>
-                        <p className="text-sm mt-1">
-                          {formatDate(opportunity.created_at, 'dd MMM yyyy')}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Última actividad
-                        </label>
-                        <p className="text-sm mt-1">
-                          {opportunity.last_activity_at
-                            ? formatRelativeTime(opportunity.last_activity_at)
-                            : '-'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Notes */}
-                    {opportunity.notes && (
+                    {opportunity.last_activity_at && (
                       <>
                         <Separator />
                         <div>
                           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                            Notas
+                            Última actividad comercial
                           </label>
-                          <p className="text-sm mt-1 whitespace-pre-wrap">
-                            {opportunity.notes}
+                          <p className="text-sm mt-1">
+                            {formatRelativeTime(opportunity.last_activity_at)}
                           </p>
                         </div>
                       </>
                     )}
+
+                    {opportunity.expected_close_on && (
+                      <>
+                        <Separator />
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                            Fecha de cierre estimada
+                          </label>
+                          <p className="text-sm mt-1">
+                            {formatDate(opportunity.expected_close_on, 'dd MMM yyyy')}
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Campos personalizados por vertical */}
+                    <CustomFieldsSection
+                      opportunity={opportunity}
+                      onSave={(custom_fields) => updateMutation.mutate({ custom_fields })}
+                      disabled={!canEditBusiness || updateMutation.isPending}
+                    />
+
+                    {/* Notes — editable inline */}
+                    <Separator />
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                          Notas
+                        </label>
+                        {canEditBusiness && !editingNotes && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                            onClick={() => setEditingNotes(true)}
+                            title="Editar notas"
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {editingNotes ? (
+                        <textarea
+                          ref={notesRef}
+                          value={notesValue}
+                          onChange={(e) => setNotesValue(e.target.value)}
+                          onBlur={() => {
+                            setEditingNotes(false)
+                            if (notesValue !== (opportunity.notes ?? '')) {
+                              updateMutation.mutate({ notes: notesValue })
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              setNotesValue(opportunity.notes ?? '')
+                              setEditingNotes(false)
+                            }
+                          }}
+                          rows={4}
+                          placeholder="Añadir notas..."
+                          className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                        />
+                      ) : (
+                        <p
+                          className={cn(
+                            'text-sm mt-0.5 whitespace-pre-wrap min-h-[1.5rem] text-muted-foreground',
+                            canEditBusiness && 'cursor-text hover:text-foreground',
+                          )}
+                          onClick={() => canEditBusiness && setEditingNotes(true)}
+                        >
+                          {notesValue || <span className="italic opacity-50">Sin notas</span>}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </ScrollArea>
               </TabsContent>
 
               {/* Activity tab */}
-              <TabsContent value="activity" className="flex-1 overflow-hidden mt-0">
+              <TabsContent
+                value="activity"
+                className="mt-0 flex min-h-0 flex-1 flex-col overflow-hidden data-[state=inactive]:hidden"
+              >
                 {logsLoading ? (
                   <div className="p-4 flex flex-col gap-3">
                     {[1, 2, 3].map((i) => (
@@ -374,6 +923,15 @@ export function OpportunitySlideOver({
                         </div>
                       </div>
                     ))}
+                  </div>
+                ) : logsError ? (
+                  <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
+                    <p className="text-sm text-destructive">
+                      No se pudo cargar la actividad
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {(logsErrorDetail as Error)?.message || 'Error de red o permisos'}
+                    </p>
                   </div>
                 ) : (
                   <ActivityLog logs={logs || []} />
@@ -426,16 +984,163 @@ export function OpportunitySlideOver({
 
     <ContactEditDialog
       contactId={opportunity?.contact_id ?? null}
-      initialData={{
-        firstName: opportunity?.contact_name?.split(' ')[0] ?? '',
-        lastName:  opportunity?.contact_name?.split(' ').slice(1).join(' ') ?? '',
-        email:     opportunity?.contact_email,
-        phone:     opportunity?.contact_phone,
-        company:   opportunity?.company_name,
-      }}
+      initialData={
+        contactForLead
+          ? contactEditInitialFromSummary(contactForLead)
+          : opportunity?.contact_id
+            ? {
+                firstName: opportunity.contact_name?.split(' ')[0] ?? '',
+                lastName: opportunity.contact_name?.split(' ').slice(1).join(' ') ?? '',
+                email: opportunity.contact_email,
+                phone: opportunity.contact_phone,
+                company: opportunity.company_name,
+              }
+            : undefined
+      }
       open={editContactOpen}
       onOpenChange={setEditContactOpen}
     />
+    </>
+  )
+}
+
+// ============================================================================
+// CustomFieldsSection — campos extra configurados por el tenant (F5 Verticales)
+// ============================================================================
+function mapFieldDefs(raw: unknown): TenantFieldDefinition[] {
+  const items = (raw as { data?: unknown[] })?.data ?? []
+  return items.map((item) => {
+    const r = item as { id?: string; attributes?: Record<string, unknown> }
+    const a = r.attributes ?? {}
+    return {
+      id:         String(r.id ?? ''),
+      key:        String(a.key ?? ''),
+      label:      String(a.label ?? ''),
+      field_type: (a.field_type as TenantFieldDefinition['field_type']) ?? 'text',
+      options:    Array.isArray(a.options) ? (a.options as string[]) : [],
+      required:   Boolean(a.required),
+      entity:     (a.entity as TenantFieldDefinition['entity']) ?? 'opportunity',
+      position:   Number(a.position ?? 0),
+      active:     Boolean(a.active ?? true),
+    }
+  })
+}
+
+function CustomFieldsSection({
+  opportunity,
+  onSave,
+  disabled,
+}: {
+  opportunity: Opportunity
+  onSave: (fields: Record<string, unknown>) => void
+  disabled: boolean
+}) {
+  const { data: defs = [] } = useQuery({
+    queryKey: ['tenant_field_definitions', 'opportunity'],
+    queryFn: async () => {
+      const res = await api.get('/tenant_field_definitions', { params: { entity: 'opportunity' } })
+      return mapFieldDefs(res.data)
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const [localValues, setLocalValues] = useState<Record<string, unknown>>({})
+
+  useEffect(() => {
+    setLocalValues(opportunity.custom_fields ?? {})
+  }, [opportunity.id, opportunity.custom_fields])
+
+  if (defs.length === 0) return null
+
+  const handleBlur = (key: string) => {
+    const current = opportunity.custom_fields ?? {}
+    if (localValues[key] !== current[key]) {
+      onSave({ ...current, ...localValues })
+    }
+  }
+
+  const handleChange = (key: string, value: unknown) => {
+    setLocalValues((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const handleSelectChange = (key: string, value: string, current: Record<string, unknown>) => {
+    const updated = { ...current, [key]: value }
+    setLocalValues(updated)
+    onSave(updated)
+  }
+
+  const handleBooleanChange = (key: string, value: boolean, current: Record<string, unknown>) => {
+    const updated = { ...current, [key]: value }
+    setLocalValues(updated)
+    onSave(updated)
+  }
+
+  return (
+    <>
+      <Separator />
+      <div>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 block">
+          Datos del negocio
+        </label>
+        <div className="space-y-3">
+          {defs.map((def) => {
+            const val = localValues[def.key]
+            const current = opportunity.custom_fields ?? {}
+
+            if (def.field_type === 'boolean') {
+              return (
+                <div key={def.key} className="flex items-center justify-between">
+                  <span className="text-sm">{def.label}</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(val)}
+                    disabled={disabled}
+                    onChange={(e) => handleBooleanChange(def.key, e.target.checked, current)}
+                    className="size-4 rounded border-input accent-primary"
+                  />
+                </div>
+              )
+            }
+
+            if (def.field_type === 'select') {
+              return (
+                <div key={def.key} className="space-y-1">
+                  <label className="text-xs text-muted-foreground">{def.label}</label>
+                  <Select
+                    value={String(val ?? '')}
+                    disabled={disabled}
+                    onValueChange={(v) => handleSelectChange(def.key, v, current)}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {def.options.map((opt) => (
+                        <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            }
+
+            return (
+              <div key={def.key} className="space-y-1">
+                <label className="text-xs text-muted-foreground">{def.label}</label>
+                <input
+                  type={def.field_type === 'date' ? 'date' : def.field_type === 'number' || def.field_type === 'currency' ? 'number' : 'text'}
+                  value={String(val ?? '')}
+                  disabled={disabled}
+                  onChange={(e) => handleChange(def.key, e.target.value)}
+                  onBlur={() => handleBlur(def.key)}
+                  placeholder={def.required ? `${def.label} *` : def.label}
+                  className="flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </>
   )
 }

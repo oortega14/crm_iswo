@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { lazy, Suspense, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Dialog,
@@ -11,10 +11,14 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import api, { formatRailsError } from '@/lib/api'
-import { queryKeys } from '@/lib/queryClient'
-import { jsonApiPrimaryOne } from '@/lib/opportunityApi'
-import { GrapeJsEditor, type GrapeJsHandle } from './GrapeJsEditor'
+import { formatRailsError } from '@/lib/api'
+import { fetchLandingPageDetail, updateLandingPage } from '@/lib/landingPagesApi'
+import { getAuthQueryScope, invalidateLandingPagesQueries, queryKeys } from '@/lib/queryClient'
+import type { GrapeJsHandle } from './GrapeJsEditor'
+
+const GrapeJsEditor = lazy(() =>
+  import('./GrapeJsEditor').then((m) => ({ default: m.GrapeJsEditor }))
+)
 
 interface Props {
   open:          boolean
@@ -27,13 +31,13 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
   const queryClient = useQueryClient()
   const editorRef   = useRef<GrapeJsHandle>(null)
 
+  const authScope = getAuthQueryScope()
+
   const { data: landingData, isLoading } = useQuery({
     queryKey: queryKeys.landingPages.detail(landingId),
-    queryFn:  async () => {
-      const res = await api.get(`/landing_pages/${landingId}`)
-      return jsonApiPrimaryOne(res.data)
-    },
-    enabled: open,
+    queryFn: () => fetchLandingPageDetail(landingId),
+    enabled: open && Boolean(authScope) && !!landingId,
+    staleTime: 0,
   })
 
   const saveMutation = useMutation({
@@ -43,20 +47,18 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
       const gjsHtml    = editor?.getHtml()         ?? ''
       const gjsCss     = editor?.getCss()           ?? ''
       const existingContent = (landingData?.attributes?.content ?? {}) as Record<string, unknown>
-      await api.patch(`/landing_pages/${landingId}`, {
-        landing_page: {
-          content: {
-            ...existingContent,
-            gjs_project: gjsProject,
-            gjs_html:    gjsHtml,
-            gjs_css:     gjsCss,
-          },
+      await updateLandingPage(landingId, {
+        content: {
+          ...existingContent,
+          gjs_project: gjsProject,
+          gjs_html: gjsHtml,
+          gjs_css: gjsCss,
         },
+        styles: (landingData?.attributes?.styles ?? {}) as Record<string, unknown>,
       })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.detail(landingId) })
+      void invalidateLandingPagesQueries(queryClient)
       toast.success('Diseño guardado')
       onOpenChange(false)
     },
@@ -87,10 +89,18 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
               ))}
             </div>
           ) : (
-            <GrapeJsEditor
-              ref={editorRef}
-              initialProjectData={initialProjectData}
-            />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Spinner className="size-8" />
+                </div>
+              }
+            >
+              <GrapeJsEditor
+                ref={editorRef}
+                initialProjectData={initialProjectData}
+              />
+            </Suspense>
           )}
         </div>
 

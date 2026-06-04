@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Plus, Calendar, Clock, Trash2 } from 'lucide-react'
+import { Bell, Plus, Calendar, Clock, Trash2, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,11 +21,20 @@ import {
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
-import api, { formatRailsError } from '@/lib/api'
-import { queryKeys } from '@/lib/queryClient'
-import type { OpportunityReminderRow } from '@/lib/opportunityApi'
-
-type ReminderChannel = 'email' | 'whatsapp' | 'in_app'
+import { formatRailsError } from '@/lib/api'
+import {
+  completeReminder,
+  createOpportunityReminder,
+  deleteReminder,
+  snoozeReminder,
+  type OpportunityReminderRow,
+  type ReminderChannel,
+} from '@/lib/reminderApi'
+import {
+  invalidateNotificationsQueries,
+  invalidateReminderDashboardQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 
 interface RemindersTabProps {
   opportunityId: string
@@ -46,9 +55,12 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
   const [remindAt, setRemindAt] = useState('')
   const [channel, setChannel] = useState<ReminderChannel>('in_app')
 
-  const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reminders.byOpportunity(opportunityId) })
-    void queryClient.invalidateQueries({ queryKey: ['reminders'] })
+  const invalidate = async () => {
+    await invalidateReminderDashboardQueries(queryClient)
+    void invalidateNotificationsQueries(queryClient)
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.reminders.byOpportunity(opportunityId),
+    })
   }
 
   const createMutation = useMutation({
@@ -56,13 +68,12 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
       if (!subject.trim() || !remindAt) {
         throw new Error('Completa asunto y fecha')
       }
-      await api.post(`/opportunities/${opportunityId}/reminders`, {
-        reminder: {
-          remind_at: remindAt,
-          channel,
-          subject: subject.trim(),
-          message: message.trim() || undefined,
-        },
+      await createOpportunityReminder({
+        opportunityId,
+        remindAt,
+        channel,
+        subject: subject.trim(),
+        message: message.trim() || undefined,
       })
     },
     onSuccess: () => {
@@ -75,14 +86,21 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
       setIsAdding(false)
     },
     onError: (e: unknown) => {
-      toast.error(formatRailsError(e))
+      toast.error(formatRailsError(e, 'No se pudo crear el recordatorio'))
     },
   })
 
-  const snoozeMutation = useMutation({
-    mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
-      await api.post(`/reminders/${id}/snooze`, { minutes })
+  const completeMutation = useMutation({
+    mutationFn: completeReminder,
+    onSuccess: () => {
+      toast.success('Recordatorio completado')
+      invalidate()
     },
+    onError: (e: unknown) => toast.error(formatRailsError(e, 'No se pudo completar')),
+  })
+
+  const snoozeMutation = useMutation({
+    mutationFn: ({ id, minutes }: { id: string; minutes: number }) => snoozeReminder(id, minutes),
     onSuccess: () => {
       toast.success('Recordatorio pospuesto')
       invalidate()
@@ -91,15 +109,13 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/reminders/${id}`)
-    },
+    mutationFn: deleteReminder,
     onSuccess: () => {
       toast.success('Recordatorio eliminado')
       invalidate()
     },
     onError: (e: unknown) => {
-      toast.error(formatRailsError(e))
+      toast.error(formatRailsError(e, 'No se pudo eliminar'))
     },
   })
 
@@ -182,11 +198,7 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
             <Button variant="outline" size="sm" onClick={() => setIsAdding(false)}>
               Cancelar
             </Button>
-            <Button
-              size="sm"
-              disabled={createMutation.isPending}
-              onClick={() => createMutation.mutate()}
-            >
+            <Button size="sm" disabled={createMutation.isPending} onClick={() => createMutation.mutate()}>
               Crear recordatorio
             </Button>
           </div>
@@ -234,39 +246,53 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
                 </Badge>
                 {statusBadge(reminder.status)}
                 {reminder.status === 'pending' && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" title="Posponer">
-                        <Clock className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {([
-                        { label: '15 minutos', minutes: 15 },
-                        { label: '30 minutos', minutes: 30 },
-                        { label: '1 hora', minutes: 60 },
-                        { label: '2 horas', minutes: 120 },
-                      ] as const).map(opt => (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Completar"
+                      disabled={completeMutation.isPending}
+                      onClick={() => completeMutation.mutate(reminder.id)}
+                    >
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Posponer">
+                          <Clock className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {(
+                          [
+                            { label: '15 minutos', minutes: 15 },
+                            { label: '30 minutos', minutes: 30 },
+                            { label: '1 hora', minutes: 60 },
+                            { label: '2 horas', minutes: 120 },
+                          ] as const
+                        ).map((opt) => (
+                          <DropdownMenuItem
+                            key={opt.minutes}
+                            onClick={() => snoozeMutation.mutate({ id: reminder.id, minutes: opt.minutes })}
+                          >
+                            {opt.label}
+                          </DropdownMenuItem>
+                        ))}
                         <DropdownMenuItem
-                          key={opt.minutes}
-                          onClick={() => snoozeMutation.mutate({ id: reminder.id, minutes: opt.minutes })}
+                          onClick={() => {
+                            const t = new Date()
+                            t.setDate(t.getDate() + 1)
+                            t.setHours(9, 0, 0, 0)
+                            const minutes = Math.round((t.getTime() - Date.now()) / 60000)
+                            snoozeMutation.mutate({ id: reminder.id, minutes })
+                          }}
                         >
-                          {opt.label}
+                          Mañana (9:00)
                         </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuItem
-                        onClick={() => {
-                          const t = new Date()
-                          t.setDate(t.getDate() + 1)
-                          t.setHours(9, 0, 0, 0)
-                          const minutes = Math.round((t.getTime() - Date.now()) / 60000)
-                          snoozeMutation.mutate({ id: reminder.id, minutes })
-                        }}
-                      >
-                        Mañana (9:00)
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </>
                 )}
                 <Button
                   variant="ghost"

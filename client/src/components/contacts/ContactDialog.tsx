@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { queryKeys } from '@/lib/queryClient'
+import { invalidateContactsQueries } from '@/lib/queryClient'
 
 interface ContactDialogProps {
   open: boolean
@@ -33,6 +33,7 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
     phone: '',
     company: '',
     position: '',
+    documentId: '',
   })
 
   const createContactMutation = useMutation({
@@ -40,22 +41,26 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
       return api.post('/contacts', {
         contact: {
           kind,
-          first_name:  kind === 'person' ? (data.firstName || undefined) : undefined,
-          last_name:   kind === 'person' ? (data.lastName  || undefined) : undefined,
-          email:       data.email    || undefined,
-          phone_e164:  data.phone    || undefined,
-          company:     data.company  || undefined,
-          position:    kind === 'person' ? (data.position || undefined) : undefined,
+          first_name:   kind === 'person' ? (data.firstName || undefined) : undefined,
+          last_name:    kind === 'person' ? (data.lastName  || undefined) : undefined,
+          email:        data.email      || undefined,
+          phone_e164:   data.phone      || undefined,
+          company:      data.company    || undefined,
+          position:     kind === 'person' ? (data.position  || undefined) : undefined,
+          document_id:  data.documentId || undefined,
         },
       })
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
-      await queryClient.invalidateQueries({ queryKey: ['companies'] })
+      await invalidateContactsQueries(queryClient)
       onCreated?.()
-      toast.success(kind === 'company' ? 'Empresa creada exitosamente' : 'Contacto creado exitosamente')
+      toast.success(
+        kind === 'company'
+          ? 'Empresa y prospecto creados en el pipeline'
+          : 'Contacto y prospecto creados en el pipeline'
+      )
       onOpenChange(false)
-      setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+      setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '', documentId: '' })
       setKind('person')
     },
     onError: (err: unknown) => {
@@ -78,7 +83,7 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
 
   const handleKindChange = (newKind: 'person' | 'company') => {
     setKind(newKind)
-    setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '' })
+    setFormData({ firstName: '', lastName: '', email: '', phone: '', company: '', position: '', documentId: '' })
   }
 
   return (
@@ -88,8 +93,8 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
           <DialogTitle>{kind === 'company' ? 'Nueva Empresa' : 'Nuevo Contacto'}</DialogTitle>
           <DialogDescription>
             {kind === 'company'
-              ? 'Registra una empresa como prospecto. Puedes vincularle personas después.'
-              : 'Completa los datos de la persona. El teléfono debe estar en formato internacional (+57...).'}
+              ? 'Registra la empresa y se abrirá automáticamente como prospecto en Oportunidades.'
+              : 'Completa los datos de la persona. Se creará también en el pipeline (teléfono +57...).'}
           </DialogDescription>
         </DialogHeader>
 
@@ -187,6 +192,16 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
                   placeholder="Director de Ventas"
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="documentId">Cédula</Label>
+                <Input
+                  id="documentId"
+                  value={formData.documentId}
+                  onChange={(e) => handleChange('documentId', e.target.value)}
+                  placeholder="1234567890"
+                />
+              </div>
             </>
           ) : (
             <>
@@ -220,6 +235,16 @@ export function ContactDialog({ open, onOpenChange, onCreated }: ContactDialogPr
                   value={formData.phone}
                   onChange={(e) => handleChange('phone', e.target.value)}
                   placeholder="+57 300 123 4567"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="documentIdCompany">NIT</Label>
+                <Input
+                  id="documentIdCompany"
+                  value={formData.documentId}
+                  onChange={(e) => handleChange('documentId', e.target.value)}
+                  placeholder="900123456-7"
                 />
               </div>
             </>

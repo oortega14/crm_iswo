@@ -1,6 +1,11 @@
+import type { QueryClient } from '@tanstack/react-query'
+import api, { formatRailsError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryClient'
 import type {
   Opportunity,
   OpportunityStatus,
+  LeadSource,
+  LeadSourceKind,
   Pipeline,
   PipelineStage,
   User,
@@ -27,6 +32,12 @@ export function jsonApiPrimaryList(body: unknown): JsonApiResource[] {
 export function jsonApiPrimaryOne(body: unknown): JsonApiResource | null {
   const list = jsonApiPrimaryList(body)
   return list[0] ?? null
+}
+
+function normalizeOpportunityTemperature(value: unknown): import('@/types').OpportunityTemperature {
+  const t = typeof value === 'string' ? value.toLowerCase() : ''
+  if (t === 'hot' || t === 'warm' || t === 'cold') return t
+  return 'cold'
 }
 
 /** Recursos JSON:API en `included` (p. ej. usuarios al incluir `owner_user`). */
@@ -90,6 +101,7 @@ export function mapPipelineResource(resource: JsonApiResource): Pipeline {
     name: String(a.name ?? ''),
     description: a.description != null ? String(a.description) : undefined,
     is_default: Boolean(a.is_default),
+    active: a.active !== false,
     stages,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
@@ -112,10 +124,23 @@ function mapBantSlidersFromApi(a: Record<string, unknown>): {
   const raw = a.bant_data
   const bd =
     raw != null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
+
+  // BantScorer escribe breakdown: { budget: 60, authority: 50, ... }
+  // El input manual escribe { budget: { score: 60 }, ... }
+  // Leemos ambos formatos; el manual tiene precedencia.
+  const breakdown =
+    bd.breakdown != null && typeof bd.breakdown === 'object' && !Array.isArray(bd.breakdown)
+      ? (bd.breakdown as Record<string, unknown>)
+      : {}
+
   const pick = (key: string) => {
     const block = bd[key]
     if (block != null && typeof block === 'object' && !Array.isArray(block)) {
       return bantDimScore01ToSlider((block as Record<string, unknown>).score)
+    }
+    // Fallback: formato breakdown del recálculo automático
+    if (typeof breakdown[key] === 'number') {
+      return bantDimScore01ToSlider(breakdown[key])
     }
     return 0
   }
@@ -216,13 +241,39 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
 
   const bantBars = mapBantSlidersFromApi(a)
 
+  const relSource = resource.relationships?.lead_source?.data as { id?: string } | null
+  const sourceId = relSource?.id != null ? String(relSource.id) : undefined
+  const sourceInc = sourceId
+    ? included.find((r) => String(r.id) === sourceId && String(r.type ?? '').toLowerCase() === 'lead_source')
+    : undefined
+  const source: LeadSource | undefined = sourceInc
+    ? {
+        id: String(sourceInc.id),
+        name: String(sourceInc.attributes?.name ?? ''),
+        kind: String(sourceInc.attributes?.kind ?? 'manual') as LeadSourceKind,
+        active: Boolean(sourceInc.attributes?.active ?? true),
+        opportunities_count: Number(sourceInc.attributes?.opportunities_count ?? 0),
+        created_at: String(sourceInc.attributes?.created_at ?? ''),
+      }
+    : undefined
+
+  const titleRaw = typeof a.title === 'string' ? a.title.trim() : ''
+
   return {
     id: String(resource.id ?? ''),
+    title: titleRaw || undefined,
     contact_id: relContact?.id ? String(relContact.id) : undefined,
-    contact_name: String(a.contact_name ?? a.title ?? 'Sin nombre'),
+    contact_name: String(a.contact_name ?? titleRaw ?? 'Sin nombre'),
     contact_email: a.contact_email != null ? String(a.contact_email) : undefined,
     contact_phone: a.contact_phone != null ? String(a.contact_phone) : undefined,
     company_name: a.company_name != null ? String(a.company_name) : undefined,
+    contact_city: a.contact_city != null ? String(a.contact_city) : undefined,
+    contact_last_contacted_at:
+      a.contact_last_contacted_at != null ? String(a.contact_last_contacted_at) : undefined,
+    lead_source_label:
+      (source?.name?.trim() ||
+        (typeof a.lead_source_label === 'string' ? a.lead_source_label.trim() : '')) ||
+      undefined,
     estimated_value: estimatedValue,
     currency: String(a.currency ?? 'COP'),
     stage_id: stageId,
@@ -235,43 +286,36 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
     bant_need: bantBars.bant_need,
     bant_timeline: bantBars.bant_timeline,
     bant_score: bantScore,
+    source_id: sourceId,
+    source,
     status: (a.status as OpportunityStatus) ?? 'new_lead',
+    temperature: normalizeOpportunityTemperature(a.temperature),
+    qualified: a.qualified != null ? Boolean(a.qualified) : undefined,
     notes: a.notes != null ? String(a.notes) : undefined,
     last_activity_at: a.last_activity_at != null ? String(a.last_activity_at) : undefined,
+    expected_close_on: a.expected_close_date != null ? String(a.expected_close_date) : undefined,
     reminder_due_at: a.reminder_due_at != null ? String(a.reminder_due_at) : undefined,
+    custom_fields: a.custom_fields != null && typeof a.custom_fields === 'object'
+      ? (a.custom_fields as Record<string, unknown>)
+      : undefined,
+    from_network: a.from_network === true,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
   }
 }
 
-/** Recordatorio anidado en oportunidad (JSON:API `reminder`). */
-export type OpportunityReminderRow = {
-  id: string
-  subject: string
-  message: string
-  remind_at: string
-  channel: string
-  status: string
-}
-
-export function mapOpportunityReminderResource(resource: JsonApiResource): OpportunityReminderRow {
-  const a = resource.attributes ?? {}
-  const title =
-    (typeof a.title === 'string' && a.title) ||
-    (typeof a.subject === 'string' && a.subject) ||
-    'Recordatorio'
-  const body =
-    (typeof a.body === 'string' && a.body) ||
-    (typeof a.message === 'string' && a.message) ||
-    ''
-  return {
-    id: String(resource.id ?? ''),
-    subject: title,
-    message: body,
-    remind_at: String(a.remind_at ?? ''),
-    channel: String(a.channel ?? 'in_app'),
-    status: String(a.status ?? 'pending'),
+function normalizeOpportunityLogChanges(
+  raw: unknown,
+): import('@/types').OpportunityLog['changes_data'] {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: Record<string, { from: unknown; to: unknown }> = {}
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (val != null && typeof val === 'object' && !Array.isArray(val)) {
+      const entry = val as Record<string, unknown>
+      out[key] = { from: entry.from ?? null, to: entry.to ?? null }
+    }
   }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /** Mapea un recurso JSON:API `opportunity_log` a nuestro tipo de dominio. */
@@ -290,11 +334,7 @@ export function mapOpportunityLogResource(
       )
     : undefined
 
-  const rawChanges = a.changes_data
-  const changes_data =
-    rawChanges != null && typeof rawChanges === 'object' && !Array.isArray(rawChanges)
-      ? (rawChanges as Record<string, { from: unknown; to: unknown }>)
-      : undefined
+  const changes_data = normalizeOpportunityLogChanges(a.changes_data)
 
   return {
     id: String(resource.id ?? ''),
@@ -317,8 +357,225 @@ export function toOpportunityUpdatePayload(
   if (patch.notes !== undefined) out.notes = patch.notes
   if (patch.estimated_value !== undefined) out.estimated_value = patch.estimated_value
   if (patch.status !== undefined) out.status = patch.status
+  if (patch.temperature !== undefined) out.temperature = patch.temperature
+  if (patch.qualified !== undefined) out.qualified = patch.qualified
   if (patch.stage_id !== undefined) out.pipeline_stage_id = patch.stage_id
+  if (patch.source_id !== undefined) out.lead_source_id = patch.source_id || null
+  if (patch.expected_close_on !== undefined) out.expected_close_date = patch.expected_close_on || null
   if (patch.bant_score !== undefined) out.bant_score = patch.bant_score
   if (patch.bant_data !== undefined) out.bant_data = patch.bant_data
+  if (patch.custom_fields !== undefined) out.custom_fields = patch.custom_fields
   return out
+}
+
+/** Filtros GET /api/v1/opportunities (RFC F1 + extensiones UI) */
+export interface OpportunityListFilters {
+  pipeline_id?: string
+  stage_id?: string
+  contact_id?: string
+  landing_page_id?: string
+  owner_id?: string
+  status?: string
+  temperature?: string
+  q?: string
+  stale_days?: number
+}
+
+const OPPORTUNITY_LIST_PAGE_SIZE = 200
+
+export function buildOpportunityListParams(filters: OpportunityListFilters): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('items', String(OPPORTUNITY_LIST_PAGE_SIZE))
+
+  if (filters.contact_id) {
+    params.set('contact_id', filters.contact_id)
+    return params
+  }
+  if (filters.landing_page_id) {
+    params.set('landing_page_id', filters.landing_page_id)
+    return params
+  }
+  if (filters.pipeline_id) params.set('pipeline_id', filters.pipeline_id)
+  if (filters.stage_id) params.set('stage_id', filters.stage_id)
+  if (filters.owner_id) params.set('owner_id', filters.owner_id)
+  if (filters.status) params.set('status', filters.status)
+  if (filters.temperature) params.set('temperature', filters.temperature)
+  if (filters.q && filters.q.length >= 2) params.set('q', filters.q)
+  if (filters.stale_days != null && filters.stale_days > 0) {
+    params.set('stale_days', String(filters.stale_days))
+  }
+  return params
+}
+
+export async function fetchOpportunities(
+  filters: OpportunityListFilters,
+): Promise<Opportunity[]> {
+  const params = buildOpportunityListParams(filters)
+  const response = await api.get(`/opportunities?${params.toString()}`)
+  const rows = jsonApiPrimaryList(response.data)
+  const included = jsonApiIncluded(response.data)
+  return rows
+    .filter((r) => r.id)
+    .map((r) => mapOpportunityResource(r, included))
+    .filter((o) => o.id.length > 0)
+}
+
+export async function fetchOpportunityDetail(id: string): Promise<Opportunity> {
+  const response = await api.get(`/opportunities/${id}`, {
+    params: { include: 'owner_user,lead_source,contact' },
+  })
+  const row = jsonApiPrimaryOne(response.data)
+  if (!row?.id) throw new Error('Oportunidad no encontrada')
+  return mapOpportunityResource(row, jsonApiIncluded(response.data))
+}
+
+/** Actualiza detalle y listas en caché tras PATCH (p. ej. temperatura). */
+export function upsertOpportunityInQueryCache(
+  queryClient: QueryClient,
+  opportunity: Opportunity,
+): void {
+  if (!opportunity.id) return
+  queryClient.setQueryData(queryKeys.opportunities.detail(opportunity.id), opportunity)
+  queryClient.setQueriesData<Opportunity[]>(
+    {
+      queryKey: queryKeys.opportunities.all,
+      predicate: (query) => query.queryKey[1] === 'list',
+    },
+    (old) => {
+      if (!old?.length) return old
+      const idx = old.findIndex((o) => o.id === opportunity.id)
+      if (idx < 0) return old
+      const next = [...old]
+      next[idx] = opportunity
+      return next
+    },
+  )
+}
+
+export async function moveOpportunityStage(
+  opportunityId: string,
+  pipelineStageId: string,
+): Promise<void> {
+  await api.post(
+    `/opportunities/${opportunityId}/move_stage`,
+    JSON.stringify({ pipeline_stage_id: pipelineStageId }),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+export async function assignOpportunityOwner(
+  opportunityId: string,
+  ownerUserId: string,
+): Promise<void> {
+  await api.post(
+    `/opportunities/${opportunityId}/assign`,
+    JSON.stringify({ owner_user_id: ownerUserId }),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
+}
+
+export interface RecalculateBantResult {
+  bant_score?: number
+  qualified?: boolean
+  temperature_ai?: {
+    ai_used?: boolean
+    temperature?: string
+    reasoning?: string
+  }
+}
+
+export async function recalculateOpportunityBant(
+  opportunityId: string,
+): Promise<RecalculateBantResult> {
+  const response = await api.post(`/opportunities/${opportunityId}/recalculate_bant`)
+  const data = response.data?.data
+  const attrs = data?.attributes ?? {}
+  const meta = response.data?.meta ?? {}
+  return {
+    bant_score: typeof attrs.bant_score === 'number' ? attrs.bant_score : Number(attrs.bant_score),
+    qualified: attrs.qualified != null ? Boolean(attrs.qualified) : undefined,
+    temperature_ai: meta.temperature_ai,
+  }
+}
+
+export type OpportunityExportFormat = 'csv' | 'xlsx'
+
+/** Filtros Ransack para export (alineado con /exports) */
+const DATE_RANGE_DAYS: Record<string, number> = {
+  week: 7, month: 30, quarter: 90, year: 365,
+}
+
+export function buildOpportunityExportFilters(filters: {
+  pipeline_id?: string
+  stage_id?: string
+  owner_id?: string
+  temperature?: string
+  status?: string
+  date_range?: string
+  source_id?: string
+  stale_days?: number
+  q?: string
+}): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (filters.pipeline_id) out.pipeline_id_eq = filters.pipeline_id
+  if (filters.stage_id) out.pipeline_stage_id_eq = filters.stage_id
+  if (filters.owner_id) out.owner_user_id_eq = filters.owner_id
+  if (filters.temperature) out.temperature_eq = filters.temperature
+  if (filters.status) out.status_eq = filters.status
+  if (filters.source_id) out.lead_source_id_eq = filters.source_id
+  const days = filters.date_range ? (DATE_RANGE_DAYS[filters.date_range] ?? 0) : 0
+  if (days > 0) {
+    out.updated_at_gteq = new Date(Date.now() - days * 86_400_000).toISOString()
+  }
+  if (filters.stale_days != null && filters.stale_days > 0) {
+    out.last_activity_at_lteq = new Date(
+      Date.now() - filters.stale_days * 86_400_000,
+    ).toISOString()
+  }
+  const q = filters.q?.trim()
+  if (q && q.length >= 2) {
+    out.title_or_contact_first_name_or_contact_last_name_or_contact_company_name_or_contact_email_or_contact_phone_e164_or_contact_phone_normalized_cont =
+      q
+  }
+  return out
+}
+
+export async function downloadOpportunitiesExport(
+  format: OpportunityExportFormat,
+  filters: Record<string, string>,
+): Promise<Blob> {
+  const response = await api.get(`/opportunities/export.${format}`, {
+    params: { filters },
+    responseType: 'blob',
+  })
+  return response.data as Blob
+}
+
+export async function enqueueOpportunitiesExport(
+  format: OpportunityExportFormat,
+  filters: Record<string, string>,
+): Promise<void> {
+  await api.post('/exports', {
+    resource: 'opportunities',
+    export_format: format,
+    filters,
+  })
+}
+
+export function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function bulkDeleteOpportunities(ids: string[]): Promise<{ deleted: number }> {
+  const response = await api.delete('/opportunities/bulk_destroy', { data: { ids } })
+  return (response.data as { data: { deleted: number } }).data
+}
+
+export function opportunityListErrorMessage(err: unknown): string {
+  return formatRailsError(err, 'Error al cargar oportunidades')
 }

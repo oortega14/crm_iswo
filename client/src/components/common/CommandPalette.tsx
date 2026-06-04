@@ -1,7 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Target, Users, FileText, LayoutDashboard } from 'lucide-react'
+import { Target, Users, FileText } from 'lucide-react'
+import { useAuthStore, useTenant } from '@/stores/auth'
+import { isPlatformTenant } from '@/lib/platformTenant'
+import { filterMainNav, filterSettingsNav, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
 import {
   CommandDialog,
   CommandEmpty,
@@ -20,19 +23,28 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void
 }
 
-const pages = [
-  { title: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { title: 'Oportunidades', href: '/opportunities', icon: Target },
-  { title: 'Contactos', href: '/contacts', icon: Users },
-  { title: 'Recordatorios', href: '/reminders', icon: Target },
-  { title: 'Red de Referidos', href: '/network', icon: Target },
-  { title: 'Configuración de Pipelines', href: '/settings/pipelines', icon: Target },
-  { title: 'Usuarios', href: '/settings/users', icon: Users },
-  { title: 'Integraciones', href: '/settings/integrations', icon: Target },
-]
-
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const tenant = useTenant()
+
+  const platform = isPlatformTenant(tenant)
+
+  const pages = useMemo(
+    () => [
+      ...filterMainNav(MAIN_NAV_ITEMS, user?.role, tenant).map((item) => ({
+        title: item.label,
+        href: item.href,
+        icon: item.icon,
+      })),
+      ...filterSettingsNav(user?.role, tenant).map((item) => ({
+        title: item.title,
+        href: item.href,
+        icon: item.icon,
+      })),
+    ],
+    [user?.role, tenant],
+  )
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -87,7 +99,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} commandProps={{ shouldFilter: false }}>
       <CommandInput
-        placeholder="Buscar oportunidades, contactos o páginas..."
+        placeholder={
+          platform
+            ? 'Buscar páginas de plataforma...'
+            : 'Buscar oportunidades, contactos o páginas...'
+        }
         value={search}
         onValueChange={handleSearchChange}
       />
@@ -100,8 +116,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               : 'No se encontraron resultados.'}
         </CommandEmpty>
 
-        {/* Search results */}
-        {searchResults && searchResults.length > 0 && (
+        {/* Search results — solo tenants comerciales (RFC F5) */}
+        {!platform && searchResults && searchResults.length > 0 && (
           <CommandGroup heading="Resultados">
             {searchResults.map((result) => {
               const Icon = getIcon(result.type)

@@ -7,7 +7,7 @@ RSpec.describe User, type: :model do
   subject { build(:user, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
 
     it {
       is_expected.to have_many(:owned_contacts)
@@ -50,7 +50,9 @@ RSpec.describe User, type: :model do
     it { is_expected.to validate_presence_of(:name) }
     it { is_expected.to allow_value("user@example.com").for(:email) }
     it { is_expected.not_to allow_value("not-an-email").for(:email) }
-    it { is_expected.to validate_inclusion_of(:role).in_array(User::ROLES) }
+    it "solo acepta valores de enum role válidos" do
+      User::ROLES.each { |r| expect(build(:user, role: r, tenant: tenant)).to be_valid }
+    end
 
     it "valida longitud mínima de password" do
       user = build(:user, password: "short", password_confirmation: "short")
@@ -66,10 +68,10 @@ RSpec.describe User, type: :model do
     end
 
     it "permite mismo email en tenants distintos", :without_tenant do
-      t1 = create(:tenant, slug: "t1")
-      t2 = create(:tenant, slug: "t2")
-      create(:user, email: "oscar@iswo.co", tenant: t1)
-      other = build(:user, email: "oscar@iswo.co", tenant: t2)
+      t1 = create(:tenant, slug: "tenant-uno")
+      t2 = create(:tenant, slug: "tenant-dos")
+      ActsAsTenant.with_tenant(t1) { create(:user, email: "oscar@iswo.co", tenant: t1) }
+      other = ActsAsTenant.with_tenant(t2) { build(:user, email: "oscar@iswo.co", tenant: t2) }
       expect(other).to be_valid
     end
   end

@@ -38,6 +38,7 @@ module Api
 
         def verify_key!
           configured = ENV["GOOGLE_ADS_WEBHOOK_KEY"].to_s
+          return head :forbidden if configured.blank? && Rails.env.production?
           return if configured.blank?
 
           provided = params[:key].to_s

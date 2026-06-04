@@ -11,13 +11,24 @@ RSpec.describe ReminderNotificationJob, type: :job do
     end
 
     context "dispatcher" do
-      let(:reminder_email)    { build_stubbed(:reminder, :email,    tenant: tenant) }
-      let(:reminder_in_app)   { build_stubbed(:reminder,            tenant: tenant, channel: "in_app") }
-      let(:reminder_unknown)  { build_stubbed(:reminder,            tenant: tenant, channel: "carrier_pigeon") }
+      let(:reminder_email)  { build_stubbed(:reminder, :email,  tenant: tenant) }
+      let(:reminder_in_app) { build_stubbed(:reminder, :in_app, tenant: tenant) }
+      # Canal desconocido: usar un reminder válido y stubear el canal para evitar
+      # ArgumentError de Rails 8.1 que rechaza valores de enum inválidos.
+      let(:reminder_unknown) do
+        r = build_stubbed(:reminder, :email, tenant: tenant)
+        allow(r).to receive(:channel).and_return("carrier_pigeon")
+        r
+      end
 
       before do
-        # Devolvemos solo el reminder pedido en cada example.
-        allow(Reminder).to receive_message_chain(:due, :where).and_return([reminder])
+        # receive_message_chain devuelve Array; el job llama find_each sobre él.
+        # Usamos and_yield para simular el comportamiento de find_each en un Array.
+        allow(Reminder).to receive_message_chain(:due, :where) do
+          rel = double("relation")
+          allow(rel).to receive(:find_each).and_yield(reminder)
+          rel
+        end
         allow(reminder).to receive(:mark_sent!)
         allow(reminder).to receive(:mark_failed!)
         allow(reminder).to receive(:tenant).and_return(tenant)
@@ -26,10 +37,13 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=email" do
         let(:reminder) { reminder_email }
 
-        it "encola ReminderMailer.due_notification y marca como sent" do
-          mailer = double("ActionMailer::MessageDelivery", deliver_later: true)
+        it "entrega con deliver_now, notifica in-app y marca como sent" do
+          mailer = double("ActionMailer::MessageDelivery", deliver_now: true)
           chain  = double("Mailer", due_notification: mailer)
           allow(ReminderMailer).to receive(:with).with(reminder: reminder).and_return(chain)
+          allow(reminder).to receive(:opportunity).and_return(build_stubbed(:opportunity, tenant: tenant))
+          expect(mailer).to receive(:deliver_now)
+          expect(Notifications::ReminderDueNotifier).to receive(:call).with(reminder: reminder).and_return(true)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end
@@ -38,7 +52,9 @@ RSpec.describe ReminderNotificationJob, type: :job do
       context "channel=in_app" do
         let(:reminder) { reminder_in_app }
 
-        it "marca como sent sin tocar mailers" do
+        it "notifica in-app y marca como sent" do
+          allow(reminder).to receive(:opportunity).and_return(build_stubbed(:opportunity, tenant: tenant))
+          expect(Notifications::ReminderDueNotifier).to receive(:call).with(reminder: reminder).and_return(true)
           expect(reminder).to receive(:mark_sent!)
           described_class.new.perform
         end
@@ -58,7 +74,11 @@ RSpec.describe ReminderNotificationJob, type: :job do
       let(:reminder) { build_stubbed(:reminder, :email, tenant: tenant) }
 
       before do
-        allow(Reminder).to receive_message_chain(:due, :where).and_return([reminder])
+        allow(Reminder).to receive_message_chain(:due, :where) do
+          rel = double("relation")
+          allow(rel).to receive(:find_each).and_yield(reminder)
+          rel
+        end
         allow(reminder).to receive(:tenant).and_return(tenant)
         allow(ReminderMailer).to receive(:with).and_raise(StandardError, "smtp down")
       end

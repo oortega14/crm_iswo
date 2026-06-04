@@ -9,13 +9,24 @@ module Api
       before_action :set_opportunity, only: %i[create]
       before_action :set_reminder,    only: %i[show update destroy complete snooze]
 
+      # GET /api/v1/reminders/stats
+      def stats
+        authorize Reminder, :index?
+        payload = Reminders::Stats.new(user: current_user).call
+        render json: { data: payload }, status: :ok
+      end
+
       # GET /api/v1/reminders
       # GET /api/v1/opportunities/:opportunity_id/reminders
       def index
+        authorize Reminder, :index?
+
         scope = if params[:opportunity_id].present?
-                  current_tenant.opportunities.find(params[:opportunity_id]).reminders
+                  opp = policy_scope(Opportunity).kept.find(params[:opportunity_id])
+                  authorize opp, :show?
+                  opp.reminders
                 else
-                  policy_scope(Reminder).where(user: current_user)
+                  policy_scope(Reminder)
                 end
         scope = scope.where(status: params[:status]) if params[:status].present?
         if params[:overdue] == "true"
@@ -23,7 +34,11 @@ module Api
         end
         scope = scope.upcoming if params[:upcoming] == "true"
 
-        render_collection(scope.includes(:user, :opportunity).order(:remind_at), with: ReminderSerializer)
+        render_collection(
+          scope.includes(:user, :opportunity).order(:remind_at),
+          with:     ReminderSerializer,
+          include:  %i[opportunity]
+        )
       end
 
       def show
@@ -38,6 +53,8 @@ module Api
           user:   current_user
         ))
         if reminder.save
+          @reminder = reminder
+          ReminderCreatedNotificationJob.perform_later(reminder.id)
           render_created(reminder, with: ReminderSerializer)
         else
           render_unprocessable(reminder)
@@ -63,29 +80,38 @@ module Api
       def complete
         authorize @reminder, :update?
         @reminder.update!(status: "done")
-        @reminder.opportunity.touch_activity!
+        @reminder.opportunity&.touch_activity!
         render_no_content
       end
 
       # POST /api/v1/reminders/:id/snooze  { minutes: 30 }
       def snooze
         authorize @reminder, :update?
-        @reminder.update!(remind_at: Time.current + params.fetch(:minutes, 30).to_i.minutes)
+        minutes = params.fetch(:minutes, 30).to_i
+        if minutes <= 0
+          return render json: { error: "minutes debe ser un número positivo" },
+                        status: :unprocessable_entity
+        end
+        @reminder.update!(remind_at: Time.current + minutes.minutes)
         render_no_content
       end
 
       private
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.find(params[:opportunity_id])
+        @opportunity = policy_scope(Opportunity).kept.find(params[:opportunity_id])
       end
 
       def set_reminder
-        @reminder = current_tenant.reminders.find(params[:id])
+        @reminder = policy_scope(Reminder).find(params[:id])
       end
 
       def reminder_params
-        params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id, :status)
+        permitted = params.require(:reminder).permit(:remind_at, :channel, :subject, :message, :user_id, :status)
+        unless current_user.role_admin? || current_user.role_manager?
+          permitted = permitted.except(:user_id)
+        end
+        permitted
       end
     end
   end

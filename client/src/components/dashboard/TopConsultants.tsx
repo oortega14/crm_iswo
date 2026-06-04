@@ -1,11 +1,11 @@
 import { Crown, Medal, Trophy } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatCurrency, cn, getInitials } from '@/lib/utils'
+import { formatCurrency, cn } from '@/lib/utils'
 import type { DashboardTopConsultant } from '@/lib/dashboardApi'
 
 interface TopConsultantsProps {
+  currency?: string
   data?: DashboardTopConsultant[]
   isLoading?: boolean
   isError?: boolean
@@ -40,7 +40,12 @@ function RankIcon({ index }: { index: number }) {
   return <span className="w-3.5 text-center text-[10px] font-bold text-muted-foreground">{index + 1}</span>
 }
 
-export function TopConsultants({ data = [], isLoading, isError }: TopConsultantsProps) {
+export function TopConsultants({
+  currency = 'COP',
+  data = [],
+  isLoading,
+  isError,
+}: TopConsultantsProps) {
   if (isLoading) {
     return (
       <Card className={shell}>
@@ -49,7 +54,7 @@ export function TopConsultants({ data = [], isLoading, isError }: TopConsultants
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Trophy className="size-4" />
             </span>
-            Mejores del mes
+            Ranking comercial
           </CardTitle>
           <CardDescription>Oportunidades ganadas en el mes en curso.</CardDescription>
         </CardHeader>
@@ -74,7 +79,7 @@ export function TopConsultants({ data = [], isLoading, isError }: TopConsultants
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Trophy className="size-4" />
             </span>
-            Mejores del mes
+            Ranking comercial
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -100,7 +105,7 @@ export function TopConsultants({ data = [], isLoading, isError }: TopConsultants
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
             <Trophy className="size-4" />
           </span>
-          Mejores del mes
+          Ranking comercial
         </CardTitle>
         <CardDescription>Ranking por oportunidades ganadas (mes actual). Valor facturado estimado.</CardDescription>
       </CardHeader>
@@ -131,18 +136,12 @@ export function TopConsultants({ data = [], isLoading, isError }: TopConsultants
                 >
                   <RankIcon index={index} />
                 </div>
-                <Avatar className="size-9 border border-border/50 shadow-sm">
-                  <AvatarImage src={consultant.avatar_url} alt={consultant.name} />
-                  <AvatarFallback className="text-xs font-medium">
-                    {getInitials(consultant.name)}
-                  </AvatarFallback>
-                </Avatar>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium leading-tight text-foreground">
                     {consultant.name}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    {formatCurrency(consultant.total_value, 'COP')} · {consultant.won_count} ganada
+                    {formatCurrency(consultant.total_value, currency)} · {consultant.won_count} ganada
                     {consultant.won_count === 1 ? '' : 's'}
                   </p>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted/80">

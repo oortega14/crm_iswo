@@ -1,49 +1,58 @@
-import { useSortable } from '@dnd-kit/sortable'
+import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { Bell, Clock, GripVertical, Network } from 'lucide-react'
+import { ArrowRight, Bell, Clock, Share2 } from 'lucide-react'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
-import { cn, formatCurrency, formatRelativeTime, getBantScoreColor, getInitials } from '@/lib/utils'
+import { OpportunityLeadRow } from '@/components/opportunities/OpportunityLeadRow'
+import { cn, formatCurrency, formatRelativeTime, getBantScoreColor } from '@/lib/utils'
+import { TemperatureBadge } from './TemperatureBadge'
 import { Card } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useNetworkUserIds } from '@/hooks/useNetworkUserIds'
-import { useTenant, useUser } from '@/stores/auth'
-import type { Opportunity } from '@/types'
+import { useTenant } from '@/stores/auth'
+import type { Opportunity, PipelineStage } from '@/types'
 
 interface OpportunityCardProps {
   opportunity: Opportunity
   onClick: () => void
   isDragging?: boolean
+  dragDisabled?: boolean
+  stages?: PipelineStage[]
+  onMoveStage?: (stageId: string) => void
+  moveStagePending?: boolean
 }
 
 export function OpportunityCard({
   opportunity,
   onClick,
   isDragging = false,
+  dragDisabled = false,
+  stages,
+  onMoveStage,
+  moveStagePending = false,
 }: OpportunityCardProps) {
   const {
     attributes,
     listeners,
     setNodeRef,
     transform,
-    transition,
-    isDragging: isSortableDragging,
-  } = useSortable({ id: opportunity.id })
+    isDragging: isDraggableActive,
+  } = useDraggable({
+    id: opportunity.id,
+    disabled: dragDisabled || isDragging,
+  })
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined
 
-  const currentUser = useUser()
   const tenant = useTenant()
-  const networkUserIds = useNetworkUserIds()
-  const ownerId = opportunity.owner?.id
-  const isFromNetwork =
-    ownerId !== undefined &&
-    ownerId !== String(currentUser?.id) &&
-    networkUserIds.has(ownerId)
 
   const hasReminder =
     opportunity.reminder_due_at &&
@@ -55,62 +64,84 @@ export function OpportunityCard({
     new Date(opportunity.last_activity_at) <
       new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000)
 
+  const canMoveStage =
+    !dragDisabled && stages && stages.length > 0 && onMoveStage != null
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-no-drag]')) return
+    onClick()
+  }
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
       className={cn(
-        'p-2 cursor-pointer hover:shadow-md transition-shadow',
-        (isDragging || isSortableDragging) && 'opacity-50 shadow-lg rotate-2',
+        'p-2 hover:shadow-md transition-shadow select-none',
+        !dragDisabled && 'cursor-grab active:cursor-grabbing',
+        dragDisabled && 'cursor-pointer',
+        (isDragging || isDraggableActive) && 'opacity-40 shadow-lg',
         opportunity.status === 'lost' && 'opacity-50 grayscale-[40%] border-destructive/30',
-        opportunity.status === 'won'  && 'border-green-500/40 bg-green-50/30 dark:bg-green-950/20'
+        opportunity.status === 'won' && 'border-green-500/40 bg-green-50/30 dark:bg-green-950/20',
       )}
-      onClick={onClick}
+      onClick={handleCardClick}
+      {...(!dragDisabled ? { ...attributes, ...listeners } : {})}
     >
-      <div className="flex items-start gap-1.5">
-        {/* Drag handle */}
-        <button
-          className="mt-0.5 p-0.5 rounded hover:bg-muted cursor-grab active:cursor-grabbing text-muted-foreground shrink-0"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="size-3" />
-        </button>
-
-        <div className="flex-1 min-w-0">
-          {/* Contact name */}
-          <div className="flex items-start justify-between gap-1 mb-0.5">
-            <h3 className="font-medium text-xs truncate leading-tight">{opportunity.contact_name}</h3>
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className="flex items-start justify-between gap-1">
+          <OpportunityLeadRow
+            className="flex-1 min-w-0"
+            contactName={opportunity.contact_name}
+            stageName={opportunity.stage?.name}
+            stageReferenceAt={opportunity.updated_at}
+            customFields={opportunity.custom_fields}
+            propertyTitle={opportunity.title}
+          />
+          <div className="flex items-center gap-0.5 shrink-0">
+            {opportunity.from_network && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="flex items-center">
+                    <Share2 className="size-3 text-indigo-500" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  Oportunidad de la red de referidos
+                </TooltipContent>
+              </Tooltip>
+            )}
             {hasReminder && (
-              <Bell className="size-3 text-amber-500 shrink-0 animate-pulse" />
+              <Bell className="size-3 text-amber-500 animate-pulse" />
             )}
           </div>
+        </div>
 
-          {/* Company */}
-          {opportunity.company_name && (
-            <p className="text-[10px] text-muted-foreground truncate mb-1">
-              {opportunity.company_name}
-            </p>
-          )}
+        {opportunity.company_name && (
+          <p className="text-[10px] text-muted-foreground truncate">
+            {opportunity.company_name}
+          </p>
+        )}
 
-          {/* Value and BANT */}
-          <div className="flex items-center justify-between gap-1 mb-1">
-            <span className="text-xs font-mono font-medium">
-              {formatCurrency(
-                Number.isFinite(Number(opportunity.estimated_value))
-                  ? Number(opportunity.estimated_value)
-                  : 0,
-                opportunity.currency
-              )}
-            </span>
+        {/* Value, BANT y Temperatura */}
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-xs font-mono font-medium">
+            {formatCurrency(
+              Number.isFinite(Number(opportunity.estimated_value))
+                ? Number(opportunity.estimated_value)
+                : 0,
+              opportunity.currency,
+            )}
+          </span>
+          <div className="flex items-center gap-1">
+            <TemperatureBadge temperature={opportunity.temperature ?? 'cold'} showLabel={false} />
             <Badge
               className={cn(
                 'text-[10px] font-mono px-1 py-0 h-4',
                 getBantScoreColor(
                   Number.isFinite(Number(opportunity.bant_score))
                     ? Number(opportunity.bant_score)
-                    : 0
-                )
+                    : 0,
+                ),
               )}
             >
               {Number.isFinite(Number(opportunity.bant_score))
@@ -118,67 +149,81 @@ export function OpportunityCard({
                 : 0}
             </Badge>
           </div>
+        </div>
 
-          {(opportunity.contact_phone || opportunity.contact_email) && (
-            <div className="mb-1 pt-1 border-t border-border/60">
-              <ContactActionButtons
-                compact
-                phone={opportunity.contact_phone}
-                email={opportunity.contact_email}
-                stopClickPropagation
-                className="justify-start"
-              />
-            </div>
+        {(opportunity.contact_phone || opportunity.contact_email) && (
+          <div className="pt-1 border-t border-border/60" data-no-drag>
+            <ContactActionButtons
+              compact
+              phone={opportunity.contact_phone}
+              email={opportunity.contact_email}
+              stopClickPropagation
+              className="justify-start"
+            />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-1">
+          {opportunity.owner?.name && (
+            <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+              {opportunity.owner.name.split(' ')[0]}
+            </span>
           )}
 
-          {/* Footer */}
-          <div className="flex items-center justify-between gap-1">
-            <div className="flex items-center gap-1">
-              <Avatar className="size-4">
-                <AvatarImage src={opportunity.owner?.avatar_url} />
-                <AvatarFallback className="text-[8px]">
-                  {opportunity.owner?.name ? getInitials(opportunity.owner.name) : 'U'}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-[10px] text-muted-foreground truncate max-w-[50px]">
-                {opportunity.owner?.name?.split(' ')[0]}
-              </span>
-              {isFromNetwork && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center">
-                      <Network className="size-2.5 text-indigo-500" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    De tu red de referidos
-                  </TooltipContent>
-                </Tooltip>
+          {opportunity.last_activity_at && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'flex items-center gap-0.5 text-[10px] shrink-0',
+                    isStale ? 'text-amber-500' : 'text-muted-foreground',
+                  )}
+                >
+                  {isStale && <Clock className="size-2.5 shrink-0" />}
+                  {formatRelativeTime(opportunity.last_activity_at)}
+                </span>
+              </TooltipTrigger>
+              {isStale && (
+                <TooltipContent side="top" className="text-xs">
+                  Sin actividad hace más de {staleDays} días
+                </TooltipContent>
               )}
-            </div>
-
-            {opportunity.last_activity_at && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className={cn(
-                      'flex items-center gap-0.5 text-[10px]',
-                      isStale ? 'text-amber-500' : 'text-muted-foreground'
-                    )}
-                  >
-                    {isStale && <Clock className="size-2.5 shrink-0" />}
-                    {formatRelativeTime(opportunity.last_activity_at)}
-                  </span>
-                </TooltipTrigger>
-                {isStale && (
-                  <TooltipContent side="top" className="text-xs">
-                    Sin actividad hace más de {staleDays} días
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            )}
-          </div>
+            </Tooltip>
+          )}
         </div>
+
+        {canMoveStage && (
+          <div
+            className="pt-1 border-t border-border/60"
+            data-no-drag
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Select
+              value={opportunity.stage_id || undefined}
+              onValueChange={(stageId) => {
+                if (stageId !== opportunity.stage_id) onMoveStage(stageId)
+              }}
+              disabled={moveStagePending}
+            >
+              <SelectTrigger
+                className="h-7 w-full text-[10px] gap-1 px-2 border-dashed bg-muted/30 hover:bg-muted/60"
+                aria-label="Mover a otra etapa"
+              >
+                <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+                <SelectValue placeholder="Mover etapa…" />
+              </SelectTrigger>
+              <SelectContent>
+                {stages.map((s) => (
+                  <SelectItem key={s.id} value={s.id} className="text-xs">
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
     </Card>
   )

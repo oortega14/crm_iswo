@@ -1,0 +1,12 @@
+Hola <%= @user.name.presence || @user.email %>,
+
+Registramos tu recordatorio en el CRM:
+
+  <%= @reminder.subject %>
+  Programado: <%= @reminder.remind_at %>
+
+<% if @reminder.message.present? -%>
+<%= @reminder.message %>
+
+<% end -%>
+Te avisaremos cuando esté por vencer y al vencer.

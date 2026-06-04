@@ -19,7 +19,7 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(json["error"]).to eq("tenant_missing")
     end
 
-    it "403 si el JWT corresponde a otro tenant", :without_tenant do
+    it "403 si el JWT corresponde a otro tenant (tenant_mismatch)", :without_tenant do
       home_tenant = create(:tenant, slug: "home")
       other_tenant = create(:tenant, slug: "other")
       user = ActsAsTenant.with_tenant(home_tenant) { create(:user, :manager, tenant: home_tenant) }
@@ -31,6 +31,33 @@ RSpec.describe "Api::V1::Contacts", type: :request do
           }
       expect(response).to have_http_status(:forbidden)
       expect(json["error"]).to eq("tenant_mismatch")
+    end
+  end
+
+  describe "GET /api/v1/contacts/stats" do
+    let!(:won_contact) do
+      c = create(:contact, tenant: tenant, owner_user: manager, first_name: "Cliente")
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      won_stage = pipe.pipeline_stages.find_by(closed_won: true)
+      create(:opportunity, tenant: tenant, contact: c, owner_user: manager,
+             pipeline: pipe, pipeline_stage: won_stage, status: "won")
+      c
+    end
+
+    let!(:prospect_contact) do
+      c = create(:contact, tenant: tenant, owner_user: manager, first_name: "Prospecto")
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      create(:opportunity, tenant: tenant, contact: c, owner_user: manager,
+             pipeline: pipe, pipeline_stage: pipe.pipeline_stages.first, status: "new_lead")
+      c
+    end
+
+    it "devuelve conteos por segmento" do
+      get "/api/v1/contacts/stats", headers: auth_headers(manager)
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "clients")).to be >= 1
+      expect(json.dig("data", "prospects")).to be >= 1
+      expect(json).to include("data" => hash_including("hot_leads", "stale", "stale_days"))
     end
   end
 
@@ -62,6 +89,20 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(ids).not_to include(contact_a.id, contact_b.id)
     end
 
+    it "filtra por segment=clients (contactos con opp ganada)" do
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      won_stage = pipe.pipeline_stages.find_by(closed_won: true)
+      client = create(:contact, tenant: tenant, owner_user: manager, first_name: "SoloCliente")
+      create(:opportunity, tenant: tenant, contact: client, owner_user: manager,
+             pipeline: pipe, pipeline_stage: won_stage, status: "won")
+      bare = create(:contact, tenant: tenant, first_name: "SinOpp")
+
+      get "/api/v1/contacts?segment=clients", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(client.id)
+      expect(ids).not_to include(bare.id)
+    end
+
     it "consultant solo ve sus contactos via policy_scope" do
       own = create(:contact, tenant: tenant, owner_user: consultant)
       get "/api/v1/contacts", headers: auth_headers(consultant)
@@ -72,17 +113,30 @@ RSpec.describe "Api::V1::Contacts", type: :request do
   end
 
   describe "POST /api/v1/contacts" do
-    it "201 y crea con owner=current_user" do
+    it "201 y crea con owner=current_user y oportunidad prospecto en pipeline" do
+      pipe = create(:pipeline_with_stages, tenant: tenant, is_default: true)
+      create(:lead_source, tenant: tenant, kind: "manual")
       payload = { contact: { kind: "person", first_name: "Nuevo", last_name: "Prospect", email: "np@iswo.co" } }.to_json
 
       expect {
         post "/api/v1/contacts", params: payload, headers: auth_headers(consultant)
       }.to change(Contact, :count).by(1)
+        .and change(Opportunity, :count).by(1)
 
       expect(response).to have_http_status(:created)
       created = Contact.last
       expect(created.owner_user_id).to eq(consultant.id)
       expect(json.dig("data", "attributes", "first_name")).to eq("Nuevo")
+
+      opp = Opportunity.order(:id).last
+      expect(opp.contact_id).to eq(created.id)
+      expect(opp.owner_user_id).to eq(consultant.id)
+      expect(opp.pipeline_id).to eq(pipe.id)
+      expect(opp.status).to eq("new_lead")
+
+      get "/api/v1/opportunities", headers: auth_headers(manager)
+      opp_ids = json["data"].map { |d| d["id"].to_i }
+      expect(opp_ids).to include(opp.id)
     end
 
     it "422 con detalles de validación si falta nombre y company" do
@@ -247,6 +301,25 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       post "/api/v1/contacts/export",
            params: { export_format: "xlsx" }.to_json,
            headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  describe "GET /api/v1/contacts/export.csv (RFC §6.7)" do
+    let!(:contact_row) { create(:contact, tenant: tenant) }
+
+    it "manager descarga CSV directamente" do
+      get "/api/v1/contacts/export.csv", headers: auth_headers(manager)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("text/csv")
+      expect(response.headers["Content-Disposition"]).to include("attachment")
+      expect(response.body).to include("email").or include(contact_row.email.to_s)
+      expect(AuditEvent.where(action: "export", tenant: tenant).count).to be >= 1
+    end
+
+    it "consultant no puede descargar (403)" do
+      get "/api/v1/contacts/export.csv", headers: auth_headers(consultant)
       expect(response).to have_http_status(:forbidden)
     end
   end

@@ -1,4 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
+import { refreshAccessToken } from '@/lib/authSession'
+import { clearSessionQueryCache } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiError } from '@/types'
 import { getSubdomain } from './utils'
@@ -24,11 +26,34 @@ api.interceptors.request.use(
     }
     
     // Backend tenant resolver expects X-Tenant-Slug.
-    // Solo sobreescribir si la petición no trae ya el header (ej. rutas públicas con ?tenant=).
-    if (!config.headers['X-Tenant-Slug']) {
-      config.headers['X-Tenant-Slug'] = getSubdomain()
+    // Login / forgot: sin header → el API resuelve empresa por correo (no usar localStorage stale).
+    const requestUrl = String(config.url ?? '')
+    const method = (config.method ?? 'get').toLowerCase()
+    const isCredentialRequest =
+      !token &&
+      method === 'post' &&
+      (requestUrl.includes('/sessions') || requestUrl.includes('/password/forgot'))
+
+    if (isCredentialRequest) {
+      if (typeof config.headers.delete === 'function') {
+        config.headers.delete('X-Tenant-Slug')
+      } else {
+        delete config.headers['X-Tenant-Slug']
+      }
+    } else if (!config.headers['X-Tenant-Slug']) {
+      const fromAuth = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
+      config.headers['X-Tenant-Slug'] = fromAuth || getSubdomain()
     }
-    
+
+    // FormData: quitar Content-Type para que el navegador añada boundary (importaciones, uploads)
+    if (config.data instanceof FormData) {
+      if (typeof config.headers.delete === 'function') {
+        config.headers.delete('Content-Type')
+      } else {
+        delete config.headers['Content-Type']
+      }
+    }
+
     return config
   },
   (error) => Promise.reject(error)
@@ -60,7 +85,9 @@ api.interceptors.response.use(
     }
     const requestUrl = originalRequest?.url || ''
     const isAuthEndpoint =
-      requestUrl.includes('/sessions') || requestUrl.includes('/password/')
+      requestUrl.includes('/password/') ||
+      requestUrl.endsWith('/sessions') ||
+      requestUrl.endsWith('/sessions/refresh')
 
     // Handle 401 - try to refresh token
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
@@ -79,26 +106,21 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        const response = await axios.post(
-          `${apiBaseUrl}/sessions/refresh`,
-          {},
-          {
-            withCredentials: true,
-            headers: {
-              'X-Tenant-Slug': getSubdomain(),
-            },
-          }
-        )
-        
-        const { access_token } = response.data
-        useAuthStore.getState().setAccessToken(access_token)
-        
-        processQueue(null, access_token)
-        
-        originalRequest.headers.Authorization = `Bearer ${access_token}`
+        const session = await refreshAccessToken()
+        if (!session) {
+          throw new Error('No se pudo renovar la sesión')
+        }
+
+        const { token, user } = session
+        useAuthStore.getState().login(user, token)
+
+        processQueue(null, token)
+
+        originalRequest.headers.Authorization = `Bearer ${token}`
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError as Error, null)
+        clearSessionQueryCache()
         useAuthStore.getState().logout()
         
         // Show toast explaining logout
@@ -144,6 +166,15 @@ export function formatRailsError(err: unknown, fallback = 'Error en la petición
       const slug = (d as { error?: string }).error
       const msg = (d as { message?: string }).message
       if (typeof msg === 'string' && msg.trim()) return msg
+      if (err.response?.status === 401) {
+        return msg || 'Correo o contraseña incorrectos. Verifica tus credenciales.'
+      }
+      if (slug === 'tenant_not_found' || slug === 'tenant_missing' || slug === 'tenant_inactive') {
+        return msg || 'No se pudo identificar la empresa. Revisa el identificador o contacta al administrador.'
+      }
+      if (slug === 'tenant_mismatch') {
+        return msg || 'Tu sesión no corresponde a esta empresa. Cierra sesión e inicia de nuevo con el tenant correcto.'
+      }
       if (slug === 'connection_failed') {
         return 'La prueba de conexión falló. Revisa las credenciales o variables del servidor (p. ej. Google OAuth).'
       }

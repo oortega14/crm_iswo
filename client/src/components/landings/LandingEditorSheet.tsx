@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Sheet,
@@ -19,10 +19,12 @@ import { Spinner } from '@/components/ui/spinner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Paintbrush } from 'lucide-react'
 import { toast } from 'sonner'
-import api, { formatRailsError } from '@/lib/api'
-import { queryKeys } from '@/lib/queryClient'
-import { jsonApiPrimaryOne } from '@/lib/opportunityApi'
-import { LandingVisualEditorModal } from './LandingVisualEditorModal'
+import { formatRailsError } from '@/lib/api'
+import { fetchLandingPageDetail, updateLandingPage } from '@/lib/landingPagesApi'
+import { getAuthQueryScope, invalidateLandingPagesQueries, queryKeys } from '@/lib/queryClient'
+const LandingVisualEditorModal = lazy(() =>
+  import('./LandingVisualEditorModal').then((m) => ({ default: m.LandingVisualEditorModal }))
+)
 
 // ---------------------------------------------------------------------------
 // Tipos internos
@@ -146,13 +148,13 @@ export function LandingEditorSheet({
   const [visualEditorOpen, setVisualEditorOpen] = useState(false)
 
   // Fetch del landing con content + styles
+  const authScope = getAuthQueryScope()
+
   const { data: landingData, isLoading } = useQuery({
     queryKey: queryKeys.landingPages.detail(landingId ?? ''),
-    queryFn:  async () => {
-      const res = await api.get(`/landing_pages/${landingId}`)
-      return jsonApiPrimaryOne(res.data)
-    },
-    enabled: open && !!landingId,
+    queryFn: () => fetchLandingPageDetail(landingId!),
+    enabled: open && Boolean(authScope) && !!landingId,
+    staleTime: 0,
   })
 
   // Sincronizar formulario cuando llegan los datos
@@ -173,13 +175,18 @@ export function LandingEditorSheet({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      await api.patch(`/landing_pages/${landingId}`, {
-        landing_page: { content, styles },
+      const existing = (landingData?.attributes?.content ?? {}) as Record<string, unknown>
+      const gjsKeys = ['gjs_project', 'gjs_html', 'gjs_css'] as const
+      const preserved = Object.fromEntries(
+        gjsKeys.filter((k) => existing[k] != null).map((k) => [k, existing[k]]),
+      )
+      await updateLandingPage(landingId!, {
+        content: { ...preserved, ...content },
+        styles: { ...styles } as Record<string, unknown>,
       })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.detail(landingId ?? '') })
+      void invalidateLandingPagesQueries(queryClient)
       toast.success('Landing page guardada')
       onOpenChange(false)
     },
@@ -233,6 +240,11 @@ export function LandingEditorSheet({
             )}
           </div>
         </SheetHeader>
+
+        <p className="px-6 text-xs text-muted-foreground border-b pb-3">
+          El contenido GrapeJS es solo marketing. El formulario de captura va fijo al final de la página
+          pública y cada envío crea una oportunidad en el CRM.
+        </p>
 
         {isLoading ? (
           <div className="flex-1 px-6 py-6 space-y-4">
@@ -439,13 +451,15 @@ export function LandingEditorSheet({
       </SheetContent>
     </Sheet>
 
-    {landingId && (
-      <LandingVisualEditorModal
-        open={visualEditorOpen}
-        onOpenChange={setVisualEditorOpen}
-        landingId={landingId}
-        landingTitle={landingTitle}
-      />
+    {landingId && visualEditorOpen && (
+      <Suspense fallback={null}>
+        <LandingVisualEditorModal
+          open={visualEditorOpen}
+          onOpenChange={setVisualEditorOpen}
+          landingId={landingId}
+          landingTitle={landingTitle}
+        />
+      </Suspense>
     )}
     </>
   )

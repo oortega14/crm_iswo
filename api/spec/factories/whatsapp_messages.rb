@@ -17,6 +17,7 @@ FactoryBot.define do
 
     trait :twilio   do provider { "twilio"         } end
     trait :cloud    do provider { "whatsapp_cloud" } end
+    trait :openwa   do provider { "openwa"         } end
 
     trait :sent      do status { "sent"      }; sent_at      { Time.current } end
     trait :delivered do status { "delivered" }; delivered_at { Time.current } end

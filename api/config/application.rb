@@ -31,5 +31,11 @@ module CrmIswo
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+
+    # Requerido para cookies.encrypted[:refresh_token] en SessionsController.
+    # api_only=true los excluye por defecto.
+    config.middleware.insert_after ActionDispatch::RequestId, ActionDispatch::Cookies
+    config.middleware.insert_after ActionDispatch::Cookies, ActionDispatch::Session::CookieStore,
+                                   key: "_crm_iswo_session", same_site: :lax, secure: Rails.env.production?
   end
 end

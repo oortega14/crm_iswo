@@ -15,9 +15,10 @@
 # Se llama desde el controller público o vía job (#call_later).
 # ============================================================================
 class LandingSubmissionProcessor
-  NAME_KEYS  = %w[full_name name nombre nombre_completo].freeze
-  EMAIL_KEYS = %w[email correo e_mail].freeze
-  PHONE_KEYS = %w[phone telefono celular whatsapp mobile].freeze
+  NAME_KEYS    = %w[full_name name nombre nombre_completo].freeze
+  EMAIL_KEYS   = %w[email correo e_mail].freeze
+  PHONE_KEYS   = %w[phone telefono celular whatsapp mobile].freeze
+  COMPANY_KEYS = %w[company empresa compania organization].freeze
   DUP_THRESHOLD = 0.85
 
   def initialize(submission)
@@ -35,6 +36,7 @@ class LandingSubmissionProcessor
     ActsAsTenant.with_tenant(@tenant) do
       ActiveRecord::Base.transaction do
         contact     = find_or_create_contact!
+        contact     = apply_payload_to_contact!(contact)
         opportunity = create_opportunity!(contact)
 
         @submission.update!(
@@ -42,8 +44,7 @@ class LandingSubmissionProcessor
           opportunity:  opportunity,
           processed_at: Time.current
         )
-
-        @landing&.increment!(:lead_count)
+        # lead_count ya se incrementa en Public::LandingFormSubmissionsController#create
       end
     end
     true
@@ -76,12 +77,36 @@ class LandingSubmissionProcessor
         last_name:        last_name,
         email:            email,
         phone_e164:       phone,
-        phone_normalized: Phonelib.parse(phone).sanitized,
-        custom_fields:    extra_fields,
+        phone_normalized: normalized_phone.present? ? Phonelib.parse(phone).sanitized : nil,
+        company_name:     extract(COMPANY_KEYS),
+        custom_fields:    extra_fields.stringify_keys,
         source_kind:      "web",
         source_label:     @landing&.slug
       )
     end
+  end
+
+  # Actualiza contacto existente o recién creado con lo enviado en el formulario.
+  def apply_payload_to_contact!(contact)
+    phone = normalized_phone
+    updates = {}
+    updates[:first_name]   = first_name if first_name.present?
+    updates[:last_name]    = last_name if last_name.present?
+    updates[:email]        = email if email.present?
+    updates[:phone_e164]   = phone if phone.present?
+    if phone.present?
+      updates[:phone_normalized] = Phonelib.parse(phone).sanitized
+    end
+    company = extract(COMPANY_KEYS)
+    updates[:company_name] = company if company.present?
+
+    extras = extra_fields
+    if extras.present?
+      updates[:custom_fields] = (contact.custom_fields || {}).merge(extras.stringify_keys)
+    end
+
+    contact.update!(updates) if updates.present?
+    contact
   end
 
   def create_opportunity!(contact)
@@ -98,7 +123,8 @@ class LandingSubmissionProcessor
       lead_source:      source,
       status:           "new_lead",
       title:            "Lead landing: #{@landing&.title || 'Formulario público'}",
-      custom_fields:    utm_fields,
+      custom_fields:    opportunity_custom_fields,
+      notes:            opportunity_notes_from_payload,
       last_activity_at: Time.current
     )
 
@@ -106,7 +132,17 @@ class LandingSubmissionProcessor
       tenant:       @tenant,
       user:         nil,
       action:       "create",
-      changes_data: { landing_id: @landing&.id, utm: utm_fields }
+      changes_data: {
+        landing_id: @landing&.id,
+        utm:        utm_fields,
+        form:       stored_form_payload
+      }.compact
+    )
+
+    Notifications::NewLeadNotifier.call(
+      opportunity:  opp,
+      source_kind:  "web",
+      source_label: @landing&.title.presence || @landing&.slug
     )
 
     opp
@@ -145,11 +181,11 @@ class LandingSubmissionProcessor
 
     country = @tenant.locale.to_s.split("-").last.presence || "CO"
     parsed = Phonelib.parse(raw, country)
-    parsed.valid? ? parsed.e164 : raw
+    parsed.valid? ? parsed.e164 : nil
   end
 
   def extra_fields
-    @payload.except(*(NAME_KEYS + EMAIL_KEYS + PHONE_KEYS + %w[first_name last_name])).to_h
+    @payload.except(*(NAME_KEYS + EMAIL_KEYS + PHONE_KEYS + COMPANY_KEYS + %w[first_name last_name])).to_h
   end
 
   def utm_fields
@@ -159,17 +195,48 @@ class LandingSubmissionProcessor
       utm_campaign: @submission.utm_campaign,
       utm_term:     @submission.utm_term,
       utm_content:  @submission.utm_content
-    }.compact
+    }.compact.stringify_keys
   end
 
-  # Round-robin simple: el consultant con menos opportunities abiertas.
+  def landing_tracking_fields
+    return {} unless @landing
+
+    {
+      "landing_page_id" => @landing.id.to_s,
+      "landing_slug"    => @landing.slug,
+      "landing_title"   => @landing.title
+    }
+  end
+
+  def opportunity_custom_fields
+    utm_fields
+      .merge(landing_tracking_fields)
+      .merge(extra_fields.stringify_keys)
+      .merge(
+        "landing_submission" => {
+          "submission_id" => @submission.id,
+          "submitted_at"  => Time.current.iso8601,
+          "payload"       => stored_form_payload
+        }
+      )
+  end
+
+  def stored_form_payload
+    @payload.to_h.transform_values { |v| v.is_a?(String) ? v.strip.truncate(500) : v }
+  end
+
+  def opportunity_notes_from_payload
+    lines = []
+    lines << "Envío landing: #{@landing&.title || @landing&.slug || 'formulario'}"
+    stored_form_payload.each do |key, value|
+      next if value.blank?
+
+      lines << "#{key.to_s.humanize}: #{value}"
+    end
+    lines.join("\n").presence
+  end
+
   def next_round_robin_owner
-    @tenant.users
-           .where(role: "consultant", active: true)
-           .left_joins(:owned_opportunities)
-           .where(opportunities: { status: "new_lead" })
-           .group("users.id")
-           .order(Arel.sql("COUNT(opportunities.id) ASC"))
-           .first
+    Leads::RoundRobinOwner.call(@tenant)
   end
 end

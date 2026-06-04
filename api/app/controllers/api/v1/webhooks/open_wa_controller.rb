@@ -37,6 +37,7 @@ module Api
 
         def verify_openwa_signature!
           secret = ENV["OPENWA_WEBHOOK_SECRET"].to_s
+          return head :forbidden if secret.blank? && Rails.env.production?
           return if secret.blank?
 
           signature = request.headers["X-OpenWA-Signature"].to_s

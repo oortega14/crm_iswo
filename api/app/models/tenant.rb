@@ -27,6 +27,7 @@ class Tenant < ApplicationRecord
   has_many :exports,                dependent: :destroy
   has_many :audit_events,           dependent: :nullify
   has_one  :bant_criterion,         dependent: :destroy
+  has_many :tenant_field_definitions, dependent: :destroy
 
   # Nombre de API/SPA; en base de datos la columna es `primary_color`.
   alias_attribute :brand_color, :primary_color

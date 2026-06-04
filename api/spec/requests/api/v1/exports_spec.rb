@@ -34,4 +34,18 @@ RSpec.describe "Api::V1::Exports", type: :request do
       expect(json.dig("data", "attributes", "filters")).to include("kind_eq" => "person")
     end
   end
+
+  describe "GET /api/v1/exports" do
+    let!(:failed_export) do
+      create(:export, tenant: tenant, user: manager, resource: "contacts", format: "csv",
+             status: "failed", error_message: "LOCKBOX test")
+    end
+
+    it "lista exportaciones fallidas (no expiradas)" do
+      get "/api/v1/exports", headers: auth_headers(manager)
+      expect(response).to have_http_status(:ok)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(failed_export.id)
+    end
+  end
 end

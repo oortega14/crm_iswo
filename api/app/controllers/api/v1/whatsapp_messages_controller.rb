@@ -14,7 +14,7 @@ module Api
       # GET /api/v1/whatsapp_messages (standalone o anidado)
       def index
         scope = if params[:opportunity_id].present?
-                  opp = current_tenant.opportunities.find(params[:opportunity_id])
+                  opp = policy_scope(Opportunity).kept.find(params[:opportunity_id])
                   authorize opp, :show?
                   opp.whatsapp_messages
                 else
@@ -86,15 +86,15 @@ module Api
       def dispatch_whatsapp_delivery!(msg)
         return unless defined?(WhatsappDeliveryJob)
 
-        WhatsappDeliveryJob.perform_now(msg.id)
+        WhatsappDeliveryJob.perform_later(msg.id)
       end
 
       def set_opportunity
-        @opportunity = current_tenant.opportunities.find(params[:opportunity_id])
+        @opportunity = policy_scope(Opportunity).kept.find(params[:opportunity_id])
       end
 
       def set_message
-        @message = current_tenant.whatsapp_messages.find(params[:id])
+        @message = policy_scope(WhatsappMessage).find(params[:id])
       end
     end
   end

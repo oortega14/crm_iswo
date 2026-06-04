@@ -6,7 +6,8 @@ module Api
     # ReferralNetworksController — red de consultores
     # ========================================================================
     class ReferralNetworksController < BaseController
-      before_action :set_edge, only: :destroy
+      auditable_resource :edge
+      before_action :set_edge, only: %i[update destroy]
 
       # GET /api/v1/referral_networks
       def index
@@ -19,9 +20,19 @@ module Api
         authorize ReferralNetwork
         edge = current_tenant.referral_networks.new(edge_params)
         if edge.save
+          @edge = edge
           render_created(edge, with: ReferralNetworkSerializer)
         else
           render_unprocessable(edge)
+        end
+      end
+
+      def update
+        authorize @edge
+        if @edge.update(edge_params)
+          render_resource(@edge, with: ReferralNetworkSerializer)
+        else
+          render_unprocessable(@edge)
         end
       end
 
@@ -33,7 +44,9 @@ module Api
 
       # GET /api/v1/referral_networks/tree?root_user_id=...&depth=3
       def tree
-        root_id   = params.fetch(:root_user_id, current_user.id).to_i
+        root_id = params.fetch(:root_user_id, current_user.id).to_i
+        raise Pundit::NotAuthorizedError unless policy(ReferralNetwork).tree?(root_id)
+
         max_depth = [params.fetch(:depth, 3).to_i, 10].min
 
         render json: { data: build_tree(root_id, max_depth) }, status: :ok
@@ -41,7 +54,10 @@ module Api
 
       # GET /api/v1/referral_networks/my_network
       def my_network
-        render json: { data: build_tree(current_user.id, 5) }, status: :ok
+        authorize ReferralNetwork, :index?
+        depth = ConsultantNetworkAccess.tree_depth(current_tenant)
+        payload = depth.zero? ? empty_tree(current_user.id) : build_tree(current_user.id, depth)
+        render json: { data: payload }, status: :ok
       end
 
       private
@@ -52,6 +68,11 @@ module Api
 
       def edge_params
         params.require(:referral_network).permit(:referrer_user_id, :referred_user_id, :depth, :active)
+      end
+
+      def empty_tree(root_id)
+        root = current_tenant.users.find_by(id: root_id)
+        { root: user_node(root), edges: [] }
       end
 
       def build_tree(root_id, max_depth)

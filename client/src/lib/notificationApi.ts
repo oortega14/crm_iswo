@@ -1,7 +1,10 @@
-import api from '@/lib/api'
+import api, { formatRailsError } from '@/lib/api'
+import { jsonApiPrimaryList, type JsonApiResource } from '@/lib/opportunityApi'
 
 export type NotificationKind =
   | 'reminder_due'
+  | 'reminder_created'
+  | 'reminder_upcoming'
   | 'stage_change'
   | 'new_lead'
   | 'duplicate_found'
@@ -16,43 +19,51 @@ export interface AppNotification {
   createdAt: string
 }
 
-interface ApiNotification {
-  id: string | number
-  attributes: {
-    kind: NotificationKind
-    title: string
-    body: string | null
-    resource_type: string | null
-    resource_id: string | null
-    unread: boolean
-    read_at: string | null
-    created_at: string
+function parseKind(value: unknown): NotificationKind {
+  const k = typeof value === 'string' ? value : ''
+  if (
+    k === 'reminder_due' ||
+    k === 'reminder_created' ||
+    k === 'reminder_upcoming' ||
+    k === 'stage_change' ||
+    k === 'new_lead' ||
+    k === 'duplicate_found'
+  ) {
+    return k
+  }
+  return 'reminder_due'
+}
+
+export function mapNotification(resource: JsonApiResource): AppNotification | null {
+  if (!resource.id) return null
+  const a = resource.attributes ?? {}
+  const resourceType =
+    typeof a.resource_type === 'string' ? a.resource_type.toLowerCase() : ''
+  const isOpportunity = resourceType === 'opportunity'
+  const resourceId = a.resource_id
+
+  return {
+    id: String(resource.id),
+    type: parseKind(a.kind),
+    title: String(a.title ?? ''),
+    message: a.body != null ? String(a.body) : '',
+    opportunityId: isOpportunity && resourceId != null ? String(resourceId) : null,
+    unread: Boolean(a.unread ?? a.read_at == null),
+    createdAt: String(a.created_at ?? ''),
   }
 }
 
-export function mapNotification(r: ApiNotification): AppNotification {
-  const a = r.attributes
-  const isOpportunity =
-    typeof a.resource_type === 'string' &&
-    a.resource_type.toLowerCase() === 'opportunity'
-  const opportunityId = isOpportunity ? (a.resource_id != null ? String(a.resource_id) : null) : null
-
-  return {
-    id: String(r.id),
-    type: a.kind,
-    title: a.title,
-    message: a.body ?? '',
-    opportunityId,
-    unread: a.unread,
-    createdAt: a.created_at,
-  }
+export function notificationErrorMessage(error: unknown, fallback: string): string {
+  return formatRailsError(error, fallback)
 }
 
 export async function fetchUnreadNotifications(limit = 20): Promise<AppNotification[]> {
-  const res = await api.get<{ data: ApiNotification[] }>('/notifications', {
+  const res = await api.get('/notifications', {
     params: { unread: 'true', limit },
   })
-  return (res.data.data ?? []).map(mapNotification)
+  return jsonApiPrimaryList(res.data)
+    .map(mapNotification)
+    .filter((n): n is AppNotification => n != null)
 }
 
 export async function markNotificationRead(id: string): Promise<void> {

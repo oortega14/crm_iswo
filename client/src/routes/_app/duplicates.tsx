@@ -46,6 +46,7 @@ import {
   DUPLICATE_FLAGS_POLL_MS,
   getAuthQueryScope,
   invalidateDuplicateFlagsQueries,
+  invalidateNotificationsQueries,
   queryKeys,
 } from '@/lib/queryClient'
 import { tenantHasModule } from '@/lib/tenantModules'
@@ -196,7 +197,10 @@ function DuplicatesPage() {
     prevPendingCountRef.current = totalCount
   }, [totalCount, canResolve, resolutionFilter, isLoading])
 
-  const invalidate = () => invalidateDuplicateFlagsQueries(queryClient)
+  const invalidate = () => {
+    void invalidateDuplicateFlagsQueries(queryClient)
+    void invalidateNotificationsQueries(queryClient)
+  }
 
   const mergeMutation = useMutation({
     mutationFn: mergeDuplicateFlag,

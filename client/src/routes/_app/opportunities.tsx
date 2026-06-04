@@ -3,7 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { LayoutGrid, Table as TableIcon, Plus, Search, RefreshCw, Trash2 } from 'lucide-react'
 import { z } from 'zod'
-import { invalidateContactSegmentMetrics, queryKeys } from '@/lib/queryClient'
+import {
+  invalidateContactSegmentMetrics,
+  invalidateNotificationsQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'

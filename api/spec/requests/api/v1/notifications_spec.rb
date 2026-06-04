@@ -26,6 +26,11 @@ RSpec.describe "Api::V1::Notifications", type: :request do
       expect(ids).not_to include(read_notif.id)
     end
 
+    it "incluye unread_count en meta" do
+      get "/api/v1/notifications?unread=true", headers: auth_headers(user)
+      expect(json.dig("meta", "unread_count")).to eq(1)
+    end
+
     it "no devuelve notificaciones de otro usuario" do
       other = create(:user, :consultant, tenant: tenant)
       other_notif = create(:notification, user: other, tenant: tenant, title: "Ajena")

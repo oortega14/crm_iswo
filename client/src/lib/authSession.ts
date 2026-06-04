@@ -83,31 +83,38 @@ function resolveTenantSlugForAuth(): string {
 let refreshInFlight: Promise<{ user: User; token: string } | null> | null = null
 
 /** Renueva sesión con la cookie httpOnly de refresh (una sola petición en vuelo). */
-export async function refreshAccessToken(): Promise<{ user: User; token: string } | null> {
+export async function refreshAccessToken(): Promise<{
+  user: User
+  token: string
+  tenantSlug?: string
+} | null> {
   if (refreshInFlight) return refreshInFlight
 
   refreshInFlight = (async () => {
     const tenantSlug = resolveTenantSlugForAuth()
-    if (!tenantSlug) return null
+    const headers: Record<string, string> = {}
+    if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
 
     const response = await axios.post(
       `${apiBaseUrl}/sessions/refresh`,
       {},
       {
         withCredentials: true,
-        headers: { 'X-Tenant-Slug': tenantSlug },
+        headers,
       },
     )
 
     const token = extractBearerToken(response)
     const sessionData = response.data?.data as JsonApiResource<SessionAttributes> | undefined
+    const meta = (response.data?.meta || {}) as { tenant?: { id?: string; slug?: string; name?: string } }
     if (!token || !sessionData) return null
 
     const user = buildUserFromSession(sessionData)
-    if (tenantSlug) {
-      window.localStorage.setItem('crm-tenant-slug', tenantSlug)
+    const slug = meta.tenant?.slug?.trim().toLowerCase() || tenantSlug
+    if (slug) {
+      window.localStorage.setItem('crm-tenant-slug', slug)
     }
-    return { user, token }
+    return { user, token, tenantSlug: slug }
   })().finally(() => {
     refreshInFlight = null
   })
@@ -120,34 +127,45 @@ export async function bootstrapAuth(): Promise<boolean> {
   const { isAuthenticated, accessToken, tenant } = useAuthStore.getState()
   if (isAuthenticated && accessToken) return true
 
-  const tenantSlug =
-    tenant?.subdomain?.trim().toLowerCase() ||
-    getSubdomain() ||
-    import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
-    ''
-
-  if (!tenantSlug) return false
-
   try {
     const session = await refreshAccessToken()
     if (!session) return false
+
+    const tenantSlug =
+      session.tenantSlug ||
+      tenant?.subdomain?.trim().toLowerCase() ||
+      getSubdomain() ||
+      import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
+      ''
 
     const { login, setTenant } = useAuthStore.getState()
     clearSessionQueryCache()
     login(session.user, session.token)
 
-    try {
-      const tenantResponse = await axios.get(`${apiBaseUrl}/tenant`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${session.token}`,
-          'X-Tenant-Slug': tenantSlug,
-        },
-      })
-      const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
-      if (tenantData) setTenant(buildTenant(tenantData))
-    } catch {
-      // Tenant opcional en bootstrap; el usuario ya puede navegar.
+    if (tenantSlug) {
+      try {
+        const tenantResponse = await axios.get(`${apiBaseUrl}/tenant`, {
+          withCredentials: true,
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+            'X-Tenant-Slug': tenantSlug,
+          },
+        })
+        const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
+        if (tenantData) setTenant(buildTenant(tenantData))
+      } catch {
+        if (session.tenantSlug) {
+          setTenant({
+            id: '0',
+            name: session.tenantSlug,
+            subdomain: session.tenantSlug,
+            primary_color: '#2563eb',
+            currency: 'COP',
+            timezone: 'America/Bogota',
+            created_at: new Date().toISOString(),
+          })
+        }
+      }
     }
 
     return true

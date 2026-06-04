@@ -54,6 +54,7 @@ module Api
         ))
         if reminder.save
           @reminder = reminder
+          ReminderCreatedNotificationJob.perform_later(reminder.id)
           render_created(reminder, with: ReminderSerializer)
         else
           render_unprocessable(reminder)

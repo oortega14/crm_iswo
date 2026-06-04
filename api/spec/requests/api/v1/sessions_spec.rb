@@ -35,14 +35,36 @@ RSpec.describe "Api::V1::Sessions", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "devuelve 400 si no se resuelve el tenant", :without_tenant do
+    it "resuelve el tenant por email sin X-Tenant-Slug", :without_tenant do
       standalone = create(:tenant)
       standalone_user = ActsAsTenant.with_tenant(standalone) { create(:user, tenant: standalone, password: password) }
       post "/api/v1/sessions",
            params: { user: { email: standalone_user.email, password: password } }.to_json,
            headers: { "Content-Type" => "application/json" }
-      expect(response).to have_http_status(:bad_request)
-      expect(json["error"]).to eq("tenant_missing")
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("meta", "tenant", "slug")).to eq(standalone.slug)
+    end
+
+    it "prioriza el tenant del correo sobre X-Tenant-Slug incorrecto (p. ej. micasita + admin@iswo)", :without_tenant do
+      iswo = create(:tenant, slug: "iswo-login-#{SecureRandom.hex(2)}")
+      micasita = create(:tenant, slug: "micasita-login-#{SecureRandom.hex(2)}")
+      iswo_user = ActsAsTenant.with_tenant(iswo) do
+        create(:user, tenant: iswo, email: "admin@iswo.local", password: password)
+      end
+
+      post "/api/v1/sessions",
+           params: { user: { email: iswo_user.email, password: password } }.to_json,
+           headers: tenant_headers(micasita)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("meta", "tenant", "slug")).to eq(iswo.slug)
+    end
+
+    it "devuelve 401 si el correo no existe en ningún tenant", :without_tenant do
+      post "/api/v1/sessions",
+           params: { user: { email: "nadie@existe.co", password: password } }.to_json,
+           headers: { "Content-Type" => "application/json" }
+      expect(response).to have_http_status(:unauthorized)
     end
 
     it "prioriza X-Tenant-Slug sobre un subdominio de Host incorrecto" do
@@ -94,6 +116,16 @@ RSpec.describe "Api::V1::Sessions", type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.headers["Authorization"]).to match(/\ABearer /)
       expect(json.dig("data", "attributes", "email")).to eq(user.email)
+      expect(json.dig("meta", "tenant", "slug")).to eq(tenant.slug)
+    end
+
+    it "renueva sin X-Tenant-Slug usando la cookie de refresh", :without_tenant do
+      post "/api/v1/sessions", params: payload, headers: tenant_headers(tenant)
+      expect(response).to have_http_status(:ok)
+
+      post "/api/v1/sessions/refresh", headers: { "Content-Type" => "application/json" }
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("meta", "tenant", "slug")).to eq(tenant.slug)
     end
 
     it "dos refresh seguidos con la misma cookie: el primero rota y el segundo usa la nueva cookie" do

@@ -17,6 +17,12 @@
       queue: critical
       description: Dispara recordatorios vencidos (SLA ≤ 5 min)
 
+    reminder_upcoming_notification_job:
+      cron: "* * * * *"              # cada minuto
+      class: ReminderUpcomingNotificationJob
+      queue: critical
+      description: Aviso previo por correo/in-app antes de remind_at
+
     ad_sync_job:
       cron: "*/15 * * * *"           # cada 15 min
       class: AdSyncJob

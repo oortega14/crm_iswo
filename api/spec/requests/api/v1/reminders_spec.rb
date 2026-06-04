@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe "Api::V1::Reminders", type: :request do
+  include ActiveJob::TestHelper
   let(:tenant)     { ActsAsTenant.current_tenant }
   let(:manager)    { create(:user, :manager, tenant: tenant) }
   let(:consultant) { create(:user, :consultant, tenant: tenant) }
@@ -90,6 +91,7 @@ RSpec.describe "Api::V1::Reminders", type: :request do
 
       expect(response).to have_http_status(:created)
       expect(json.dig("data", "attributes", "subject")).to eq("Llamar")
+      expect(ReminderCreatedNotificationJob).to have_been_enqueued
     end
   end
 

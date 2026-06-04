@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Target, Users, FileText } from 'lucide-react'
 import { useAuthStore, useTenant } from '@/stores/auth'
+import { isPlatformTenant } from '@/lib/platformTenant'
 import { filterMainNav, filterSettingsNav, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
 import {
   CommandDialog,
@@ -26,6 +27,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const tenant = useTenant()
+
+  const platform = isPlatformTenant(tenant)
 
   const pages = useMemo(
     () => [
@@ -96,7 +99,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} commandProps={{ shouldFilter: false }}>
       <CommandInput
-        placeholder="Buscar oportunidades, contactos o páginas..."
+        placeholder={
+          platform
+            ? 'Buscar páginas de plataforma...'
+            : 'Buscar oportunidades, contactos o páginas...'
+        }
         value={search}
         onValueChange={handleSearchChange}
       />
@@ -109,8 +116,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               : 'No se encontraron resultados.'}
         </CommandEmpty>
 
-        {/* Search results */}
-        {searchResults && searchResults.length > 0 && (
+        {/* Search results — solo tenants comerciales (RFC F5) */}
+        {!platform && searchResults && searchResults.length > 0 && (
           <CommandGroup heading="Resultados">
             {searchResults.map((result) => {
               const Icon = getIcon(result.type)

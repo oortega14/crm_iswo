@@ -25,7 +25,7 @@ import {
 import { fetchDuplicateFlagsStats } from '@/lib/duplicateFlagsApi'
 import { fetchReminderStats } from '@/lib/reminderApi'
 import { tenantHasModule } from '@/lib/tenantModules'
-import { filterMainNav, filterSettingsNav, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
+import { filterMainNav, getSidebarSections, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
 import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -125,10 +125,28 @@ export function AppLayout({ children }: AppLayoutProps) {
     [mainNavBase, pendingRemindersCount, duplicateStats?.pending],
   )
 
-  const filteredSettingsNav = filterSettingsNav(user?.role, tenant)
+  const sidebar = useMemo(
+    () => getSidebarSections(user?.role, tenant),
+    [user?.role, tenant],
+  )
+  const platformTenant = sidebar.isPlatform
 
-  const mobilePrimary = navItemsWithBadges.slice(0, MOBILE_PRIMARY_COUNT)
-  const mobileMore = navItemsWithBadges.slice(MOBILE_PRIMARY_COUNT)
+  const mobileNavItems = useMemo(() => {
+    if (platformTenant) {
+      return sidebar.sections.flatMap((section) =>
+        section.items.map((item) => ({
+          href: item.href,
+          label: item.label,
+          icon: item.icon,
+          badge: undefined as number | undefined,
+        })),
+      )
+    }
+    return navItemsWithBadges
+  }, [platformTenant, sidebar.sections, navItemsWithBadges])
+
+  const mobilePrimary = mobileNavItems.slice(0, MOBILE_PRIMARY_COUNT)
+  const mobileMore = mobileNavItems.slice(MOBILE_PRIMARY_COUNT)
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -189,16 +207,29 @@ export function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <Link
+            to={platformTenant ? '/settings/tenant-onboarding' : '/'}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none ring-sidebar-ring focus-visible:ring-2"
+            onClick={() => setSidebarOpen(false)}
+          >
           {tenant?.logo_url ? (
             <img src={tenant.logo_url} alt={tenant.name} className="h-8 w-auto object-contain" />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Building2 className="size-4" />
             </div>
           )}
-          <span className="font-semibold text-sidebar-foreground truncate">
-            {tenant?.name || 'CRM ISWO'}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block font-semibold text-sidebar-foreground truncate">
+              {tenant?.name || 'CRM ISWO'}
+            </span>
+            {platformTenant && (
+              <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground truncate">
+                Consola de plataforma
+              </span>
+            )}
+          </div>
+          </Link>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -213,13 +244,15 @@ export function AppLayout({ children }: AppLayoutProps) {
           <nav className="flex flex-col gap-1 px-3 py-4 pb-6">
             {navItemsWithBadges.map((item) => renderNavLink(item))}
 
-            {filteredSettingsNav.length > 0 && (
-              <>
-                <Separator className="my-3" />
+            {sidebar.sections.map((section) => (
+              <div key={section.label}>
+                {(navItemsWithBadges.length > 0 || section !== sidebar.sections[0]) && (
+                  <Separator className="my-3" />
+                )}
                 <span className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Configuración
+                  {section.label}
                 </span>
-                {filteredSettingsNav.map((item) => {
+                {section.items.map((item) => {
                   const isActive = location.pathname === item.href
                   return (
                     <Link
@@ -237,8 +270,8 @@ export function AppLayout({ children }: AppLayoutProps) {
                     </Link>
                   )
                 })}
-              </>
-            )}
+              </div>
+            ))}
           </nav>
         </div>
 

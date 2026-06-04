@@ -15,7 +15,7 @@ class UserPolicy < ApplicationPolicy
   def destroy? = admin? && !owner? # no borrarse a sí mismo
 
   def activate?       = admin?
-  def deactivate?     = admin?
+  def deactivate?     = admin? && !owner?
   def reset_password?
     return false unless manager_or_admin?
     return false if manager? && target_is_admin?

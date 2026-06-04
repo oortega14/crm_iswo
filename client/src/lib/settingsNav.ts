@@ -37,7 +37,28 @@ export type SettingsNavItem = {
   description: string
   icon: LucideIcon
   roles: UserRole[]
+  /** Oculto en tenant plataforma super-admin (RFC F5). */
+  commercialOnly?: boolean
   visible?: (tenant: Tenant | null | undefined) => boolean
+}
+
+/** Orden del sidebar super-admin (RFC F5). */
+const PLATFORM_SETTINGS_ORDER = [
+  '/settings/tenant-onboarding',
+  '/settings/users',
+  '/settings/audit',
+] as const
+
+const PLATFORM_SIDEBAR_LABELS: Partial<Record<(typeof PLATFORM_SETTINGS_ORDER)[number], string>> = {
+  '/settings/tenant-onboarding': 'Tenants',
+  '/settings/users': 'Operadores',
+  '/settings/audit': 'Auditoría',
+}
+
+export type SidebarSections = {
+  isPlatform: boolean
+  main: MainNavItem[]
+  sections: { label: string; items: SettingsNavItem[] }[]
 }
 
 export const MAIN_NAV_ITEMS: MainNavItem[] = [
@@ -106,6 +127,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Días sin actividad y profundidad de la red de referidos',
     icon: Settings,
     roles: ['admin'],
+    commercialOnly: true,
   },
   {
     href: '/settings/pipelines',
@@ -114,6 +136,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Embudos comerciales y etapas del Kanban',
     icon: GitBranch,
     roles: ['admin'],
+    commercialOnly: true,
     visible: (tenant) => tenantHasModule(tenant, 'pipeline'),
   },
   {
@@ -123,6 +146,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Orígenes de oportunidades y landings',
     icon: Megaphone,
     roles: ['admin', 'manager'],
+    commercialOnly: true,
     visible: (tenant) => tenantHasModule(tenant, 'opportunities'),
   },
   {
@@ -132,6 +156,16 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Invitaciones, roles y acceso al CRM',
     icon: UserCog,
     roles: ['admin'],
+    visible: (t) => !isPlatformTenant(t),
+  },
+  {
+    href: '/settings/users',
+    label: 'Operadores',
+    title: 'Operadores de plataforma',
+    description: 'Administradores del tenant super-admin',
+    icon: UserCog,
+    roles: ['admin'],
+    visible: (t) => isPlatformTenant(t),
   },
   {
     href: '/settings/integrations',
@@ -140,6 +174,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Meta, Google Ads y WhatsApp Business',
     icon: Plug,
     roles: ['admin', 'manager'],
+    commercialOnly: true,
   },
   {
     href: '/settings/bant',
@@ -148,6 +183,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Pesos, umbral de calificación y días sin actividad',
     icon: Gauge,
     roles: ['admin'],
+    commercialOnly: true,
     visible: (tenant) => tenantShowBant(tenant),
   },
   {
@@ -157,6 +193,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Definiciones por contacto y oportunidad',
     icon: ListChecks,
     roles: ['admin'],
+    commercialOnly: true,
   },
   {
     href: '/settings/audit',
@@ -165,12 +202,22 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     description: 'Bitácora inmutable de acciones en el tenant',
     icon: FileSearch,
     roles: ['admin', 'manager'],
+    visible: (t) => !isPlatformTenant(t),
+  },
+  {
+    href: '/settings/audit',
+    label: 'Auditoría',
+    title: 'Auditoría de plataforma',
+    description: 'Onboarding de tenants y actividad de operadores super-admin',
+    icon: FileSearch,
+    roles: ['admin'],
+    visible: (t) => isPlatformTenant(t),
   },
   {
     href: '/settings/tenant-onboarding',
-    label: 'Onboarding tenants',
-    title: 'Onboarding de tenants',
-    description: 'Alta de nuevos tenants (solo tenant plataforma ISWO + token super-admin)',
+    label: 'Tenants',
+    title: 'Tenants',
+    description: 'Alta, activación y administración de empresas cliente',
     icon: Building2,
     roles: ['admin'],
     visible: (tenant) => isPlatformTenant(tenant),
@@ -186,6 +233,10 @@ export function filterMainNav(
   role: UserRole | undefined,
   tenant: Tenant | null | undefined,
 ): MainNavItem[] {
+  if (isPlatformTenant(tenant)) {
+    return []
+  }
+
   return items.filter((item) => {
     if (!roleAllowed(role, item.roles)) return false
     if (item.module && !tenantHasModule(tenant, item.module)) return false
@@ -197,9 +248,46 @@ export function filterSettingsNav(
   role: UserRole | undefined,
   tenant: Tenant | null | undefined,
 ): SettingsNavItem[] {
-  return SETTINGS_NAV_ITEMS.filter((item) => {
+  const platform = isPlatformTenant(tenant)
+  const items = SETTINGS_NAV_ITEMS.filter((item) => {
     if (!roleAllowed(role, item.roles)) return false
+    if (platform && item.commercialOnly) return false
     if (item.visible && !item.visible(tenant)) return false
     return true
   })
+
+  if (!platform) return items
+
+  const order = PLATFORM_SETTINGS_ORDER as readonly string[]
+  return items
+    .slice()
+    .sort((a, b) => order.indexOf(a.href) - order.indexOf(b.href))
+    .map((item) => ({
+      ...item,
+      label: PLATFORM_SIDEBAR_LABELS[item.href as keyof typeof PLATFORM_SIDEBAR_LABELS] ?? item.label,
+    }))
+}
+
+/** Sidebar principal + secciones (comercial vs plataforma). */
+export function getSidebarSections(
+  role: UserRole | undefined,
+  tenant: Tenant | null | undefined,
+): SidebarSections {
+  const platform = isPlatformTenant(tenant)
+  const main = filterMainNav(MAIN_NAV_ITEMS, role, tenant)
+  const settings = filterSettingsNav(role, tenant)
+
+  if (platform) {
+    return {
+      isPlatform: true,
+      main: [],
+      sections: settings.length ? [{ label: 'Plataforma', items: settings }] : [],
+    }
+  }
+
+  return {
+    isPlatform: false,
+    main,
+    sections: settings.length ? [{ label: 'Configuración', items: settings }] : [],
+  }
 }

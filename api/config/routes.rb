@@ -234,10 +234,10 @@ Rails.application.routes.draw do
       end
 
       # ========================================================================
-      # Super-admin — operaciones fuera del scope de tenant (SUPER_ADMIN_TOKEN)
+      # Admin plataforma — onboarding de tenants (sesión JWT super-admin)
       # ========================================================================
       namespace :admin do
-        resources :tenants, only: %i[index create]
+        resources :tenants, only: %i[index create update]
       end
     end
   end

@@ -59,6 +59,31 @@ RSpec.describe "Api::V1::Users", type: :request do
       expect(json.dig("data", "attributes", "email")).to eq("nuevo@iswo.co")
     end
 
+    it "devuelve contraseña temporal en meta cuando no se envía password" do
+      post "/api/v1/users",
+           headers: auth_headers(admin),
+           params: { user: { name: "Con Password Auto", email: "auto@iswo.co", role: "consultant" } }.to_json
+      expect(response).to have_http_status(:created)
+      expect(json.dig("meta", "password_generated")).to be(true)
+      expect(json.dig("meta", "temporary_password")).to be_present
+    end
+
+    it "no devuelve contraseña en meta si el admin la indicó" do
+      post "/api/v1/users",
+           headers: auth_headers(admin),
+           params: {
+             user: {
+               name:     "Con Password Manual",
+               email:    "manual@iswo.co",
+               role:     "consultant",
+               password: "MySecurePass123!"
+             }
+           }.to_json
+      expect(response).to have_http_status(:created)
+      expect(json.dig("meta", "password_generated")).to be(false)
+      expect(json.dig("meta", "temporary_password")).to be_nil
+    end
+
     it "manager no puede crear usuarios" do
       post "/api/v1/users",
            headers: auth_headers(manager),
@@ -113,6 +138,46 @@ RSpec.describe "Api::V1::Users", type: :request do
       post "/api/v1/users/#{consultant.id}/activate", headers: auth_headers(admin)
       expect(response).to have_http_status(:no_content)
       expect(consultant.reload.active).to be(true)
+    end
+
+    it "admin no puede desactivarse a sí mismo" do
+      post "/api/v1/users/#{admin.id}/deactivate", headers: auth_headers(admin)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  describe "tenant plataforma (super-admin)" do
+    let!(:platform_result) do
+      ActsAsTenant.without_tenant { Tenants::PlatformSeeder.call! }
+    end
+    let(:platform) { platform_result.tenant }
+    let(:platform_admin) { platform_result.admin_user }
+
+    it "lista usuarios del tenant plataforma" do
+      get "/api/v1/users", headers: auth_headers(platform_admin, tenant: platform)
+      expect(response).to have_http_status(:ok)
+      emails = json["data"].map { |d| d.dig("attributes", "email") }
+      expect(emails).to include(platform_admin.email)
+    end
+
+    it "crea operador admin con contraseña en meta" do
+      email = "ops-#{SecureRandom.hex(4)}@platform.local"
+      post "/api/v1/users",
+           headers: auth_headers(platform_admin, tenant: platform),
+           params: { user: { name: "Operador", email: email, role: "admin" } }.to_json
+      expect(response).to have_http_status(:created)
+      expect(json.dig("data", "attributes", "email")).to eq(email)
+      expect(json.dig("meta", "password_generated")).to be(true)
+      expect(json.dig("meta", "temporary_password")).to be_present
+    end
+
+    it "rechaza crear usuario con rol distinto de admin" do
+      post "/api/v1/users",
+           headers: auth_headers(platform_admin, tenant: platform),
+           params: {
+             user: { name: "Consultor", email: "bad@platform.local", role: "consultant" }
+           }.to_json
+      expect(response).to have_http_status(:forbidden)
     end
   end
 end

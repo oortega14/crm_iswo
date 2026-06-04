@@ -1,42 +1,6 @@
-import axios, { isAxiosError } from 'axios'
+import { isAxiosError } from 'axios'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
-
-export const ADMIN_TOKEN_STORAGE_KEY = 'crm-super-admin-token'
-
-/** Token guardado en sessionStorage o el valor del campo si aún no se guardó. */
-export function resolveAdminToken(inputValue: string): string {
-  const typed = inputValue.trim()
-  if (typed) return typed
-  if (typeof window === 'undefined') return ''
-  return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim() ?? ''
-}
-
-export type AdminClientSession = {
-  accessToken?: string | null
-  tenantSlug?: string | null
-}
-
-/** Cliente super-admin: token + sesión JWT del tenant ISWO (admin plataforma). */
-export function createAdminClient(adminToken: string, session?: AdminClientSession) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'X-Admin-Token': adminToken.trim(),
-  }
-  if (session?.accessToken) {
-    headers.Authorization = `Bearer ${session.accessToken}`
-  }
-  if (session?.tenantSlug) {
-    headers['X-Tenant-Slug'] = session.tenantSlug.trim().toLowerCase()
-  }
-  return axios.create({
-    baseURL: apiBaseUrl,
-    headers,
-    withCredentials: true,
-  })
-}
-
+/** Errores de /api/v1/admin/* (onboarding de tenants). */
 export function formatAdminApiError(err: unknown, fallback: string): string {
   if (!isAxiosError(err)) {
     return err instanceof Error ? err.message : fallback
@@ -48,23 +12,14 @@ export function formatAdminApiError(err: unknown, fallback: string): string {
       ? (data as { message: string }).message
       : undefined
 
-  if (status === 503 || (data as { error?: string })?.error === 'service_unavailable') {
-    return (
-      message ??
-      'El servidor no tiene SUPER_ADMIN_TOKEN. Añádelo a api/.env y reinicia Rails.'
-    )
-  }
   if (status === 403) {
     return (
       message ??
-      'Solo un administrador del tenant ISWO puede gestionar el onboarding de tenants.'
+      'Solo un administrador del tenant plataforma (super-admin) puede gestionar el onboarding de tenants.'
     )
   }
   if (status === 401) {
-    return (
-      message ??
-      'Token inválido. Debe ser idéntico a SUPER_ADMIN_TOKEN en api/.env (sin espacios extra).'
-    )
+    return message ?? 'Sesión expirada o no autorizado. Vuelve a iniciar sesión como admin de super-admin.'
   }
   if (status === 422) {
     return message ?? 'Datos inválidos (revisa slug, email o si el tenant ya existe).'

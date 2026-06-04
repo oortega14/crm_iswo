@@ -34,8 +34,19 @@ module Api
       # POST /api/v1/users
       def create
         authorize User
+
+        if platform_tenant? && requested_role.present? && requested_role != "admin"
+          return render json: {
+            error:   "forbidden",
+            message: "En el tenant plataforma solo se pueden crear usuarios con rol admin."
+          }, status: :forbidden
+        end
+
+        plain_password     = params.dig(:user, :password).presence || SecureRandom.hex(12)
+        password_generated = params.dig(:user, :password).blank?
+
         @user = current_tenant.users.new(user_params)
-        @user.password ||= SecureRandom.hex(12) # admin invita; user setea después
+        @user.password = plain_password
         @user.skip_confirmation! if @user.respond_to?(:skip_confirmation!)
         if @user.save
           begin
@@ -43,7 +54,12 @@ module Api
           rescue StandardError => e
             Rails.logger.warn("[UsersController#create] Welcome mailer failed: #{e.class}: #{e.message}")
           end
-          render_created(@user, with: UserSerializer)
+          payload = UserSerializer.new(@user).serializable_hash
+          payload[:meta] = {
+            password_generated:  password_generated,
+            temporary_password:  password_generated ? plain_password : nil
+          }
+          render json: payload, status: :created
         else
           render_unprocessable(@user)
         end
@@ -52,6 +68,13 @@ module Api
       # PATCH /api/v1/users/:id
       def update
         authorize @user
+        if platform_tenant? && requested_role.present? && requested_role != "admin"
+          return render json: {
+            error:   "forbidden",
+            message: "En el tenant plataforma solo se puede asignar rol admin."
+          }, status: :forbidden
+        end
+
         old_role = @user.role
         if @user.update(user_params)
           log_role_change_audit!(old_role, @user) if old_role != @user.role
@@ -70,7 +93,7 @@ module Api
 
       # POST /api/v1/users/:id/activate
       def activate
-        authorize @user, :update?
+        authorize @user, :activate?
         @user.update!(active: true)
         UserMailer.with(user: @user).account_activated.deliver_later if defined?(UserMailer)
         render_no_content
@@ -78,7 +101,7 @@ module Api
 
       # POST /api/v1/users/:id/deactivate
       def deactivate
-        authorize @user, :update?
+        authorize @user, :deactivate?
         @user.update!(active: false)
         render_no_content
       end
@@ -101,10 +124,18 @@ module Api
       end
 
       def user_params
-        base = params.require(:user).permit(:name, :first_name, :last_name, :email, :phone, :avatar_url)
+        base = params.require(:user).permit(:name, :first_name, :last_name, :email, :phone, :avatar_url, :password)
         return base unless current_user&.role_admin?
 
         base.merge(params.require(:user).permit(:role, :active))
+      end
+
+      def requested_role
+        params.dig(:user, :role).to_s.strip.presence
+      end
+
+      def platform_tenant?
+        PlatformTenant.slug?(current_tenant&.slug)
       end
 
       def cast_bool(v)

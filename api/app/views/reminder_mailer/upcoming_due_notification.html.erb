@@ -1,0 +1,9 @@
+<h2 style="margin-top:0;">Hola <%= @user.name.presence || @user.email %>,</h2>
+
+<%= render "reminder_context",
+           intro: "Tu recordatorio está por vencer y aún no lo has completado:",
+           minutes_until: @minutes_until %>
+
+<p style="margin-top:24px;">
+  Abre el CRM para atenderlo o posponerlo antes de la hora programada.
+</p>

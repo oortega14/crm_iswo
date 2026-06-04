@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_28_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -353,10 +353,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_28_120000) do
     t.string "status", default: "pending", null: false, comment: "pending | sent | failed | done"
     t.string "subject"
     t.bigint "tenant_id", null: false
+    t.datetime "upcoming_notified_at", comment: "Aviso previo por correo/in-app antes de remind_at"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false, comment: "Destinatario del recordatorio"
     t.index ["opportunity_id", "remind_at"], name: "index_reminders_on_opportunity_id_and_remind_at"
     t.index ["opportunity_id"], name: "index_reminders_on_opportunity_id"
+    t.index ["status", "remind_at", "upcoming_notified_at"], name: "index_reminders_upcoming_dispatch"
     t.index ["status", "remind_at"], name: "index_reminders_dispatch"
     t.index ["tenant_id", "user_id", "status"], name: "index_reminders_on_tenant_id_and_user_id_and_status"
     t.index ["tenant_id"], name: "index_reminders_on_tenant_id"

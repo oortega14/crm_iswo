@@ -1,20 +1,25 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Plus } from 'lucide-react'
+import { Building2, Copy, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-  ADMIN_TOKEN_STORAGE_KEY,
-  createAdminClient,
-  formatAdminApiError,
-  resolveAdminToken,
-} from '@/lib/adminApi'
-import { isPlatformTenant, PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
+import { formatAdminApiError } from '@/lib/adminApi'
+import api from '@/lib/api'
+import { PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
+import { requirePlatformTenant } from '@/lib/platformRouteGuard'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -23,16 +28,30 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Spinner } from '@/components/ui/spinner'
+
+const VERTICAL_OPTIONS = [
+  { value: 'auto', label: 'Automático (detectar por slug)' },
+  { value: 'iswo', label: 'ISWO — Consultoría ISO' },
+  { value: 'micasita', label: 'Mi Casita — Inmobiliaria' },
+  { value: 'libranzas', label: 'Libranzas — Crédito nómina' },
+  { value: 'generic', label: 'Genérico — pipeline estándar' },
+] as const
 
 export const Route = createFileRoute('/_app/settings/tenant-onboarding')({
   beforeLoad: ({ context }) => {
     if (context.auth.user?.role !== 'admin') {
       throw redirect({ to: '/' })
     }
-    if (!isPlatformTenant(context.auth.tenant)) {
-      throw redirect({ to: '/settings' })
-    }
+    requirePlatformTenant(context.auth)
   },
   component: TenantOnboardingPage,
 })
@@ -45,38 +64,31 @@ type TenantRow = {
   created_at: string
 }
 
+type CreateSuccess = {
+  slug: string
+  name: string
+  adminEmail: string
+  generatedPassword: string | null
+  passwordGenerated: boolean
+}
+
 function TenantOnboardingPage() {
   const queryClient = useQueryClient()
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const tenantSlug = useAuthStore((s) => s.tenant?.subdomain ?? PLATFORM_TENANT_SLUG)
-  const adminSession = { accessToken, tenantSlug }
-  const [adminToken, setAdminToken] = useState(
-    () => window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? '',
-  )
-  const effectiveToken = resolveAdminToken(adminToken)
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const [slug, setSlug] = useState('')
   const [name, setName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
   const [adminName, setAdminName] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
-
-  const saveToken = () => {
-    const trimmed = adminToken.trim()
-    if (!trimmed) {
-      toast.error('Escribe el token antes de guardar')
-      return
-    }
-    window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmed)
-    toast.success('Token guardado para esta sesión')
-    queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
-  }
+  const [vertical, setVertical] = useState<string>('auto')
+  const [createSuccess, setCreateSuccess] = useState<CreateSuccess | null>(null)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
 
   const { data: tenants = [], isLoading, isError, error: listError } = useQuery<TenantRow[]>({
-    queryKey: ['admin-tenants', effectiveToken],
-    enabled: effectiveToken.length > 0,
+    queryKey: ['admin-tenants'],
+    enabled: isAuthenticated,
     queryFn: async () => {
-      const client = createAdminClient(effectiveToken, adminSession)
-      const res = await client.get<{ data: TenantRow[] }>('/admin/tenants')
+      const res = await api.get<{ data: TenantRow[] }>('/admin/tenants')
       return res.data.data ?? []
     },
     retry: false,
@@ -84,35 +96,80 @@ function TenantOnboardingPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const token = resolveAdminToken(adminToken)
-      if (!token) throw new Error('Falta el token super-admin')
-      const client = createAdminClient(token, adminSession)
-      const res = await client.post<{ data: Record<string, unknown> }>('/admin/tenants', {
+      const res = await api.post<{ data: Record<string, unknown> }>('/admin/tenants', {
         tenant: {
           slug: slug.trim().toLowerCase(),
           name: name.trim(),
           admin_email: adminEmail.trim(),
           admin_name: adminName.trim() || 'Administrador',
           admin_password: adminPassword || undefined,
+          ...(vertical !== 'auto' ? { vertical } : {}),
         },
       })
       return res.data.data
     },
     onSuccess: (data) => {
+      setCreateSuccess({
+        slug: String(data.slug ?? ''),
+        name: String(data.name ?? ''),
+        adminEmail: String(data.admin_email ?? ''),
+        generatedPassword:
+          data.generated_admin_password != null
+            ? String(data.generated_admin_password)
+            : null,
+        passwordGenerated: Boolean(data.password_generated),
+      })
       toast.success(`Tenant "${data.slug}" creado`)
       setSlug('')
       setName('')
       setAdminEmail('')
       setAdminName('')
       setAdminPassword('')
+      setVertical('auto')
       queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
     },
     onError: (err: unknown) => {
-      toast.error(
-        formatAdminApiError(err, 'No se pudo crear el tenant. Revisa token, slug y email.'),
-      )
+      toast.error(formatAdminApiError(err, 'No se pudo crear el tenant. Revisa slug y email.'))
     },
   })
+
+  const updateActiveMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: number; active: boolean }) => {
+      const res = await api.patch<{ data: TenantRow }>(`/admin/tenants/${id}`, {
+        tenant: { active },
+      })
+      return res.data.data
+    },
+    onMutate: ({ id }) => {
+      setTogglingId(id)
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<TenantRow[]>(['admin-tenants'], (prev) =>
+        (prev ?? []).map((t) => (t.id === data.id ? { ...t, active: data.active } : t)),
+      )
+      toast.success(data.active ? `Tenant "${data.slug}" activado` : `Tenant "${data.slug}" desactivado`)
+    },
+    onError: (err: unknown) => {
+      toast.error(formatAdminApiError(err, 'No se pudo actualizar el estado del tenant.'))
+      queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
+    },
+    onSettled: () => {
+      setTogglingId(null)
+    },
+  })
+
+  const loginUrl = createSuccess
+    ? `${window.location.origin}/login?tenant=${encodeURIComponent(createSuccess.slug)}`
+    : ''
+
+  const copyText = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`${label} copiado`)
+    } catch {
+      toast.error('No se pudo copiar al portapapeles')
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -122,34 +179,10 @@ function TenantOnboardingPage() {
           Onboarding de tenants
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Solo desde el tenant plataforma <strong>{PLATFORM_TENANT_SLUG}</strong> (admin ISWO).
-          Requiere <code className="text-xs bg-muted px-1 rounded">SUPER_ADMIN_TOKEN</code> en{' '}
-          <code className="text-xs bg-muted px-1 rounded">api/.env</code> y tu sesión activa aquí.
+          Solo administradores del tenant plataforma <strong>{PLATFORM_TENANT_SLUG}</strong>.
+          Usa tu sesión activa; no se requiere token adicional.
         </p>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Token super-admin</CardTitle>
-          <CardDescription>
-            Debe coincidir con <code className="text-xs">SUPER_ADMIN_TOKEN</code> en{' '}
-            <code className="text-xs">api/.env</code>. Pulsa Guardar y comprueba que el listado
-            de abajo cargue antes de crear.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Input
-            type="password"
-            placeholder="Token X-Admin-Token"
-            value={adminToken}
-            onChange={(e) => setAdminToken(e.target.value)}
-            className="font-mono text-sm"
-          />
-          <Button variant="secondary" onClick={saveToken}>
-            Guardar
-          </Button>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader>
@@ -166,6 +199,25 @@ function TenantOnboardingPage() {
           <div className="space-y-1.5">
             <Label>Nombre</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Mi Casita" />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Plantilla vertical (RFC F5)</Label>
+            <Select value={vertical} onValueChange={setVertical}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona plantilla" />
+              </SelectTrigger>
+              <SelectContent>
+                {VERTICAL_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Define pipeline, BANT, fuentes de lead y campos custom. Con &quot;Automático&quot;, se usa el slug
+              (iswo, micasita, libranzas) si coincide.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label>Email admin inicial</Label>
@@ -193,7 +245,6 @@ function TenantOnboardingPage() {
             <Button
               onClick={() => createMutation.mutate()}
               disabled={
-                !effectiveToken ||
                 !slug.trim() ||
                 !name.trim() ||
                 !adminEmail.trim() ||
@@ -212,13 +263,11 @@ function TenantOnboardingPage() {
           <CardTitle className="text-base">Tenants existentes</CardTitle>
         </CardHeader>
         <CardContent>
-          {!adminToken.trim() ? (
-            <p className="text-sm text-muted-foreground">Ingresa el token para listar tenants.</p>
-          ) : isLoading ? (
+          {isLoading ? (
             <Spinner className="size-6" />
           ) : isError ? (
             <p className="text-sm text-destructive">
-              {formatAdminApiError(listError, 'Token inválido o servidor sin SUPER_ADMIN_TOKEN.')}
+              {formatAdminApiError(listError, 'No se pudo cargar el listado de tenants.')}
             </p>
           ) : (
             <Table>
@@ -226,22 +275,110 @@ function TenantOnboardingPage() {
                 <TableRow>
                   <TableHead>Slug</TableHead>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Activo</TableHead>
+                  <TableHead className="w-[100px]">Activo</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tenants.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="font-mono text-sm">{t.slug}</TableCell>
-                    <TableCell>{t.name}</TableCell>
-                    <TableCell>{t.active ? 'Sí' : 'No'}</TableCell>
-                  </TableRow>
-                ))}
+                {tenants.map((t) => {
+                  const isPlatform = t.slug === PLATFORM_TENANT_SLUG
+                  const isToggling = togglingId === t.id
+                  return (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-mono text-sm">{t.slug}</TableCell>
+                      <TableCell>{t.name}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={t.active}
+                            disabled={isPlatform || isToggling || updateActiveMutation.isPending}
+                            onCheckedChange={(checked) =>
+                              updateActiveMutation.mutate({ id: t.id, active: checked })
+                            }
+                            aria-label={`${t.active ? 'Desactivar' : 'Activar'} ${t.slug}`}
+                          />
+                          {isToggling && <Spinner className="size-4" />}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={createSuccess != null} onOpenChange={(open) => !open && setCreateSuccess(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tenant creado</DialogTitle>
+            <DialogDescription>
+              Guarda las credenciales del administrador inicial. La contraseña generada solo se muestra
+              una vez.
+            </DialogDescription>
+          </DialogHeader>
+          {createSuccess && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-muted-foreground">Empresa</p>
+                <p className="font-medium">
+                  {createSuccess.name}{' '}
+                  <span className="font-mono text-muted-foreground">({createSuccess.slug})</span>
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground">Email admin</p>
+                  <p className="font-mono truncate">{createSuccess.adminEmail}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => copyText('Email', createSuccess.adminEmail)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+              {createSuccess.passwordGenerated && createSuccess.generatedPassword && (
+                <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/50 p-3">
+                  <div className="min-w-0">
+                    <p className="text-muted-foreground">Contraseña generada</p>
+                    <p className="font-mono break-all">{createSuccess.generatedPassword}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => copyText('Contraseña', createSuccess.generatedPassword!)}
+                  >
+                    <Copy className="size-4" />
+                  </Button>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-muted-foreground">URL de login</p>
+                  <p className="font-mono text-xs break-all">{loginUrl}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={() => copyText('URL', loginUrl)}
+                >
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" onClick={() => setCreateSuccess(null)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

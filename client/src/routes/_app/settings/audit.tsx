@@ -41,6 +41,7 @@ import {
 import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
 
 const ENTITY_TYPES = [
+  'Tenant',
   'Contact',
   'Opportunity',
   'User',

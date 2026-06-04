@@ -6,4 +6,10 @@ namespace :reminders do
     ReminderNotificationJob.perform_now
     puts "Recordatorios vencidos procesados."
   end
+
+  desc "Envía avisos previos por vencer (mismo job que Sidekiq cada minuto)"
+  task notify_upcoming: :environment do
+    ReminderUpcomingNotificationJob.perform_now
+    puts "Avisos previos de recordatorios procesados."
+  end
 end

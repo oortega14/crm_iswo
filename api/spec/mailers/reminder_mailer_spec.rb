@@ -33,4 +33,22 @@ RSpec.describe ReminderMailer, type: :mailer do
       expect(mail.to).to be_nil
     end
   end
+
+  describe "#created_confirmation" do
+    subject(:mail) { described_class.with(reminder: reminder).created_confirmation }
+
+    it "confirma la programación al consultor" do
+      expect(mail.to).to include(user.email)
+      expect(mail.subject).to include("programado")
+    end
+  end
+
+  describe "#upcoming_due_notification" do
+    subject(:mail) { described_class.with(reminder: reminder).upcoming_due_notification }
+
+    it "avisa que el recordatorio está por vencer" do
+      expect(mail.to).to include(user.email)
+      expect(mail.subject).to include("por vencer")
+    end
+  end
 end

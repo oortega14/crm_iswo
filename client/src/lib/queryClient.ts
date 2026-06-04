@@ -152,8 +152,11 @@ export const queryKeys = {
   // Search
   search: (query: string) => ['search', query] as const,
   
-  // Notifications
-  notifications: ['notifications'] as const,
+  // Notifications (authScope — campana global por tenant + usuario)
+  notifications: {
+    all: ['notifications'] as const,
+    unread: (authScope: string) => ['notifications', 'unread', authScope] as const,
+  },
 
   ai: {
     capabilities: ['ai', 'capabilities'] as const,
@@ -193,6 +196,15 @@ export function invalidateReferralNetworkQueries(client: QueryClient) {
   return client.invalidateQueries({ queryKey: queryKeys.referralNetworks.all })
 }
 
+/** Campana del header tras crear leads, cambiar etapa, recordatorios, duplicados, etc. */
+export function invalidateNotificationsQueries(client: QueryClient) {
+  const authScope = getAuthQueryScope()
+  if (!authScope) {
+    return client.invalidateQueries({ queryKey: queryKeys.notifications.all })
+  }
+  return client.invalidateQueries({ queryKey: queryKeys.notifications.unread(authScope) })
+}
+
 /** Sincroniza bandeja /reminders, badge del nav y briefing/actividad del dashboard (RFC §6.4). */
 export function invalidateReminderDashboardQueries(client: QueryClient) {
   const authScope = getAuthQueryScope()
@@ -201,5 +213,6 @@ export function invalidateReminderDashboardQueries(client: QueryClient) {
     client.invalidateQueries({
       queryKey: authScope ? queryKeys.dashboard.all(authScope) : ['dashboard'],
     }),
+    invalidateNotificationsQueries(client),
   ])
 }

@@ -1,7 +1,13 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import api from '@/lib/api'
-import { queryKeys } from '@/lib/queryClient'
+import { useEffect, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { formatRailsError } from '@/lib/api'
+import { createOpportunityReminder, type ReminderChannel } from '@/lib/reminderApi'
+import { OpportunityLeadPicker } from '@/components/reminders/OpportunityLeadPicker'
+import {
+  invalidateNotificationsQueries,
+  invalidateReminderDashboardQueries,
+  queryKeys,
+} from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -28,11 +34,17 @@ interface ReminderDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreated?: () => void
+  /** Pre-seleccionar oportunidad (p. ej. desde slide-over). */
+  defaultOpportunityId?: string
 }
 
-export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialogProps) {
+export function ReminderDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  defaultOpportunityId,
+}: ReminderDialogProps) {
   const queryClient = useQueryClient()
-  // Get tomorrow's date as default
   const tomorrow = new Date()
   tomorrow.setDate(tomorrow.getDate() + 1)
   const defaultDate = tomorrow.toISOString().split('T')[0]
@@ -42,22 +54,15 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
     description: '',
     dueDate: defaultDate,
     dueTime: '',
-    channel: 'in_app',
-    linkedOpportunity: '',
+    channel: 'in_app' as ReminderChannel,
+    linkedOpportunity: defaultOpportunityId || '',
   })
 
-  const { data: opportunities = [] } = useQuery({
-    queryKey: ['opportunities', 'reminder-dialog'],
-    queryFn: async () => {
-      const response = await api.get('/opportunities', { params: { items: 100 } })
-      const data = response.data?.data || []
-      return data.map((item: { id: string; attributes?: { contact_name?: string; title?: string } }) => ({
-        id: item.id,
-        label: item.attributes?.contact_name || item.attributes?.title || `Oportunidad ${item.id}`,
-      }))
-    },
-    enabled: open,
-  })
+  useEffect(() => {
+    if (open && defaultOpportunityId) {
+      setFormData((prev) => ({ ...prev, linkedOpportunity: defaultOpportunityId }))
+    }
+  }, [open, defaultOpportunityId])
 
   const createReminderMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -68,19 +73,19 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
         ? `${data.dueDate}T${data.dueTime}:00`
         : `${data.dueDate}T09:00:00`
 
-      return api.post(`/opportunities/${data.linkedOpportunity}/reminders`, {
-        reminder: {
-          remind_at: remindAt,
-          channel: data.channel,
-          subject: data.title,
-          message: data.description || undefined,
-        },
+      return createOpportunityReminder({
+        opportunityId: data.linkedOpportunity,
+        remindAt,
+        channel: data.channel,
+        subject: data.title,
+        message: data.description,
       })
     },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.reminders.all })
+    onSuccess: async (_data, variables) => {
+      await invalidateReminderDashboardQueries(queryClient)
+      void invalidateNotificationsQueries(queryClient)
       if (variables.linkedOpportunity) {
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: queryKeys.reminders.byOpportunity(variables.linkedOpportunity),
         })
       }
@@ -93,12 +98,12 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
         dueDate: defaultDate,
         dueTime: '',
         channel: 'in_app',
-        linkedOpportunity: '',
+        linkedOpportunity: defaultOpportunityId || '',
       })
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Error al crear el recordatorio')
-    }
+    onError: (error: unknown) => {
+      toast.error(formatRailsError(error, 'Error al crear el recordatorio'))
+    },
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,16 +112,16 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
   }
 
   const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md overflow-visible">
         <DialogHeader>
           <DialogTitle>Nuevo Recordatorio</DialogTitle>
           <DialogDescription>
-            Crea un recordatorio para no olvidar tareas importantes
+            Crea un recordatorio vinculado a una oportunidad (canal in-app, email o WhatsApp).
           </DialogDescription>
         </DialogHeader>
 
@@ -167,15 +172,15 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
 
           <div className="space-y-2">
             <Label htmlFor="channel">Canal</Label>
-            <Select 
-              value={formData.channel} 
+            <Select
+              value={formData.channel}
               onValueChange={(value) => handleChange('channel', value)}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="in_app">In App</SelectItem>
+                <SelectItem value="in_app">En app</SelectItem>
                 <SelectItem value="email">Email</SelectItem>
                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
               </SelectContent>
@@ -183,30 +188,20 @@ export function ReminderDialog({ open, onOpenChange, onCreated }: ReminderDialog
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="linkedOpportunity">Oportunidad</Label>
-            <Select 
-              value={formData.linkedOpportunity} 
-              onValueChange={(value) => handleChange('linkedOpportunity', value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar oportunidad" />
-              </SelectTrigger>
-              <SelectContent>
-                {opportunities.map((opportunity: { id: string; label: string }) => (
-                  <SelectItem key={opportunity.id} value={opportunity.id}>
-                    {opportunity.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="linkedOpportunity">Lead / oportunidad</Label>
+            <OpportunityLeadPicker
+              value={formData.linkedOpportunity}
+              onValueChange={(id) => handleChange('linkedOpportunity', id)}
+              disabled={Boolean(defaultOpportunityId)}
+              placeholder="Iniciales del lead (ej. CR)…"
+            />
+            <p className="text-xs text-muted-foreground">
+              Escribe dos letras (iniciales de nombre y apellido) para ver coincidencias.
+            </p>
           </div>
 
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={createReminderMutation.isPending}>

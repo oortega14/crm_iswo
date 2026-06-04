@@ -1,0 +1,117 @@
+<h2 style="margin-top:0; font-size:17px;">Hola <%= @user.name.presence || @user.email %> 👋</h2>
+<p style="color:#6b7280; margin-top:-8px; margin-bottom:24px;">
+  Resumen del <%= @generated_at.strftime('%A %d de %B') rescue "día" %>.
+</p>
+
+<%# ── KPIs ─────────────────────────────────────────────────────────────── %>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin-bottom:24px;">
+  <tr>
+    <td width="25%" style="text-align:center; padding:12px; background:#f9fafb; border-radius:8px;">
+      <div style="font-size:22px; font-weight:700; color:#1f2937;"><%= @kpis[:total_open] %></div>
+      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">Abiertas</div>
+    </td>
+    <td width="4%"></td>
+    <td width="25%" style="text-align:center; padding:12px; background:#fef2f2; border-radius:8px;">
+      <div style="font-size:22px; font-weight:700; color:#dc2626;"><%= @kpis[:hot_count] %></div>
+      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">🔥 Calientes</div>
+    </td>
+    <td width="4%"></td>
+    <td width="25%" style="text-align:center; padding:12px; background:#fffbeb; border-radius:8px;">
+      <div style="font-size:22px; font-weight:700; color:#d97706;"><%= @kpis[:pending_count] %></div>
+      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">⏰ Pendientes</div>
+      <div style="font-size:10px; color:#9ca3af; margin-top:4px;"><%= @kpis[:overdue_count] %> vencidos</div>
+    </td>
+    <td width="4%"></td>
+    <td width="25%" style="text-align:center; padding:12px; background:#f0fdf4; border-radius:8px;">
+      <div style="font-size:22px; font-weight:700; color:#16a34a;"><%= @kpis[:new_this_week] %></div>
+      <div style="font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.5px;">Nuevas (7d)</div>
+    </td>
+  </tr>
+</table>
+
+<% pipeline_value = @kpis[:pipeline_value].to_f %>
+<% if pipeline_value > 0 %>
+<p style="text-align:center; font-size:13px; color:#6b7280; margin-bottom:24px;">
+  Valor total del pipeline:
+  <strong style="color:#1f2937;">
+    <%= ActiveSupport::NumberHelper.number_to_currency(pipeline_value, unit: @kpis[:currency] + " ", precision: 0, delimiter: ".") %>
+  </strong>
+</p>
+<% end %>
+
+<%# ── Recordatorios vencidos ──────────────────────────────────────────── %>
+<% if @overdue.any? %>
+<h3 style="font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#d97706; margin-bottom:8px;">
+  ⏰ Recordatorios vencidos (<%= @overdue.size %>)
+</h3>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin-bottom:24px;">
+  <% @overdue.each do |reminder| %>
+  <tr>
+    <td style="padding:8px 12px; border-left:3px solid #f59e0b; background:#fffbeb; border-radius:0 6px 6px 0; margin-bottom:4px; display:block;">
+      <strong style="font-size:13px;"><%= reminder.subject %></strong><br>
+      <span style="font-size:11px; color:#6b7280;">
+        Vencía: <%= reminder.remind_at.strftime('%d %b %Y %H:%M') %>
+        <% if reminder.opportunity %>· <%= reminder.opportunity.title.truncate(40) %><% end %>
+      </span>
+    </td>
+  </tr>
+  <tr><td style="height:4px;"></td></tr>
+  <% end %>
+</table>
+<% end %>
+
+<%# ── Leads calientes ─────────────────────────────────────────────────── %>
+<% if @hot_leads.any? %>
+<h3 style="font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#dc2626; margin-bottom:8px;">
+  🔥 Leads calientes (<%= @hot_leads.size %>)
+</h3>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin-bottom:24px;">
+  <% @hot_leads.each do |opp| %>
+  <tr>
+    <td style="padding:8px 12px; border-left:3px solid #ef4444; background:#fef2f2; border-radius:0 6px 6px 0; display:block;">
+      <div style="display:flex; justify-content:space-between;">
+        <strong style="font-size:13px;"><%= opp.contact&.display_name || opp.title %></strong>
+        <span style="font-size:12px; font-family:monospace; color:#dc2626; font-weight:600;">BANT <%= opp.bant_score %></span>
+      </div>
+      <span style="font-size:11px; color:#6b7280;">
+        <%= opp.pipeline_stage&.name %>
+        <% if opp.estimated_value.to_f > 0 %>
+          · <%= ActiveSupport::NumberHelper.number_to_currency(opp.estimated_value, unit: opp.currency + " ", precision: 0, delimiter: ".") %>
+        <% end %>
+      </span>
+    </td>
+  </tr>
+  <tr><td style="height:4px;"></td></tr>
+  <% end %>
+</table>
+<% end %>
+
+<%# ── Leads sin actividad ─────────────────────────────────────────────── %>
+<% if @stale_leads.any? %>
+<h3 style="font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; margin-bottom:8px;">
+  🧊 Sin actividad reciente (<%= @stale_leads.size %>)
+</h3>
+<table width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin-bottom:24px;">
+  <% @stale_leads.each do |opp| %>
+  <tr>
+    <td style="padding:8px 12px; border-left:3px solid #d1d5db; background:#f9fafb; border-radius:0 6px 6px 0; display:block;">
+      <strong style="font-size:13px;"><%= opp.contact&.display_name || opp.title %></strong><br>
+      <span style="font-size:11px; color:#6b7280;">
+        Última actividad:
+        <%= opp.last_activity_at ? opp.last_activity_at.strftime('%d %b %Y') : '—' %>
+      </span>
+    </td>
+  </tr>
+  <tr><td style="height:4px;"></td></tr>
+  <% end %>
+</table>
+<% end %>
+
+<p style="margin-top:28px; text-align:center;">
+  <a href="<%= ENV.fetch('APP_URL', 'https://app.iswo.com.co') %>/opportunities"
+     style="display:inline-block; padding:12px 24px; border-radius:8px;
+            background:<%= @tenant&.primary_color.presence || '#0f172a' %>; color:#ffffff;
+            text-decoration:none; font-weight:600; font-size:14px;">
+    Abrir CRM →
+  </a>
+</p>

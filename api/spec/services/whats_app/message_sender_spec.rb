@@ -62,8 +62,9 @@ RSpec.describe WhatsApp::MessageSender do
 
   describe "selección de adapter" do
     it "eleva DeliveryError si el provider no está mapeado" do
+      # update_column: evita validación del enum para forzar un valor inválido.
+      # El sender usa update_columns en el rescue (saltea validaciones también).
       message.update_column(:provider, "unknown")
-      # El sender captura DeliveryError (heredado de StandardError) y retorna false
       expect(described_class.new(message).deliver).to be(false)
       expect(message.reload.error_message).to match(/Provider no soportado/)
     end

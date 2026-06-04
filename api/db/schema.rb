@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -53,9 +53,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
   end
 
   create_table "bant_criteria", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
     t.integer "authority_weight", default: 25, null: false
     t.integer "budget_weight", default: 25, null: false
     t.datetime "created_at", null: false
+    t.text "description"
     t.datetime "discarded_at", comment: "Soft-delete"
     t.integer "need_weight", default: 25, null: false
     t.bigint "tenant_id", null: false
@@ -249,6 +251,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.bigint "pipeline_stage_id", null: false
     t.boolean "qualified", default: false, null: false
     t.string "status", default: "new_lead", null: false, comment: "new_lead | contacted | qualified | proposal | won | lost"
+    t.string "temperature", default: "cold", null: false, comment: "cold | warm | hot — indicador rápido de interés del lead"
     t.bigint "tenant_id", null: false
     t.string "title", null: false
     t.datetime "updated_at", null: false
@@ -258,6 +261,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.index ["owner_user_id"], name: "index_opportunities_on_owner_user_id"
     t.index ["pipeline_id"], name: "index_opportunities_on_pipeline_id"
     t.index ["pipeline_stage_id"], name: "index_opportunities_on_pipeline_stage_id"
+    t.index ["temperature"], name: "index_opportunities_on_temperature"
+    t.index ["tenant_id", "contact_id"], name: "index_opportunities_on_tenant_id_and_contact_id"
     t.index ["tenant_id", "last_activity_at"], name: "index_opportunities_on_tenant_id_and_last_activity_at"
     t.index ["tenant_id", "owner_user_id"], name: "index_opportunities_on_tenant_id_and_owner_user_id"
     t.index ["tenant_id", "pipeline_stage_id"], name: "index_opportunities_on_tenant_id_and_pipeline_stage_id"
@@ -348,14 +353,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.string "status", default: "pending", null: false, comment: "pending | sent | failed | done"
     t.string "subject"
     t.bigint "tenant_id", null: false
+    t.datetime "upcoming_notified_at", comment: "Aviso previo por correo/in-app antes de remind_at"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false, comment: "Destinatario del recordatorio"
     t.index ["opportunity_id", "remind_at"], name: "index_reminders_on_opportunity_id_and_remind_at"
     t.index ["opportunity_id"], name: "index_reminders_on_opportunity_id"
+    t.index ["status", "remind_at", "upcoming_notified_at"], name: "index_reminders_upcoming_dispatch"
     t.index ["status", "remind_at"], name: "index_reminders_dispatch"
     t.index ["tenant_id", "user_id", "status"], name: "index_reminders_on_tenant_id_and_user_id_and_status"
     t.index ["tenant_id"], name: "index_reminders_on_tenant_id"
     t.index ["user_id"], name: "index_reminders_on_user_id"
+  end
+
+  create_table "tenant_field_definitions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.string "entity", default: "opportunity", null: false, comment: "Entidad destino: 'opportunity' | 'contact'"
+    t.string "field_type", default: "text", null: false, comment: "text | number | select | date | boolean | currency"
+    t.string "key", null: false, comment: "Clave interna, e.g. 'empleador_nit'"
+    t.string "label", null: false, comment: "Etiqueta visible al usuario"
+    t.jsonb "options", default: [], null: false, comment: "Opciones para tipo 'select', ej. ['Sector público','Privado']"
+    t.integer "position", default: 0, null: false
+    t.boolean "required", default: false, null: false
+    t.bigint "tenant_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["tenant_id", "entity", "position"], name: "idx_tenant_field_defs_order"
+    t.index ["tenant_id", "key", "entity"], name: "idx_tenant_field_defs_unique_key", unique: true
+    t.index ["tenant_id"], name: "index_tenant_field_definitions_on_tenant_id"
+    t.check_constraint "entity::text = ANY (ARRAY['opportunity'::character varying::text, 'contact'::character varying::text])", name: "chk_tenant_field_def_entity"
+    t.check_constraint "field_type::text = ANY (ARRAY['text'::character varying::text, 'number'::character varying::text, 'select'::character varying::text, 'date'::character varying::text, 'boolean'::character varying::text, 'currency'::character varying::text])", name: "chk_tenant_field_def_type"
   end
 
   create_table "tenants", force: :cascade do |t|
@@ -398,6 +424,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.string "name", null: false, comment: "Nombre completo del consultor"
     t.string "phone", comment: "Teléfono de contacto"
     t.jsonb "preferences", default: {}, null: false
+    t.string "refresh_token_jti"
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
@@ -409,6 +436,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
     t.datetime "updated_at", null: false
     t.index ["confirmation_token"], name: "index_users_on_confirmation_token", unique: true, where: "(confirmation_token IS NOT NULL)"
     t.index ["discarded_at"], name: "index_users_on_discarded_at"
+    t.index ["refresh_token_jti"], name: "index_users_on_refresh_token_jti", where: "(refresh_token_jti IS NOT NULL)"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true, where: "(reset_password_token IS NOT NULL)"
     t.index ["tenant_id", "active"], name: "index_users_on_tenant_id_and_active"
     t.index ["tenant_id", "email"], name: "index_users_on_tenant_and_email", unique: true
@@ -485,6 +513,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_21_230644) do
   add_foreign_key "reminders", "opportunities"
   add_foreign_key "reminders", "tenants"
   add_foreign_key "reminders", "users"
+  add_foreign_key "tenant_field_definitions", "tenants"
   add_foreign_key "users", "tenants"
   add_foreign_key "whatsapp_messages", "contacts"
   add_foreign_key "whatsapp_messages", "opportunities"

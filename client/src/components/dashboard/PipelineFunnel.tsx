@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { GitBranch, Sparkles } from 'lucide-react'
+import { ChevronDown, GitBranch, Sparkles } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -15,10 +15,20 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency, formatStatusLabel } from '@/lib/utils'
 import type { DashboardPipelineStage } from '@/lib/dashboardApi'
 
+interface PipelineOption {
+  id: string
+  name: string
+  is_default: boolean
+}
+
 interface PipelineFunnelProps {
+  currency?: string
   data?: DashboardPipelineStage[]
   isLoading?: boolean
   isError?: boolean
+  pipelines?: PipelineOption[]
+  selectedPipelineId?: string
+  onPipelineChange?: (id: string) => void
 }
 
 /** Degradados por etapa — ISWO: azul primario + acentos (cian, índigo, ámbar) */
@@ -65,7 +75,15 @@ function FunnelBarShape(props: {
   )
 }
 
-export function PipelineFunnel({ data = [], isLoading, isError }: PipelineFunnelProps) {
+export function PipelineFunnel({
+  currency = 'COP',
+  data = [],
+  isLoading,
+  isError,
+  pipelines = [],
+  selectedPipelineId,
+  onPipelineChange,
+}: PipelineFunnelProps) {
   const navigate = useNavigate()
 
   const shell = cn(
@@ -147,17 +165,33 @@ export function PipelineFunnel({ data = [], isLoading, isError }: PipelineFunnel
               Propuesta → Cerrada/Perdida). Clic en una barra para filtrar en el tablero.
             </CardDescription>
           </div>
-          <div className="flex flex-wrap gap-2 sm:justify-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {pipelines.length > 1 && onPipelineChange && (
+              <div className="relative">
+                <select
+                  value={selectedPipelineId ?? ''}
+                  onChange={(e) => onPipelineChange(e.target.value)}
+                  className="appearance-none rounded-lg border border-border/70 bg-background/80 py-1 pl-2.5 pr-7 text-xs font-medium text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                >
+                  {pipelines.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.is_default ? ' (defecto)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            )}
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/20 px-3 py-1 text-xs font-semibold text-foreground">
               <Sparkles className="size-3.5 opacity-90" />
-              {totalCount} op. · {formatCurrency(totalValue, 'COP')}
+              {totalCount} op. · {formatCurrency(totalValue, currency)}
             </span>
           </div>
         </div>
 
         {chartData.length > 0 && (
           <div className="flex flex-wrap gap-2 pt-2">
-            {chartData.map((row, i) => (
+            {chartData.map((row) => (
               <span
                 key={row.stage_id}
                 className="inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5 py-1 text-[11px] text-foreground backdrop-blur-sm"
@@ -222,7 +256,7 @@ export function PipelineFunnel({ data = [], isLoading, isError }: PipelineFunnel
                     const [a, b] = GRADIENT_PAIRS[index % GRADIENT_PAIRS.length]
                     return (
                       <linearGradient
-                        key={gradientId(index)}
+                        key={`grad-${index}`}
                         id={gradientId(index)}
                         x1="0"
                         y1="0"
@@ -252,7 +286,7 @@ export function PipelineFunnel({ data = [], isLoading, isError }: PipelineFunnel
                       name: string
                       count: number
                     }
-                    const money = formatCurrency(Number(row.value) || 0, 'COP')
+                    const money = formatCurrency(Number(row.value) || 0, currency)
                     return (
                       <div
                         className="rounded-xl border border-border/80 px-3 py-2 text-xs shadow-xl"
@@ -281,7 +315,7 @@ export function PipelineFunnel({ data = [], isLoading, isError }: PipelineFunnel
                   }}
                   maxBarSize={36}
                 >
-                  {chartData.map((entry, index) => (
+                  {chartData.map((entry) => (
                     <Cell key={`cell-${entry.stage_id}`} fill={entry.fill} />
                   ))}
                   <LabelList

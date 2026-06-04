@@ -29,11 +29,10 @@ Rails.application.configure do
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = :local
 
-  # Correo en local: archivo HTML en tmp/letter_opener (gem letter_opener).
-  # Así ves el mensaje aunque no tengas SMTP; para Gmail real, sustituye por :smtp y variables en .env.
+  # Correo en local: letter_opener_web — bandeja de entrada en http://localhost:3000/letter_opener
   config.action_mailer.raise_delivery_errors = true
   config.action_mailer.perform_deliveries = true
-  config.action_mailer.delivery_method = :letter_opener
+  config.action_mailer.delivery_method = :letter_opener_web
 
   # Make template changes take effect immediately.
   config.action_mailer.perform_caching = false

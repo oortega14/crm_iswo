@@ -5,8 +5,8 @@
 # ============================================================================
 class BantCriterionPolicy < ApplicationPolicy
   def show?    = staff?
-  def update?  = manager_or_admin?
-  def create?  = manager_or_admin?
+  def update?  = admin?
+  def create?  = admin?
   def destroy? = false
 
   class Scope < ApplicationPolicy::Scope

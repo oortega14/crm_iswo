@@ -6,30 +6,62 @@ module Api
     # ContactsController — CRUD + chequeo de duplicados + export async
     # ========================================================================
     class ContactsController < BaseController
+      include ExportAuditable
+      include ExportDownloadable
+
       before_action :set_contact, only: %i[show update destroy]
 
+      # GET /api/v1/contacts/stats
+      def stats
+        authorize Contact, :index?
+        payload = Contacts::Stats.new(user: current_user, tenant: current_tenant).call
+        render json: { data: payload }, status: :ok
+      end
+
       # GET /api/v1/contacts
+      # ?segment=clients|prospects|hot_leads|stale — filtro por métrica rápida
       def index
         scope = policy_scope(Contact).kept
+
+        if params[:segment].present?
+          scope = Contacts::Stats.apply_segment(
+            scope,
+            segment: params[:segment],
+            user:    current_user,
+            tenant:  current_tenant
+          )
+        end
 
         scope = scope.where(kind: params[:kind])               if params[:kind].present?
         scope = scope.where(owner_user_id: params[:owner_id])  if params[:owner_id].present?
         scope = scope.where.not(phone_normalized: nil)          if params[:has_phone] == "true"
 
         if (q = params[:q]).present?
-          like = "%#{q}%"
+          like = "%#{ActiveRecord::Base.sanitize_sql_like(q.to_s.strip)}%"
           scope = scope.where(
-            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR email ILIKE :q OR phone_normalized ILIKE :q",
+            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR " \
+            "email ILIKE :q OR phone_normalized ILIKE :q OR document_id ILIKE :q",
             q: like
           )
         end
 
-        render_collection(scope.includes(:opportunities).order(updated_at: :desc), with: ContactSerializer)
+        render_collection(
+          scope.includes(:opportunities, :owner_user).order(updated_at: :desc),
+          with:   ContactSerializer,
+          params: { current_user: current_user }
+        )
       end
 
       def show
         authorize @contact
-        render_resource(@contact, with: ContactSerializer)
+        contact = policy_scope(Contact).kept
+                  .includes(landing_form_submissions: :landing_page)
+                  .find(@contact.id)
+        render_resource(
+          contact,
+          with:   ContactSerializer,
+          params: { current_user: current_user, include_landing_origins: true }
+        )
       end
 
       def create
@@ -37,7 +69,8 @@ module Api
         @contact = current_tenant.contacts.new(contact_params.merge(owner_user: current_user))
         if @contact.save
           audit_contact!("contact.create", @contact)
-          render_created(@contact, with: ContactSerializer)
+          Contacts::ProspectOpportunityCreator.call(contact: @contact, actor: current_user)
+          render_created(@contact, with: ContactSerializer, params: { current_user: current_user })
         else
           render_unprocessable(@contact)
         end
@@ -48,7 +81,7 @@ module Api
         if @contact.update(contact_params)
           audit_contact!("contact.update", @contact,
                          changed_fields: @contact.previous_changes.except("updated_at").keys)
-          render_resource(@contact, with: ContactSerializer)
+          render_resource(@contact, with: ContactSerializer, params: { current_user: current_user })
         else
           render_unprocessable(@contact)
         end
@@ -59,6 +92,19 @@ module Api
         audit_contact!("contact.destroy", @contact)
         @contact.discard
         render_no_content
+      end
+
+      # DELETE /api/v1/contacts/bulk_destroy  — { ids: ["1","2",...] }
+      def bulk_destroy
+        authorize Contact, :destroy?
+        ids = Array(params[:ids]).map(&:to_i).uniq.reject(&:zero?)
+        return render json: { error: "bad_request", message: "ids requeridos" }, status: :bad_request if ids.blank?
+
+        contacts = policy_scope(Contact).kept.where(id: ids)
+        deleted  = contacts.count
+        contacts.each { |c| audit_contact!("contact.destroy", c) }
+        contacts.discard_all
+        render json: { data: { deleted: deleted } }, status: :ok
       end
 
       # GET /api/v1/contacts/check_duplicates?phone=...&email=...&full_name=...
@@ -72,6 +118,11 @@ module Api
           email:     params[:email],
           full_name: params[:full_name]
         ).call
+
+        if current_user.role_consultant?
+          allowed_ids = policy_scope(Contact).pluck(:id).to_set
+          matches = matches.select { |m| allowed_ids.include?(m.contact.id) }
+        end
 
         if matches.empty?
           return render json: { data: { exists: false } }, status: :ok
@@ -147,64 +198,72 @@ module Api
         }, status: :ok
       end
 
-      # POST /api/v1/contacts/export
-      # body: { export_format|file_format|"format" si csv/xlsx, filters }
+      # GET /api/v1/contacts/export.csv | export.xlsx — RFC §6.7 (descarga directa)
+      def export_download
+        export_download_for("contacts")
+      end
+
+      # POST /api/v1/contacts/export — exportación asíncrona (grandes volúmenes)
       def export
         authorize Contact, :export?
+        file_format = resolve_export_file_format
+        filters     = normalize_export_filters_param
         export = current_tenant.exports.create!(
           user:     current_user,
           resource: "contacts",
-          format:   resolve_export_file_format,
-          filters:  normalize_export_filters_param
+          format:   file_format,
+          filters:  filters
         )
         safe_enqueue_export_generation_job(export.id)
+        record_export_audit!(resource: "contacts", format: file_format, filters: filters, sync: false)
         render_resource(export, with: ExportSerializer, status: :accepted)
       end
 
       private
 
       def set_contact
-        @contact = current_tenant.contacts.kept.find(params[:id])
+        @contact = policy_scope(Contact).kept.find(params[:id])
       end
 
       def audit_contact!(action, contact, extra = {})
-        AuditEvent.create!(
-          tenant:      current_tenant,
-          user:        current_user,
-          action:      action,
-          entity_type: "Contact",
-          entity_id:   contact.id,
-          metadata:    { ip: request.remote_ip, ua: request.user_agent }.merge(extra)
+        AuditLogger.record_entity!(
+          tenant:       current_tenant,
+          user:         current_user,
+          action:       action,
+          entity:       contact,
+          metadata:     { name: contact.display_name }.merge(extra),
+          ip_address:   request.remote_ip,
+          user_agent:   request.user_agent
         )
-      rescue StandardError => e
-        Rails.logger.warn("[AuditEvent] No se pudo registrar #{action}: #{e.message}")
       end
 
       def audit_contact_import!(result, filename)
-        AuditEvent.create!(
-          tenant:      current_tenant,
-          user:        current_user,
-          action:      "contact.import",
-          entity_type: "Contact",
-          metadata:    {
-            ip:            request.remote_ip,
-            ua:            request.user_agent,
+        AuditLogger.record!(
+          tenant:       current_tenant,
+          user:         current_user,
+          action:       "contact.import",
+          entity_type:  "Contact",
+          metadata:     {
             filename:      filename,
             created_count: result.created_count,
-            skipped_count: result.skipped_count
-          }
+            skipped_count: result.skipped_count,
+            error_count:   result.errors.size
+          },
+          ip_address:   request.remote_ip,
+          user_agent:   request.user_agent
         )
-      rescue StandardError => e
-        Rails.logger.warn("[AuditEvent] No se pudo registrar contact.import: #{e.message}")
       end
 
       def contact_params
         permitted = params.require(:contact).permit(
           :kind, :first_name, :last_name, :company, :position,
-          :email, :phone_e164, :city, :country, :notes,
+          :email, :phone_e164, :city, :country, :notes, :document_id,
           :owner_user_id, :source_kind, :source_label,
           custom_fields: {}
         )
+        unless current_user.role_admin? || current_user.role_manager?
+          permitted = permitted.except(:owner_user_id)
+        end
         permitted[:company_name] = permitted.delete(:company) if permitted.key?(:company)
         permitted[:job_title] = permitted.delete(:position) if permitted.key?(:position)
         permitted

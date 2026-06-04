@@ -71,15 +71,20 @@ module ErrorHandler
     }, status: :bad_request
   end
 
-  # Lockbox.attribute_key → "Missing master key" si LOCKBOX_MASTER_KEY no está definida.
+  # Lockbox: clave ausente al cifrar.
+  # Rails enums: "'sms' is not a valid kind" cuando el valor no existe.
   def render_argument_error_maybe_lockbox(exception)
-    raise exception unless exception.message.to_s.include?("Missing master key")
-
-    render json: {
-      error:   "configuration_error",
-      message:
-        "Falta LOCKBOX_MASTER_KEY. Añádela al entorno (p. ej. .env) o en credentials como lockbox.master_key."
-    }, status: :service_unavailable
+    msg = exception.message.to_s
+    if msg.include?("Missing master key")
+      render json: {
+        error:   "configuration_error",
+        message: "Falta LOCKBOX_MASTER_KEY. Añádela al entorno (p. ej. .env) o en credentials como lockbox.master_key."
+      }, status: :service_unavailable
+    elsif msg.match?(/is not a valid/)
+      render json: { error: "unprocessable_entity", message: msg }, status: :unprocessable_entity
+    else
+      raise exception
+    end
   end
 
   def render_lockbox_error(exception)

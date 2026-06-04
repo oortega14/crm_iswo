@@ -24,6 +24,8 @@ export interface TenantSettings {
   stale_days?: number
   /** RFC F2: profundidad de visibilidad de la red para consultores (default 3) */
   network_depth?: number
+  show_bant?: boolean
+  modules?: string[]
   [key: string]: unknown
 }
 
@@ -41,14 +43,19 @@ export interface Tenant {
 
 // Opportunity Types
 export type OpportunityStatus = 'new_lead' | 'contacted' | 'qualified' | 'proposal' | 'won' | 'lost'
+export type OpportunityTemperature = 'cold' | 'warm' | 'hot'
 
 export interface Opportunity {
   id: string
+  title?: string
   contact_id?: string
   contact_name: string
   contact_email?: string
   contact_phone?: string
   company_name?: string
+  contact_city?: string
+  contact_last_contacted_at?: string
+  lead_source_label?: string
   estimated_value: number
   currency: string
   stage_id: string
@@ -64,11 +71,32 @@ export interface Opportunity {
   source_id?: string
   source?: LeadSource
   status: OpportunityStatus
+  temperature: OpportunityTemperature
+  qualified?: boolean
   notes?: string
   last_activity_at?: string
+  expected_close_on?: string
   reminder_due_at?: string
+  custom_fields?: Record<string, unknown>
+  from_network?: boolean
   created_at: string
   updated_at: string
+}
+
+// Tenant Field Definition Types (F5 — Verticales)
+export type FieldType = 'text' | 'number' | 'select' | 'date' | 'boolean' | 'currency'
+export type FieldEntity = 'opportunity' | 'contact'
+
+export interface TenantFieldDefinition {
+  id: string
+  key: string
+  label: string
+  field_type: FieldType
+  options: string[]
+  required: boolean
+  entity: FieldEntity
+  position: number
+  active: boolean
 }
 
 export interface OpportunityLog {
@@ -87,6 +115,7 @@ export interface Pipeline {
   name: string
   description?: string
   is_default: boolean
+  active: boolean
   stages: PipelineStage[]
   created_at: string
   updated_at: string
@@ -203,12 +232,13 @@ export interface Integration {
 }
 
 // Lead Source Types
-export type LeadSourceKind = 'organic' | 'paid' | 'referral' | 'direct' | 'integration'
+export type LeadSourceKind = 'web' | 'whatsapp' | 'meta' | 'google' | 'manual' | 'referral'
 
 export interface LeadSource {
   id: string
   name: string
   kind: LeadSourceKind
+  active: boolean
   opportunities_count: number
   created_at: string
 }

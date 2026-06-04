@@ -11,7 +11,8 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
   let(:pipeline) { create(:pipeline_with_stages, tenant: tenant) }
   let(:stage)    { pipeline.pipeline_stages.first }
   let(:won_stage) { pipeline.pipeline_stages.find_by(closed_won: true) }
-  let(:contact)  { create(:contact, tenant: tenant) }
+  let(:contact)         { create(:contact, tenant: tenant) }
+  let(:foreign_contact) { create(:contact, tenant: tenant) }
 
   let!(:own_opp) do
     create(:opportunity,
@@ -21,7 +22,7 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
   let!(:foreign_opp) do
     create(:opportunity,
            tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
-           contact: contact, owner_user: other_consultant, title: "Ajena")
+           contact: foreign_contact, owner_user: other_consultant, title: "Ajena")
   end
 
   describe "GET /api/v1/opportunities" do
@@ -43,6 +44,24 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       get "/api/v1/opportunities?status=qualified", headers: auth_headers(manager)
       ids = json["data"].map { |d| d["id"].to_i }
       expect(ids).to eq([own_opp.id])
+    end
+
+    it "filtra por q en título o contacto" do
+      own_opp.contact.update!(first_name: "Zulma", last_name: "UniqueSearch")
+      get "/api/v1/opportunities?q=UniqueSearch", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(own_opp.id)
+      expect(ids).not_to include(foreign_opp.id)
+    end
+
+    it "filtra por iniciales con initials=true (2 letras)" do
+      own_opp.contact.update!(first_name: "Camila", last_name: "Restrepo")
+      foreign_opp.contact.update!(first_name: "Pedro", last_name: "López")
+
+      get "/api/v1/opportunities?q=CR&initials=true", headers: auth_headers(manager)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(own_opp.id)
+      expect(ids).not_to include(foreign_opp.id)
     end
 
     it "filtra por pipeline_id" do
@@ -84,11 +103,39 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(created.opportunity_logs.last.action).to eq("create")
     end
 
-    it "422 si falta título" do
+    it "201 sin título genera uno automático desde el contacto" do
       bad = { opportunity: { contact_id: contact.id, pipeline_id: pipeline.id, pipeline_stage_id: stage.id } }.to_json
+      post "/api/v1/opportunities", params: bad, headers: auth_headers(consultant)
+      expect(response).to have_http_status(:created)
+      expect(json.dig("data", "attributes", "title")).to be_present
+    end
+
+    it "422 si falta la etapa del pipeline" do
+      bad = { opportunity: { contact_id: contact.id } }.to_json
       post "/api/v1/opportunities", params: bad, headers: auth_headers(consultant)
       expect(response.status).to eq(422)
       expect(json["error"]).to eq("unprocessable_entity")
+    end
+
+    it "segunda oportunidad del mismo contacto crea flag y notifica admin/manager" do
+      admin_user = create(:user, :admin, tenant: tenant)
+
+      expect {
+        post "/api/v1/opportunities",
+             params: {
+               opportunity: {
+                 contact_id: contact.id,
+                 pipeline_stage_id: stage.id,
+                 title: "Colisión consultor"
+               }
+             }.to_json,
+             headers: auth_headers(other_consultant)
+      }.to change(DuplicateFlag, :count).by(1)
+        .and change { admin_user.notifications.kind_duplicate_found.count }.by(1)
+        .and change { manager.notifications.kind_duplicate_found.count }.by(1)
+
+      expect(response).to have_http_status(:created)
+      expect(DuplicateFlag.last.resolution).to eq("pending")
     end
   end
 
@@ -101,11 +148,41 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(foreign_opp.reload.title).to eq("Editada")
     end
 
-    it "consultant no puede actualizar ajenas (403)" do
+    it "consultant no puede actualizar ajenas (404 fuera de policy_scope)" do
       patch "/api/v1/opportunities/#{foreign_opp.id}",
             params: { opportunity: { title: "Hack" } }.to_json,
             headers: auth_headers(consultant)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "conserva temperatura hot cuando el consultor la elige manualmente" do
+      own_opp.update!(temperature: "cold", bant_score: 10, last_activity_at: 30.days.ago)
+
+      patch "/api/v1/opportunities/#{own_opp.id}",
+            params: { opportunity: { temperature: "hot" } }.to_json,
+            headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "attributes", "temperature")).to eq("hot")
+      expect(own_opp.reload.temperature).to eq("hot")
+    end
+
+    it "al crear con temperatura explícita no la sobrescribe el calculador automático" do
+      post "/api/v1/opportunities",
+           params: {
+             opportunity: {
+               contact_id: contact.id,
+               pipeline_stage_id: stage.id,
+               title: "Lead caliente manual",
+               temperature: "hot"
+             }
+           }.to_json,
+           headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:created)
+      expect(json.dig("data", "attributes", "temperature")).to eq("hot")
+      created = tenant.opportunities.order(:id).last
+      expect(created.temperature).to eq("hot")
     end
   end
 
@@ -116,6 +193,36 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
            headers: auth_headers(consultant)
       expect(response).to have_http_status(:ok)
       expect(own_opp.reload.status).to eq("won")
+    end
+
+    it "notifica al dueño cuando un manager mueve la etapa de una opp ajena" do
+      mid_stage = pipeline.pipeline_stages.order(:position)[1]
+
+      expect do
+        post "/api/v1/opportunities/#{foreign_opp.id}/move_stage",
+             params: { pipeline_stage_id: mid_stage.id }.to_json,
+             headers: auth_headers(manager)
+      end.to change {
+        other_consultant.notifications.kind_stage_change.unread.count
+      }.by(1)
+
+      expect(response).to have_http_status(:ok)
+      n = other_consultant.notifications.kind_stage_change.last
+      expect(n.resource_id).to eq(foreign_opp.id)
+    end
+
+    it "no notifica al dueño cuando él mismo mueve su opp" do
+      mid_stage = pipeline.pipeline_stages.order(:position)[1]
+
+      expect do
+        post "/api/v1/opportunities/#{own_opp.id}/move_stage",
+             params: { pipeline_stage_id: mid_stage.id }.to_json,
+             headers: auth_headers(consultant)
+      end.not_to change {
+        consultant.notifications.kind_stage_change.count
+      }
+
+      expect(response).to have_http_status(:ok)
     end
   end
 
@@ -136,12 +243,69 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
     end
   end
 
+  describe "consultores pares (sin red entre ellos)" do
+    let(:manager_user) { create(:user, :manager, tenant: tenant) }
+
+    before do
+      create(:referral_network, tenant: tenant, referrer_user: manager_user, referred_user: consultant)
+      create(:referral_network, tenant: tenant, referrer_user: manager_user, referred_user: other_consultant)
+    end
+
+    it "cada consultor solo ve sus oportunidades en index" do
+      get "/api/v1/opportunities", headers: auth_headers(consultant)
+      expect(json["data"].map { |d| d["id"].to_i }).to eq([own_opp.id])
+
+      get "/api/v1/opportunities", headers: auth_headers(other_consultant)
+      expect(json["data"].map { |d| d["id"].to_i }).to eq([foreign_opp.id])
+    end
+  end
+
   describe "GET /api/v1/opportunities/kanban" do
     it "devuelve array agrupado por stage con opportunities por etapa" do
       get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(manager)
       expect(response).to have_http_status(:ok)
       stages = json["data"].map { |d| d.dig("stage", "id").to_i }
       expect(stages).to match_array(pipeline.pipeline_stages.pluck(:id))
+    end
+  end
+
+  describe "red de referidos (RFC F2)" do
+    let(:referred) { create(:user, :consultant, tenant: tenant) }
+
+    before do
+      tenant.update!(settings: tenant.settings.merge("network_depth" => 3))
+      create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
+    end
+
+    let!(:network_opp) do
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: stage,
+             contact: foreign_contact,
+             owner_user: referred,
+             title: "Red referido")
+    end
+
+    it "consultant solo ve sus opps en index y kanban (no las del referido)" do
+      get "/api/v1/opportunities", headers: auth_headers(consultant)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to eq([own_opp.id])
+
+      get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(consultant)
+      opp_ids = json["data"].flat_map { |col| Array(col["opportunities"]).map { |o| o["id"].to_i } }
+      expect(opp_ids).to include(own_opp.id)
+      expect(opp_ids).not_to include(network_opp.id)
+    end
+
+    it "consultant no puede abrir detalle de opp de otro consultor (404)" do
+      get "/api/v1/opportunities/#{network_opp.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "consultant sigue sin ver opps fuera de su red (404)" do
+      get "/api/v1/opportunities/#{foreign_opp.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:not_found)
     end
   end
 
@@ -155,6 +319,32 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
 
     it "manager no puede destruir (403)" do
       delete "/api/v1/opportunities/#{own_opp.id}", headers: auth_headers(manager)
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  describe "DELETE /api/v1/opportunities/bulk_destroy" do
+    let(:admin) { create(:user, :admin, tenant: tenant) }
+
+    it "admin elimina varias oportunidades del tenant" do
+      expect {
+        delete "/api/v1/opportunities/bulk_destroy",
+               params: { ids: [own_opp.id, foreign_opp.id] },
+               headers: auth_headers(admin),
+               as: :json
+      }.to change { Opportunity.kept.count }.by(-2)
+
+      expect(response).to have_http_status(:ok)
+      expect(json.dig("data", "deleted")).to eq(2)
+      expect(own_opp.reload.discarded?).to be(true)
+      expect(foreign_opp.reload.discarded?).to be(true)
+    end
+
+    it "consultant recibe forbidden" do
+      delete "/api/v1/opportunities/bulk_destroy",
+             params: { ids: [own_opp.id] },
+             headers: auth_headers(consultant),
+             as: :json
       expect(response).to have_http_status(:forbidden)
     end
   end

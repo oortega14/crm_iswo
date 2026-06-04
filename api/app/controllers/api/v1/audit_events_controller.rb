@@ -13,7 +13,10 @@ module Api
 
         scope = policy_scope(AuditEvent).includes(:user)
         # No usar `params[:action]`: en Rails es siempre el nombre de la acción del controlador ("index").
-        scope = scope.where(action: params[:event_action]) if params[:event_action].present?
+        if params[:event_action].present?
+          ea = ActiveRecord::Base.sanitize_sql_like(params[:event_action].to_s)
+          scope = scope.where("action = ? OR action ILIKE ?", ea, "%.#{ea}")
+        end
 
         if params[:entity_type].present?
           et = ActiveRecord::Base.sanitize_sql_like(params[:entity_type].to_s)
@@ -27,6 +30,14 @@ module Api
             "OR users.email ILIKE :t OR users.name ILIKE :t",
             t: term
           )
+        end
+
+        if params[:date_from].present?
+          scope = scope.where("audit_events.created_at >= ?", params[:date_from].to_date.beginning_of_day)
+        end
+
+        if params[:date_to].present?
+          scope = scope.where("audit_events.created_at <= ?", params[:date_to].to_date.end_of_day)
         end
 
         render_collection(scope.order(created_at: :desc), with: AuditEventSerializer)

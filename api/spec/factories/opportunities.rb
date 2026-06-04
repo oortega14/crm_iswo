@@ -14,7 +14,9 @@ FactoryBot.define do
     estimated_value   { 5_000_000 }
     currency          { "COP" }
     bant_score        { 0 }
-    custom_fields     { {} }
+    # No definir custom_fields aquí: Rails procesa atributos y si custom_fields={} se
+    # asigna después del setter bant_data=, sobrescribe el valor que bant_data= guardó.
+    # El default de la columna (jsonb default: '{}') es suficiente.
     expected_close_date { 30.days.from_now.to_date }
     last_activity_at  { Time.current }
 

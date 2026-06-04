@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -43,71 +43,52 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList, type JsonApiResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { formatRailsError } from '@/lib/api'
+import {
+  createLandingPage,
+  deleteLandingPage,
+  duplicateLandingPage,
+  fetchLandingPagesList,
+  landingPagesErrorMessage,
+  publishLandingPage,
+  unpublishLandingPage,
+  type LandingPageSummary,
+} from '@/lib/landingPagesApi'
+import {
+  getAuthQueryScope,
+  invalidateLandingPagesQueries,
+  queryKeys,
+} from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
+import { resolveLandingPublicUrl } from '@/lib/landingUrls'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { LandingEditorSheet } from '@/components/landings/LandingEditorSheet'
 import { LandingMetricsSheet } from '@/components/landings/LandingMetricsSheet'
+import { useAuthStore, useUserRole } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/landings')({
   component: LandingsPage,
 })
 
-interface LandingPage {
-  id: string
-  title: string
-  slug: string
-  description: string
-  publicUrl: string
-  status: 'draft' | 'published'
-  views: number
-  leads: number
-  conversionRate: number
-  createdAt: string
-  updatedAt: string
-}
-
-function mapLanding(resource: JsonApiResource): LandingPage | null {
-  if (!resource.id) return null
-  const a = resource.attributes ?? {}
-
-  const title = String(a.title ?? '').trim()
-  const slug = String(a.slug ?? '').trim()
-  if (!title || !slug) return null
-
-  const views = Number(a.view_count ?? 0)
-  const leads = Number(a.lead_count ?? 0)
-  const conversionRate = views > 0 ? Number(((leads / views) * 100).toFixed(1)) : 0
-
-  return {
-    id: String(resource.id),
-    title,
-    slug,
-    description: String(a.seo_description ?? ''),
-    publicUrl: String(a.public_url ?? ''),
-    status: a.published ? 'published' : 'draft',
-    views: Number.isFinite(views) ? views : 0,
-    leads: Number.isFinite(leads) ? leads : 0,
-    conversionRate,
-    createdAt: String(a.created_at ?? new Date().toISOString()),
-    updatedAt: String(a.updated_at ?? new Date().toISOString()),
-  }
-}
-
 function LandingsPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const authScope = getAuthQueryScope()
+  const hasLandingsModule = tenantHasModule(tenant, 'landings')
+  const userRole = useUserRole()
+  const canManageLandings = userRole === 'admin' || userRole === 'manager'
+  const tenantSlug = useAuthStore((s) => s.tenant?.subdomain ?? '')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newLanding, setNewLanding] = useState({
     title: '',
     slug: '',
     description: '',
   })
-  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [editorLanding, setEditorLanding] = useState<{ id: string; title: string } | null>(null)
   const [metricsLanding, setMetricsLanding] = useState<{ id: string; title: string } | null>(null)
-  const [qrLanding, setQrLanding] = useState<LandingPage | null>(null)
+  const [qrLanding, setQrLanding] = useState<LandingPageSummary | null>(null)
 
   const {
     data: landings = [],
@@ -117,30 +98,31 @@ function LandingsPage() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: queryKeys.landingPages.all,
-    queryFn: async () => {
-      const response = await api.get('/landing_pages', { params: { page: 1, items: 100 } })
-      return jsonApiPrimaryList(response.data)
-        .map(mapLanding)
-        .filter((x): x is LandingPage => x !== null)
-    },
+    queryKey: queryKeys.landingPages.list(authScope),
+    queryFn: fetchLandingPagesList,
+    enabled: Boolean(authScope) && hasLandingsModule,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   })
 
+  useEffect(() => {
+    if (!authScope || !hasLandingsModule) return
+    void refetch()
+  }, [authScope, hasLandingsModule, refetch])
+
+  const invalidateLandings = () => invalidateLandingPagesQueries(queryClient)
+
   const createLandingMutation = useMutation({
-    mutationFn: async (data: typeof newLanding) => {
-      return api.post('/landing_pages', {
-        landing_page: {
-          title: data.title.trim(),
-          slug: data.slug.trim(),
-          seo_description: data.description.trim() || undefined,
-          published: false,
-          content: {},
-          styles: {},
-        },
-      })
-    },
+    mutationFn: (data: typeof newLanding) =>
+      createLandingPage({
+        title: data.title,
+        slug: data.slug,
+        description: data.description,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+      void invalidateLandings()
       toast.success('Landing page creada exitosamente')
       setIsCreateDialogOpen(false)
       setNewLanding({ title: '', slug: '', description: '' })
@@ -152,11 +134,11 @@ function LandingsPage() {
 
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'draft' | 'published' }) => {
-      if (status === 'published') return api.post(`/landing_pages/${id}/publish`)
-      return api.post(`/landing_pages/${id}/unpublish`)
+      if (status === 'published') return publishLandingPage(id)
+      return unpublishLandingPage(id)
     },
     onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+      void invalidateLandings()
       toast.success(
         vars.status === 'published'
           ? 'Landing page publicada' 
@@ -169,9 +151,9 @@ function LandingsPage() {
   })
 
   const duplicateLandingMutation = useMutation({
-    mutationFn: async (id: string) => api.post(`/landing_pages/${id}/duplicate`),
+    mutationFn: duplicateLandingPage,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+      void invalidateLandings()
       toast.success('Landing duplicada')
     },
     onError: (err: unknown) => {
@@ -180,24 +162,30 @@ function LandingsPage() {
   })
 
   const deleteLandingMutation = useMutation({
-    mutationFn: async (id: string) => {
-      setIsDeleting(id)
-      await api.delete(`/landing_pages/${id}`)
-    },
+    mutationFn: deleteLandingPage,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.landingPages.all })
+      void invalidateLandings()
       toast.success('Landing page eliminada')
+      setConfirmDeleteId(null)
     },
     onError: (err: unknown) => {
       toast.error(formatRailsError(err, 'No se pudo eliminar la landing'))
     },
-    onSettled: () => setIsDeleting(null),
   })
 
-  const getPublicUrl = (landing: LandingPage) =>
-    `${window.location.origin}/l/${landing.slug}`
+  const titleToSlug = (title: string) =>
+    title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80)
 
-  const copyUrl = (landing: LandingPage) => {
+  const getPublicUrl = (landing: LandingPageSummary) =>
+    resolveLandingPublicUrl(tenantSlug, landing.slug, landing.publicUrl)
+
+  const copyUrl = (landing: LandingPageSummary) => {
     navigator.clipboard.writeText(getPublicUrl(landing))
     toast.success('URL copiada al portapapeles')
   }
@@ -208,21 +196,40 @@ function LandingsPage() {
     ? (landings.reduce((acc, l) => acc + l.conversionRate, 0) / landings.length).toFixed(1)
     : 0
 
+  if (!hasLandingsModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Landing pages"
+          description="El módulo de landings no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
+
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Landing pages"
-        description="Crea y gestiona landing pages para capturar leads"
+        description="RFC §6.5: landings por tenant con URL pública en subdominio. Admin y manager editan; el resto del staff puede consultar."
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
           Actualizar
         </Button>
-        <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva landing
-        </Button>
+        {canManageLandings && (
+          <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva landing
+          </Button>
+        )}
       </PageHeader>
+
+      {!canManageLandings && (
+        <p className="text-sm text-muted-foreground -mt-4">
+          Solo administradores y managers pueden crear o editar landings. Puedes ver URLs, métricas y vistas previas.
+        </p>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -283,7 +290,7 @@ function LandingsPage() {
       {isError ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-destructive">
-            {formatRailsError(error, 'No se pudieron cargar las landings')}
+            {landingPagesErrorMessage(error)}
           </CardContent>
         </Card>
       ) : isLoading ? (
@@ -321,6 +328,8 @@ function LandingsPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {canManageLandings && (
+                        <>
                       <DropdownMenuItem onClick={() => setEditorLanding({ id: landing.id, title: landing.title })}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Editar contenido
@@ -329,6 +338,8 @@ function LandingsPage() {
                         <CopyPlus className="mr-2 h-4 w-4" />
                         Duplicar
                       </DropdownMenuItem>
+                        </>
+                      )}
                       <DropdownMenuItem onClick={() => copyUrl(landing)}>
                         <Copy className="mr-2 h-4 w-4" />
                         Copiar URL
@@ -341,6 +352,17 @@ function LandingsPage() {
                         <BarChart3 className="mr-2 h-4 w-4" />
                         Ver estadísticas
                       </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link
+                          to="/opportunities"
+                          search={{ landing: landing.id }}
+                        >
+                          <Users className="mr-2 h-4 w-4" />
+                          Ver leads en Oportunidades
+                        </Link>
+                      </DropdownMenuItem>
+                      {canManageLandings && (
+                        <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem 
                         onClick={() => toggleStatusMutation.mutate({
@@ -351,14 +373,15 @@ function LandingsPage() {
                         {landing.status === 'published' ? 'Despublicar' : 'Publicar'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         className="text-destructive"
-                        onClick={() => deleteLandingMutation.mutate(landing.id)}
-                        disabled={isDeleting === landing.id}
+                        onClick={() => setConfirmDeleteId(landing.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
                         Eliminar
                       </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -368,8 +391,8 @@ function LandingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                  <code className="px-1.5 py-0.5 bg-muted rounded text-xs">
-                    /l/{landing.slug}
+                  <code className="px-1.5 py-0.5 bg-muted rounded text-xs truncate max-w-[220px]">
+                    {getPublicUrl(landing).replace(/^https?:\/\/[^/]+/, '')}
                   </code>
                   <Button 
                     variant="ghost" 
@@ -400,6 +423,13 @@ function LandingsPage() {
                 >
                   <Pencil className="mr-1.5 h-3 w-3" />
                   Editar contenido
+                </Button>
+
+                <Button variant="secondary" size="sm" className="w-full mb-3 h-8 text-xs" asChild>
+                  <Link to="/opportunities" search={{ landing: landing.id }}>
+                    <Users className="mr-1.5 h-3 w-3" />
+                    Ver {landing.leads} lead(s) en Oportunidades
+                  </Link>
                 </Button>
 
                 <div className="grid grid-cols-3 gap-2 pt-3 border-t">
@@ -441,6 +471,35 @@ function LandingsPage() {
           </Card>
         </div>
       )}
+
+      {/* Confirm Delete Dialog */}
+      <Dialog open={!!confirmDeleteId} onOpenChange={(o) => { if (!o) setConfirmDeleteId(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Eliminar landing page</DialogTitle>
+            <DialogDescription>
+              Esta acción es irreversible. Se eliminarán también las métricas y submissions asociados.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteId(null)}
+              disabled={deleteLandingMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => { if (confirmDeleteId) deleteLandingMutation.mutate(confirmDeleteId) }}
+              disabled={deleteLandingMutation.isPending}
+            >
+              {deleteLandingMutation.isPending ? <Spinner className="mr-2" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* QR Dialog */}
       <Dialog open={!!qrLanding} onOpenChange={(o) => { if (!o) setQrLanding(null) }}>
@@ -530,7 +589,16 @@ function LandingsPage() {
               <Input
                 id="name"
                 value={newLanding.title}
-                onChange={(e) => setNewLanding(l => ({ ...l, title: e.target.value }))}
+                onChange={(e) => {
+                  const title = e.target.value
+                  setNewLanding(l => ({
+                    ...l,
+                    title,
+                    slug: l.slug === '' || l.slug === titleToSlug(l.title)
+                      ? titleToSlug(title)
+                      : l.slug,
+                  }))
+                }}
                 placeholder="Ej: Demo Producto Q2"
               />
             </div>
@@ -538,17 +606,22 @@ function LandingsPage() {
             <div className="space-y-2">
               <Label htmlFor="slug">URL (slug)</Label>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">/l/</span>
+                <span className="text-sm text-muted-foreground truncate">
+                  {tenantSlug ? `${tenantSlug}.localhost/` : '/l/'}
+                </span>
                 <Input
                   id="slug"
                   value={newLanding.slug}
-                  onChange={(e) => setNewLanding(l => ({ 
-                    ...l, 
-                    slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') 
+                  onChange={(e) => setNewLanding(l => ({
+                    ...l,
+                    slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-')
                   }))}
                   placeholder="demo-producto"
                 />
               </div>
+              {newLanding.slug !== '' && newLanding.slug === titleToSlug(newLanding.title) && (
+                <p className="text-xs text-muted-foreground">Auto-generado · edita el campo para personalizar</p>
+              )}
             </div>
 
             <div className="space-y-2">

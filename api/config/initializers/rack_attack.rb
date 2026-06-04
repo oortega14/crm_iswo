@@ -32,12 +32,16 @@ class Rack::Attack
   # 10 intentos/minuto por IP para frenar fuerza bruta
   # --------------------------------------------------------------------------
   throttle("auth/ip", limit: 10, period: 1.minute) do |req|
-    req.ip if req.path.match?(%r{/api/v1/auth/(sign_in|password)})
+    next unless req.post?
+
+    req.ip if req.path == "/api/v1/sessions" ||
+              req.path == "/api/v1/sessions/refresh" ||
+              req.path.start_with?("/api/v1/password/")
   end
 
   # 5 intentos/minuto por email para frenar fuerza bruta por cuenta
   throttle("auth/email", limit: 5, period: 1.minute) do |req|
-    if req.path.match?(%r{/api/v1/auth/sign_in}) && req.post?
+    if req.path == "/api/v1/sessions" && req.post?
       req.params["user"]&.dig("email").to_s.downcase.strip.presence
     end
   end

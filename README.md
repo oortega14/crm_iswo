@@ -87,6 +87,11 @@ WHATSAPP_PROVIDER=twilio   # twilio | cloud_api
 
 POSTMARK_API_TOKEN=
 MAIL_FROM=no-reply@crm.iswo.com.co
+
+# Claude — temperatura de leads (POST /opportunities/:id/classify)
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+ANTHROPIC_AUTO_CLASSIFY_TEMPERATURE=false
 ```
 
 ---
@@ -487,7 +492,7 @@ Convención: enum almacenado como `string` en DB (nunca integer) para facilitar 
 
 - `admin` — control total del tenant.
 - `manager` — todo excepto gestión de usuarios y configuración crítica.
-- `consultant` — sus propias oportunidades + las de su red.
+- `consultant` — sus propias oportunidades y contactos; la red de referidos se consulta en `/network` (árbol según `network_depth`), no en el pipeline compartido.
 - `viewer` — solo lectura.
 
 Toda policy hereda de `ApplicationPolicy` y aplica scope por `tenant_id` automático (redundante con acts_as_tenant, defensa en profundidad).

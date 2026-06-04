@@ -6,6 +6,7 @@ module Api
     # PipelineStagesController — anidado bajo /pipelines/:pipeline_id/stages
     # ========================================================================
     class PipelineStagesController < BaseController
+      auditable_resource :stage
       before_action :set_pipeline
       before_action :set_stage, only: %i[update destroy]
 
@@ -20,6 +21,7 @@ module Api
         authorize @pipeline, :update?
         stage = @pipeline.pipeline_stages.new(stage_params.merge(tenant: current_tenant))
         if stage.save
+          @stage = stage
           render_created(stage, with: PipelineStageSerializer)
         else
           render_unprocessable(stage)

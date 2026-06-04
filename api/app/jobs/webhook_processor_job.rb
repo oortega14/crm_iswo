@@ -30,6 +30,15 @@ class WebhookProcessorJob < ApplicationJob
   # Reintentos específicos para errores de red contra Meta/Google.
   retry_on Faraday::Error, wait: :polynomially_longer, attempts: 5
 
+  # ArgumentError indica integración no configurada o payload inválido:
+  # no reintentar (el reintento no ayuda), pero sí loguear y descartar.
+  discard_on ArgumentError do |job, error|
+    Rails.logger.error(
+      "[WebhookProcessorJob] DISCARD args=#{job.arguments.first.inspect} " \
+      "#{error.class}: #{error.message}"
+    )
+  end
+
   def perform(kind, payload)
     audit_received(kind, payload)
 
@@ -306,6 +315,9 @@ class WebhookProcessorJob < ApplicationJob
       source_kind:      "whatsapp",
       source_label:     "inbound"
     )
+  rescue ActiveRecord::RecordNotUnique
+    # Otro worker creó el contacto concurrentemente; reutilizamos el existente.
+    tenant.contacts.find_by!(phone_normalized: normalized)
   end
 
   def split_whatsapp_profile_name(name)

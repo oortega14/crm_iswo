@@ -41,6 +41,19 @@ RSpec.describe OpportunityPolicy do
     it "consultant NO ve opps ajenas" do
       expect(described_class.new(consultant, foreign_opp).show?).to be(false)
     end
+
+    it "consultant no ve opps de otro consultor aunque sea su referido" do
+      referred = create(:user, :consultant, tenant: tenant)
+      create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
+      network_opp = create(:opportunity,
+                           tenant: tenant,
+                           pipeline: pipeline,
+                           pipeline_stage: pipeline.pipeline_stages.first,
+                           owner_user: referred)
+
+      expect(described_class.new(consultant, network_opp).show?).to be(false)
+      expect(described_class.new(consultant, network_opp).update?).to be(false)
+    end
   end
 
   describe "update?" do
@@ -112,7 +125,15 @@ RSpec.describe OpportunityPolicy do
       expect(described_class::Scope.new(viewer, Opportunity).resolve).to match_array([own_opp, foreign_opp])
     end
 
-    it "consultant solo las suyas" do
+    it "consultant solo ve las suyas en scope" do
+      referred = create(:user, :consultant, tenant: tenant)
+      create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
+      create(:opportunity,
+             tenant: tenant,
+             pipeline: pipeline,
+             pipeline_stage: pipeline.pipeline_stages.first,
+             owner_user: referred)
+
       expect(described_class::Scope.new(consultant, Opportunity).resolve).to match_array([own_opp])
     end
 

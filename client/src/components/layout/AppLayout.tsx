@@ -1,16 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
+import { useState, useEffect, useMemo } from 'react'
+import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
-  LayoutDashboard,
-  Target,
-  Users,
-  Bell,
-  Settings,
-  Network,
-  Flag,
-  Download,
-  FileText,
   Menu,
   X,
   Search,
@@ -19,14 +10,25 @@ import {
   LogOut,
   ChevronDown,
   UserRound,
+  Building2,
+  MoreHorizontal,
 } from 'lucide-react'
 import { useAuthStore, useTenant, useUser } from '@/stores/auth'
 import { useTheme } from '@/components/common/ThemeProvider'
-import { queryKeys } from '@/lib/queryClient'
+import {
+  DUPLICATE_FLAGS_POLL_MS,
+  clearSessionQueryCache,
+  getAuthQueryScope,
+  queryClient,
+  queryKeys,
+} from '@/lib/queryClient'
+import { fetchDuplicateFlagsStats } from '@/lib/duplicateFlagsApi'
+import { fetchReminderStats } from '@/lib/reminderApi'
+import { tenantHasModule } from '@/lib/tenantModules'
+import { filterMainNav, getSidebarSections, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
 import api from '@/lib/api'
-import { cn, getInitials } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import {
   DropdownMenu,
@@ -35,99 +37,117 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { CommandPalette } from '@/components/common/CommandPalette'
 import { NotificationDropdown } from '@/components/common/NotificationDropdown'
 import { PageAmbientBackground } from '@/components/layout/PageAmbientBackground'
 import { UserProfileDialog } from '@/components/common/UserProfileDialog'
-import type { UserRole } from '@/types'
-
-interface NavItem {
-  label: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
-  roles: UserRole[]
-  badge?: number
-}
-
-const mainNavItems: NavItem[] = [
-  { label: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'manager', 'consultant', 'viewer'] },
-  { label: 'Oportunidades', href: '/opportunities', icon: Target, roles: ['admin', 'manager', 'consultant', 'viewer'] },
-  { label: 'Contactos', href: '/contacts', icon: Users, roles: ['admin', 'manager', 'consultant', 'viewer'] },
-  { label: 'Recordatorios', href: '/reminders', icon: Bell, roles: ['admin', 'manager', 'consultant', 'viewer'] },
-  { label: 'Red de Referidos', href: '/network', icon: Network, roles: ['admin', 'manager', 'consultant'] },
-  { label: 'Duplicados', href: '/duplicates', icon: Flag, roles: ['admin', 'manager'] },
-  { label: 'Exportaciones', href: '/exports', icon: Download, roles: ['admin', 'manager'] },
-  { label: 'Landing Pages', href: '/landings', icon: FileText, roles: ['admin'] },
-]
-
-const settingsNavItems: NavItem[] = [
-  { label: 'Pipelines', href: '/settings/pipelines', icon: Target, roles: ['admin'] },
-  { label: 'Usuarios', href: '/settings/users', icon: Users, roles: ['admin', 'manager'] },
-  { label: 'Integraciones', href: '/settings/integrations', icon: Settings, roles: ['admin', 'manager'] },
-  { label: 'Fuentes de Lead', href: '/settings/lead-sources', icon: Target, roles: ['admin'] },
-  { label: 'Registro de Auditoría', href: '/settings/audit', icon: FileText, roles: ['admin', 'manager'] },
-]
 
 interface AppLayoutProps {
   children: React.ReactNode
 }
+
+const MOBILE_PRIMARY_COUNT = 4
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const location = useLocation()
-  const { theme, setTheme, resolvedTheme } = useTheme()
+  const { setTheme, resolvedTheme } = useTheme()
   const user = useUser()
   const tenant = useTenant()
-  const logout = useAuthStore((s) => s.logout)
+  const logoutStore = useAuthStore((s) => s.logout)
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const logoutTenant = useTenant()
+  const router = useRouter()
 
-  // Fetch overdue reminders count
-  const { data: overdueCount } = useQuery({
-    queryKey: queryKeys.reminders.overdue,
-    queryFn: async () => {
-      const response = await api.get<{
-        meta?: { pagination?: { count?: number } }
-      }>('/reminders?status=pending&overdue=true')
-      return response.data.meta?.pagination?.count ?? 0
-    },
-    refetchInterval: 60000, // Poll every 60s
+  const logout = async () => {
+    try {
+      if (accessToken) {
+        await api.delete('/sessions', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'X-Tenant-Slug': logoutTenant?.subdomain ?? '',
+          },
+        })
+      }
+    } catch {
+      // Si el server falla igualmente limpiamos el estado local
+    } finally {
+      clearSessionQueryCache(queryClient)
+      logoutStore()
+      void router.navigate({ to: '/login' })
+    }
+  }
+
+  const authScope = getAuthQueryScope()
+  const hasRemindersModule = tenantHasModule(tenant, 'reminders')
+  const hasOpportunities = tenantHasModule(tenant, 'opportunities')
+
+  const { data: reminderStats } = useQuery({
+    queryKey: queryKeys.reminders.stats(authScope),
+    queryFn: fetchReminderStats,
+    enabled: Boolean(authScope) && hasRemindersModule,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  })
+  const pendingRemindersCount = reminderStats?.pending
+
+  const { data: duplicateStats } = useQuery({
+    queryKey: queryKeys.duplicateFlags.stats(authScope),
+    queryFn: fetchDuplicateFlagsStats,
+    enabled:
+      Boolean(authScope) &&
+      hasOpportunities &&
+      (user?.role === 'admin' || user?.role === 'manager'),
+    refetchInterval: DUPLICATE_FLAGS_POLL_MS,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   })
 
-  // Fetch pending duplicate flags count
-  const { data: duplicateCount } = useQuery({
-    queryKey: queryKeys.duplicateFlags.pending,
-    queryFn: async () => {
-      const response = await api.get<{ meta: { total: number } }>(
-        '/duplicate_flags?resolution=pending'
+  const mainNavBase = useMemo(
+    () => filterMainNav(MAIN_NAV_ITEMS, user?.role, tenant),
+    [user?.role, tenant],
+  )
+
+  const navItemsWithBadges = useMemo(
+    () =>
+      mainNavBase.map((item) => ({
+        ...item,
+        badge:
+          item.href === '/reminders'
+            ? pendingRemindersCount
+            : item.href === '/duplicates'
+              ? duplicateStats?.pending
+              : undefined,
+      })),
+    [mainNavBase, pendingRemindersCount, duplicateStats?.pending],
+  )
+
+  const sidebar = useMemo(
+    () => getSidebarSections(user?.role, tenant),
+    [user?.role, tenant],
+  )
+  const platformTenant = sidebar.isPlatform
+
+  const mobileNavItems = useMemo(() => {
+    if (platformTenant) {
+      return sidebar.sections.flatMap((section) =>
+        section.items.map((item) => ({
+          href: item.href,
+          label: item.label,
+          icon: item.icon,
+          badge: undefined as number | undefined,
+        })),
       )
-      return response.data.meta?.total || 0
-    },
-    enabled: user?.role === 'admin' || user?.role === 'manager',
-  })
+    }
+    return navItemsWithBadges
+  }, [platformTenant, sidebar.sections, navItemsWithBadges])
 
-  // Update nav items with badges
-  const navItemsWithBadges = mainNavItems.map((item) => ({
-    ...item,
-    badge:
-      item.href === '/reminders'
-        ? overdueCount
-        : item.href === '/duplicates'
-        ? duplicateCount
-        : undefined,
-  }))
+  const mobilePrimary = mobileNavItems.slice(0, MOBILE_PRIMARY_COUNT)
+  const mobileMore = mobileNavItems.slice(MOBILE_PRIMARY_COUNT)
 
-  // Filter nav items by role
-  const filteredMainNav = navItemsWithBadges.filter((item) =>
-    user ? item.roles.includes(user.role) : false
-  )
-  const filteredSettingsNav = settingsNavItems.filter((item) =>
-    user ? item.roles.includes(user.role) : false
-  )
-
-  // Keyboard shortcut for command palette
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
@@ -139,14 +159,40 @@ export function AppLayout({ children }: AppLayoutProps) {
     return () => document.removeEventListener('keydown', down)
   }, [])
 
-  // Close sidebar on route change (mobile)
   useEffect(() => {
     setSidebarOpen(false)
   }, [location.pathname])
 
+  const renderNavLink = (
+    item: (typeof navItemsWithBadges)[number],
+    onNavigate?: () => void,
+  ) => {
+    const isActive = location.pathname === item.href
+    return (
+      <Link
+        key={item.href}
+        to={item.href}
+        onClick={onNavigate}
+        className={cn(
+          'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          isActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        )}
+      >
+        <item.icon className="size-4 shrink-0" />
+        <span className="truncate">{item.label}</span>
+        {item.badge !== undefined && item.badge > 0 && (
+          <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 text-xs">
+            {item.badge}
+          </Badge>
+        )}
+      </Link>
+    )
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
@@ -154,29 +200,36 @@ export function AppLayout({ children }: AppLayoutProps) {
         />
       )}
 
-      {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r bg-sidebar transition-transform duration-200 lg:static lg:translate-x-0',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed inset-y-0 left-0 z-50 flex w-60 min-h-0 flex-col overflow-hidden border-r bg-sidebar transition-transform duration-200 lg:static lg:h-full lg:translate-x-0',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        {/* Logo */}
-        <div className="flex h-14 items-center gap-2 border-b px-4">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <Link
+            to={platformTenant ? '/settings/tenant-onboarding' : '/'}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none ring-sidebar-ring focus-visible:ring-2"
+            onClick={() => setSidebarOpen(false)}
+          >
           {tenant?.logo_url ? (
-            <img
-              src={tenant.logo_url}
-              alt={tenant.name}
-              className="h-8 w-auto object-contain"
-            />
+            <img src={tenant.logo_url} alt={tenant.name} className="h-8 w-auto object-contain" />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground font-bold text-sm">
-              IS
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Building2 className="size-4" />
             </div>
           )}
-          <span className="font-semibold text-sidebar-foreground truncate">
-            {tenant?.name || 'CRM ISWO'}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block font-semibold text-sidebar-foreground truncate">
+              {tenant?.name || 'CRM ISWO'}
+            </span>
+            {platformTenant && (
+              <span className="block text-[10px] font-medium uppercase tracking-wider text-muted-foreground truncate">
+                Consola de plataforma
+              </span>
+            )}
+          </div>
+          </Link>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -187,43 +240,19 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </div>
 
-        {/* Navigation */}
-        <ScrollArea className="flex-1 px-3 py-4">
-          <nav className="flex flex-col gap-1">
-            {filteredMainNav.map((item) => {
-              const isActive = location.pathname === item.href
-              return (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  className={cn(
-                    'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                      : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-                  )}
-                >
-                  <item.icon className="size-4 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <Badge
-                      variant="destructive"
-                      className="ml-auto h-5 min-w-5 px-1.5 text-xs"
-                    >
-                      {item.badge}
-                    </Badge>
-                  )}
-                </Link>
-              )
-            })}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <nav className="flex flex-col gap-1 px-3 py-4 pb-6">
+            {navItemsWithBadges.map((item) => renderNavLink(item))}
 
-            {filteredSettingsNav.length > 0 && (
-              <>
-                <Separator className="my-3" />
+            {sidebar.sections.map((section) => (
+              <div key={section.label}>
+                {(navItemsWithBadges.length > 0 || section !== sidebar.sections[0]) && (
+                  <Separator className="my-3" />
+                )}
                 <span className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  Configuración
+                  {section.label}
                 </span>
-                {filteredSettingsNav.map((item) => {
+                {section.items.map((item) => {
                   const isActive = location.pathname === item.href
                   return (
                     <Link
@@ -233,7 +262,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                         'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                         isActive
                           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                       )}
                     >
                       <item.icon className="size-4 shrink-0" />
@@ -241,20 +270,15 @@ export function AppLayout({ children }: AppLayoutProps) {
                     </Link>
                   )
                 })}
-              </>
-            )}
+              </div>
+            ))}
           </nav>
-        </ScrollArea>
+        </div>
 
-        {/* User menu */}
-        <div className="border-t p-3">
+        <div className="shrink-0 border-t p-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-sidebar-accent transition-colors">
-                <Avatar className="size-8">
-                  <AvatarImage src={user?.avatar_url} alt={user?.name} />
-                  <AvatarFallback>{user?.name ? getInitials(user.name) : 'U'}</AvatarFallback>
-                </Avatar>
                 <div className="flex-1 text-left truncate">
                   <p className="font-medium text-sidebar-foreground truncate">{user?.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
@@ -291,9 +315,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Top bar */}
         <header className="flex h-14 items-center gap-4 border-b bg-background px-4">
           <Button
             variant="ghost"
@@ -304,7 +326,6 @@ export function AppLayout({ children }: AppLayoutProps) {
             <Menu className="size-5" />
           </Button>
 
-          {/* Search */}
           <button
             onClick={() => setCommandOpen(true)}
             className="flex flex-1 items-center gap-2 rounded-md border bg-muted/50 px-3 py-1.5 text-sm text-muted-foreground max-w-md hover:bg-muted transition-colors"
@@ -321,30 +342,25 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Page content — mismo fondo ambiental que el dashboard en toda la app */}
-        <main className="relative flex-1 overflow-auto">
+        <main className="relative flex-1 overflow-auto pb-16 lg:pb-0">
           <PageAmbientBackground />
           {children}
         </main>
       </div>
 
-      {/* Command palette */}
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
-
-      {/* Perfil del usuario */}
       <UserProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
-      {/* Mobile bottom navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex h-16 items-center justify-around border-t bg-background lg:hidden">
-        {filteredMainNav.slice(0, 4).map((item) => {
+        {mobilePrimary.map((item) => {
           const isActive = location.pathname === item.href
           return (
             <Link
               key={item.href}
               to={item.href}
               className={cn(
-                'flex flex-col items-center gap-1 px-3 py-2',
-                isActive ? 'text-primary' : 'text-muted-foreground'
+                'flex flex-col items-center gap-1 px-2 py-2 min-w-0 flex-1',
+                isActive ? 'text-primary' : 'text-muted-foreground',
               )}
             >
               <div className="relative">
@@ -355,10 +371,43 @@ export function AppLayout({ children }: AppLayoutProps) {
                   </span>
                 )}
               </div>
-              <span className="text-[10px]">{item.label}</span>
+              <span className="text-[10px] truncate max-w-full">{item.label.split(' ')[0]}</span>
             </Link>
           )
         })}
+        {mobileMore.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  'flex flex-col items-center gap-1 px-2 py-2 min-w-0 flex-1',
+                  mobileMore.some((i) => location.pathname === i.href)
+                    ? 'text-primary'
+                    : 'text-muted-foreground',
+                )}
+              >
+                <MoreHorizontal className="size-5" />
+                <span className="text-[10px]">Más</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 mb-2">
+              {mobileMore.map((item) => (
+                <DropdownMenuItem key={item.href} asChild>
+                  <Link to={item.href} className="flex items-center gap-2">
+                    <item.icon className="size-4" />
+                    {item.label}
+                    {item.badge !== undefined && item.badge > 0 && (
+                      <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1 text-xs">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </nav>
     </div>
   )

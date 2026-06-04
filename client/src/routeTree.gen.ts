@@ -13,6 +13,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as LSlugRouteImport } from './routes/l.$slug'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -24,8 +25,13 @@ import { Route as AppExportsRouteImport } from './routes/_app/exports'
 import { Route as AppDuplicatesRouteImport } from './routes/_app/duplicates'
 import { Route as AppContactsRouteImport } from './routes/_app/contacts'
 import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/users'
+import { Route as AppSettingsTenantOnboardingRouteImport } from './routes/_app/settings/tenant-onboarding'
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
+import { Route as AppSettingsLeadSourcesRouteImport } from './routes/_app/settings/lead-sources'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
+import { Route as AppSettingsGeneralRouteImport } from './routes/_app/settings/general'
+import { Route as AppSettingsFieldsRouteImport } from './routes/_app/settings/fields'
+import { Route as AppSettingsBantRouteImport } from './routes/_app/settings/bant'
 import { Route as AppSettingsAuditRouteImport } from './routes/_app/settings/audit'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -45,6 +51,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SlugRoute = SlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -102,14 +113,40 @@ const AppSettingsUsersRoute = AppSettingsUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsTenantOnboardingRoute =
+  AppSettingsTenantOnboardingRouteImport.update({
+    id: '/tenant-onboarding',
+    path: '/tenant-onboarding',
+    getParentRoute: () => AppSettingsRoute,
+  } as any)
 const AppSettingsPipelinesRoute = AppSettingsPipelinesRouteImport.update({
   id: '/pipelines',
   path: '/pipelines',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsLeadSourcesRoute = AppSettingsLeadSourcesRouteImport.update({
+  id: '/lead-sources',
+  path: '/lead-sources',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsGeneralRoute = AppSettingsGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsFieldsRoute = AppSettingsFieldsRouteImport.update({
+  id: '/fields',
+  path: '/fields',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsBantRoute = AppSettingsBantRouteImport.update({
+  id: '/bant',
+  path: '/bant',
   getParentRoute: () => AppSettingsRoute,
 } as any)
 const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
@@ -119,6 +156,7 @@ const AppSettingsAuditRoute = AppSettingsAuditRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/$slug': typeof SlugRoute
   '/': typeof AppIndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -133,11 +171,17 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRouteWithChildren
   '/l/$slug': typeof LSlugRoute
   '/settings/audit': typeof AppSettingsAuditRoute
+  '/settings/bant': typeof AppSettingsBantRoute
+  '/settings/fields': typeof AppSettingsFieldsRoute
+  '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
+  '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
 }
 export interface FileRoutesByTo {
+  '/$slug': typeof SlugRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -152,12 +196,18 @@ export interface FileRoutesByTo {
   '/l/$slug': typeof LSlugRoute
   '/': typeof AppIndexRoute
   '/settings/audit': typeof AppSettingsAuditRoute
+  '/settings/bant': typeof AppSettingsBantRoute
+  '/settings/fields': typeof AppSettingsFieldsRoute
+  '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
+  '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/$slug': typeof SlugRoute
   '/_app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -173,13 +223,19 @@ export interface FileRoutesById {
   '/l/$slug': typeof LSlugRoute
   '/_app/': typeof AppIndexRoute
   '/_app/settings/audit': typeof AppSettingsAuditRoute
+  '/_app/settings/bant': typeof AppSettingsBantRoute
+  '/_app/settings/fields': typeof AppSettingsFieldsRoute
+  '/_app/settings/general': typeof AppSettingsGeneralRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/_app/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
+  '/_app/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/_app/settings/users': typeof AppSettingsUsersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/$slug'
     | '/'
     | '/forgot-password'
     | '/login'
@@ -194,11 +250,17 @@ export interface FileRouteTypes {
     | '/settings'
     | '/l/$slug'
     | '/settings/audit'
+    | '/settings/bant'
+    | '/settings/fields'
+    | '/settings/general'
     | '/settings/integrations'
+    | '/settings/lead-sources'
     | '/settings/pipelines'
+    | '/settings/tenant-onboarding'
     | '/settings/users'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/$slug'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
@@ -213,11 +275,17 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/'
     | '/settings/audit'
+    | '/settings/bant'
+    | '/settings/fields'
+    | '/settings/general'
     | '/settings/integrations'
+    | '/settings/lead-sources'
     | '/settings/pipelines'
+    | '/settings/tenant-onboarding'
     | '/settings/users'
   id:
     | '__root__'
+    | '/$slug'
     | '/_app'
     | '/forgot-password'
     | '/login'
@@ -233,12 +301,18 @@ export interface FileRouteTypes {
     | '/l/$slug'
     | '/_app/'
     | '/_app/settings/audit'
+    | '/_app/settings/bant'
+    | '/_app/settings/fields'
+    | '/_app/settings/general'
     | '/_app/settings/integrations'
+    | '/_app/settings/lead-sources'
     | '/_app/settings/pipelines'
+    | '/_app/settings/tenant-onboarding'
     | '/_app/settings/users'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  SlugRoute: typeof SlugRoute
   AppRoute: typeof AppRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -274,6 +348,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$slug': {
+      id: '/$slug'
+      path: '/$slug'
+      fullPath: '/$slug'
+      preLoaderRoute: typeof SlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -353,6 +434,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsUsersRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/tenant-onboarding': {
+      id: '/_app/settings/tenant-onboarding'
+      path: '/tenant-onboarding'
+      fullPath: '/settings/tenant-onboarding'
+      preLoaderRoute: typeof AppSettingsTenantOnboardingRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/pipelines': {
       id: '/_app/settings/pipelines'
       path: '/pipelines'
@@ -360,11 +448,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsPipelinesRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/lead-sources': {
+      id: '/_app/settings/lead-sources'
+      path: '/lead-sources'
+      fullPath: '/settings/lead-sources'
+      preLoaderRoute: typeof AppSettingsLeadSourcesRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/integrations': {
       id: '/_app/settings/integrations'
       path: '/integrations'
       fullPath: '/settings/integrations'
       preLoaderRoute: typeof AppSettingsIntegrationsRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/general': {
+      id: '/_app/settings/general'
+      path: '/general'
+      fullPath: '/settings/general'
+      preLoaderRoute: typeof AppSettingsGeneralRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/fields': {
+      id: '/_app/settings/fields'
+      path: '/fields'
+      fullPath: '/settings/fields'
+      preLoaderRoute: typeof AppSettingsFieldsRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/bant': {
+      id: '/_app/settings/bant'
+      path: '/bant'
+      fullPath: '/settings/bant'
+      preLoaderRoute: typeof AppSettingsBantRouteImport
       parentRoute: typeof AppSettingsRoute
     }
     '/_app/settings/audit': {
@@ -379,15 +495,25 @@ declare module '@tanstack/react-router' {
 
 interface AppSettingsRouteChildren {
   AppSettingsAuditRoute: typeof AppSettingsAuditRoute
+  AppSettingsBantRoute: typeof AppSettingsBantRoute
+  AppSettingsFieldsRoute: typeof AppSettingsFieldsRoute
+  AppSettingsGeneralRoute: typeof AppSettingsGeneralRoute
   AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute
+  AppSettingsLeadSourcesRoute: typeof AppSettingsLeadSourcesRoute
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
+  AppSettingsTenantOnboardingRoute: typeof AppSettingsTenantOnboardingRoute
   AppSettingsUsersRoute: typeof AppSettingsUsersRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsAuditRoute: AppSettingsAuditRoute,
+  AppSettingsBantRoute: AppSettingsBantRoute,
+  AppSettingsFieldsRoute: AppSettingsFieldsRoute,
+  AppSettingsGeneralRoute: AppSettingsGeneralRoute,
   AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
+  AppSettingsLeadSourcesRoute: AppSettingsLeadSourcesRoute,
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,
+  AppSettingsTenantOnboardingRoute: AppSettingsTenantOnboardingRoute,
   AppSettingsUsersRoute: AppSettingsUsersRoute,
 }
 
@@ -422,6 +548,7 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
+  SlugRoute: SlugRoute,
   AppRoute: AppRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,

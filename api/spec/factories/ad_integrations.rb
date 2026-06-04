@@ -13,6 +13,7 @@ FactoryBot.define do
     trait :google do provider { "google"         } end
     trait :twilio do provider { "twilio"         } end
     trait :cloud  do provider { "whatsapp_cloud" } end
+    trait :openwa do provider { "openwa"         } end
 
     trait :paused do status { "paused" } end
     trait :errored do

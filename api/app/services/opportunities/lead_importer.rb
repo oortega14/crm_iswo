@@ -130,6 +130,12 @@ module Opportunities
         }.compact
       )
 
+      Notifications::NewLeadNotifier.call(
+        opportunity:  opp,
+        source_kind:  @source_kind,
+        source_label: @source_label
+      )
+
       opp
     end
 
@@ -174,15 +180,8 @@ module Opportunities
       Rails.logger.warn("[AuditEvent] LeadImporter contact=#{contact.id} #{e.message}")
     end
 
-    # Round-robin: consultant con menos oportunidades abiertas.
     def round_robin_owner
-      @tenant.users
-             .where(role: "consultant", active: true)
-             .left_joins(:owned_opportunities)
-             .where(opportunities: { status: [nil, "new_lead", "contacted", "qualified", "proposal"] })
-             .group("users.id")
-             .order(Arel.sql("COUNT(opportunities.id) ASC"))
-             .first
+      Leads::RoundRobinOwner.call(@tenant)
     end
   end
 end

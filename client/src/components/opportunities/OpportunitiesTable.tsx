@@ -12,6 +12,7 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table'
 import { ArrowUpDown, ChevronDown, Settings2 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   cn,
   formatCurrency,
@@ -19,23 +20,39 @@ import {
   getBantScoreColor,
   getStatusColor,
   formatStatusLabel,
-  getInitials,
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { OpportunityLeadRow } from '@/components/opportunities/OpportunityLeadRow'
+import { formatStageTimePain, getStageEmoji } from '@/lib/opportunityVisuals'
 import type { Opportunity } from '@/types'
 import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
+import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
+const COLUMN_LABELS: Record<string, string> = {
+  contact_name:    'Contacto',
+  temperature:     'Temperatura',
+  contact_actions: 'Acciones',
+  estimated_value: 'Valor',
+  stage:           'Etapa',
+  bant_score:      'BANT',
+  status:          'Estado',
+  owner:           'Propietario',
+  last_activity_at:'Última actividad',
+}
 
 interface OpportunitiesTableProps {
   opportunities: Opportunity[]
   onSelectOpportunity: (id: string) => void
+  canBulkDelete?: boolean
+  selectedIds?: Set<string>
+  onSelectionChange?: (id: string, selected: boolean) => void
+  onSelectAllOnPage?: (selected: boolean, pageIds: string[]) => void
 }
 
 const columnHelper = createColumnHelper<Opportunity>()
@@ -43,6 +60,10 @@ const columnHelper = createColumnHelper<Opportunity>()
 export function OpportunitiesTable({
   opportunities,
   onSelectOpportunity,
+  canBulkDelete = false,
+  selectedIds,
+  onSelectionChange,
+  onSelectAllOnPage,
 }: OpportunitiesTableProps) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -70,15 +91,30 @@ export function OpportunitiesTable({
             <ArrowUpDown className="ml-2 size-4" />
           </Button>
         ),
+        cell: (info) => {
+          const row = info.row.original
+          return (
+            <div className="flex flex-col gap-1 min-w-0 max-w-[220px]">
+              <OpportunityLeadRow
+                size="md"
+                className="min-w-0"
+                contactName={info.getValue()}
+                customFields={row.custom_fields}
+                propertyTitle={row.title}
+              />
+              {row.company_name && (
+                <span className="text-xs text-muted-foreground">
+                  {row.company_name}
+                </span>
+              )}
+            </div>
+          )
+        },
+      }),
+      columnHelper.accessor('temperature', {
+        header: 'Temp.',
         cell: (info) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{info.getValue()}</span>
-            {info.row.original.company_name && (
-              <span className="text-xs text-muted-foreground">
-                {info.row.original.company_name}
-              </span>
-            )}
-          </div>
+          <TemperatureBadge temperature={info.getValue() ?? 'cold'} showLabel />
         ),
       }),
       columnHelper.display({
@@ -121,11 +157,21 @@ export function OpportunitiesTable({
         header: 'Etapa',
         cell: (info) => {
           const stage = info.getValue()
-          return stage ? (
-            <Badge variant="outline" className="font-normal">
-              {stage.name}
-            </Badge>
-          ) : null
+          const row = info.row.original
+          if (!stage) return null
+          const pain = formatStageTimePain(row.updated_at)
+          return (
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 text-xs tabular-nums',
+                pain.urgent ? 'font-semibold text-amber-600 dark:text-amber-400' : 'text-muted-foreground',
+              )}
+              title={stage.name}
+            >
+              <span aria-hidden>{getStageEmoji(stage.name)}</span>
+              <span>{pain.label}</span>
+            </span>
+          )
         },
       }),
       columnHelper.accessor('bant_score', {
@@ -163,15 +209,7 @@ export function OpportunitiesTable({
           const owner = info.getValue()
           if (!owner) return null
           return (
-            <div className="flex items-center gap-2">
-              <Avatar className="size-6">
-                <AvatarImage src={owner.avatar_url} />
-                <AvatarFallback className="text-[10px]">
-                  {getInitials(owner.name)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-sm truncate max-w-[100px]">{owner.name}</span>
-            </div>
+            <span className="text-sm truncate max-w-[140px]">{owner.name}</span>
           )
         },
       }),
@@ -199,7 +237,7 @@ export function OpportunitiesTable({
         },
       }),
     ],
-    []
+    [],
   )
 
   const table = useReactTable({
@@ -214,6 +252,15 @@ export function OpportunitiesTable({
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   })
+
+  const pageRows = table.getRowModel().rows
+  const pageIds = pageRows.map((r) => r.original.id)
+  const allOnPageSelected =
+    canBulkDelete &&
+    pageIds.length > 0 &&
+    pageIds.every((id) => selectedIds?.has(id))
+  const someOnPageSelected =
+    canBulkDelete && pageIds.some((id) => selectedIds?.has(id))
 
   return (
     <div className="flex flex-col h-full">
@@ -237,7 +284,7 @@ export function OpportunitiesTable({
                   checked={column.getIsVisible()}
                   onCheckedChange={(value) => column.toggleVisibility(!!value)}
                 >
-                  {column.id}
+                  {COLUMN_LABELS[column.id] ?? column.id}
                 </DropdownMenuCheckboxItem>
               ))}
           </DropdownMenuContent>
@@ -250,6 +297,20 @@ export function OpportunitiesTable({
           <thead className="sticky top-0 bg-background border-b">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
+                {canBulkDelete && (
+                  <th className="h-10 w-10 px-2 text-left align-middle">
+                    <Checkbox
+                      checked={
+                        allOnPageSelected ? true : someOnPageSelected ? 'indeterminate' : false
+                      }
+                      onCheckedChange={(checked) =>
+                        onSelectAllOnPage?.(checked === true, pageIds)
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label="Seleccionar página"
+                    />
+                  </th>
+                )}
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
@@ -270,23 +331,38 @@ export function OpportunitiesTable({
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={columns.length + (canBulkDelete ? 1 : 0)}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No hay oportunidades
                 </td>
               </tr>
             ) : (
-              table.getRowModel().rows.map((row) => (
+              pageRows.map((row) => (
                 <tr
                   key={row.id}
                   onClick={() => onSelectOpportunity(row.original.id)}
                   className={cn(
                     'border-b cursor-pointer hover:bg-muted/50 transition-colors',
+                    selectedIds?.has(row.original.id) && 'bg-muted/40',
                     row.original.status === 'lost' && 'opacity-50 bg-muted/20',
-                    row.original.status === 'won'  && 'bg-green-50/40 dark:bg-green-950/20'
+                    row.original.status === 'won'  && 'bg-green-50/40 dark:bg-green-950/20',
                   )}
                 >
+                  {canBulkDelete && (
+                    <td
+                      className="w-10 px-2 py-3 align-middle"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        checked={selectedIds?.has(row.original.id) ?? false}
+                        onCheckedChange={(checked) =>
+                          onSelectionChange?.(row.original.id, checked === true)
+                        }
+                        aria-label={`Seleccionar ${row.original.contact_name}`}
+                      />
+                    </td>
+                  )}
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-4 py-3 align-middle">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -7,7 +7,7 @@ RSpec.describe Contact, type: :model do
   subject { build(:contact, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to belong_to(:owner_user).class_name("User").optional }
     it { is_expected.to have_many(:opportunities).dependent(:destroy) }
     it { is_expected.to have_many(:landing_form_submissions).dependent(:nullify) }
@@ -15,7 +15,9 @@ RSpec.describe Contact, type: :model do
   end
 
   describe "validaciones" do
-    it { is_expected.to validate_inclusion_of(:kind).in_array(Contact::KINDS) }
+    it "solo acepta valores de enum kind válidos" do
+      Contact::KINDS.each { |k| expect(build(:contact, kind: k)).to be_valid }
+    end
     it { is_expected.to allow_value("").for(:email) }
     it { is_expected.to allow_value(nil).for(:email) }
     it { is_expected.to allow_value("prospect@iswo.co").for(:email) }

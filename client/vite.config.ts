@@ -20,10 +20,23 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: frontendPort,
+      strictPort: true,
+      host: true, // {tenant}.localhost en dev (landings RFC)
       proxy: {
         '/api': {
           target: backendOrigin,
           changeOrigin: true,
+          // Mantiene cookies de refresh entre SPA (:3001) y API (:3000)
+          cookieDomainRewrite: 'localhost',
+        },
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/grapesjs')) return 'grapes'
+          },
         },
       },
     },

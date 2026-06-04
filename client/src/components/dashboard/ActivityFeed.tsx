@@ -8,12 +8,11 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn, formatRelativeTime, getInitials, formatStatusLabel } from '@/lib/utils'
+import { cn, formatRelativeTime, formatStatusLabel } from '@/lib/utils'
 import type { DashboardActivityItem } from '@/lib/dashboardApi'
 
 type ActivityType = DashboardActivityItem['type']
@@ -22,8 +21,8 @@ interface ActivityFeedProps {
   data?: DashboardActivityItem[]
   isLoading?: boolean
   isError?: boolean
-  /** Divide recordatorios vs resto del día (layout Citas | Movimiento) */
-  variant?: 'default' | 'split'
+  /** split: legacy; movement-only: solo leads/etapas (recordatorios van en tabla de seguimiento) */
+  variant?: 'default' | 'split' | 'movement-only'
 }
 
 const getActivityIcon = (type: ActivityType) => {
@@ -41,13 +40,15 @@ const getActivityIcon = (type: ActivityType) => {
 
 const getActivityMessage = (item: DashboardActivityItem) => {
   switch (item.type) {
-    case 'reminder_due':
+    case 'reminder_due': {
+      const when = new Date(item.created_at)
+      const label = when < new Date() ? 'Recordatorio vencido' : 'Recordatorio programado'
       return (
         <>
-          Recordatorio pendiente para{' '}
-          <span className="font-medium">{item.opportunity_name}</span>
+          {label} — <span className="font-medium">{item.opportunity_name}</span>
         </>
       )
+    }
     case 'stage_change':
       return (
         <>
@@ -115,13 +116,7 @@ function ActivityRow({
         <Icon className="size-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex items-center gap-2">
-          <Avatar className="size-5">
-            <AvatarImage src={item.user_avatar} alt={item.user_name} />
-            <AvatarFallback className="text-[10px]">{getInitials(item.user_name)}</AvatarFallback>
-          </Avatar>
-          <span className="truncate text-xs text-muted-foreground">{item.user_name}</span>
-        </div>
+        <span className="mb-0.5 block truncate text-xs text-muted-foreground">{item.user_name}</span>
         <p className="line-clamp-2 text-sm text-foreground">{getActivityMessage(item)}</p>
         <span className="text-xs text-muted-foreground">{formatRelativeTime(item.created_at)}</span>
       </div>
@@ -144,7 +139,7 @@ export function ActivityFeed({
   const reminders = data.filter((i) => i.type === 'reminder_due')
   const movement = data.filter((i) => i.type !== 'reminder_due')
 
-  if (isLoading && variant === 'split') {
+  if (isLoading && (variant === 'split' || variant === 'movement-only')) {
     return (
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {[1, 2].map((i) => (
@@ -216,6 +211,50 @@ export function ActivityFeed({
           <p className="text-sm text-destructive">
             No se pudo cargar la actividad. Intenta de nuevo más tarde.
           </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (variant === 'movement-only') {
+    return (
+      <Card
+        className={cn(
+          cardShell,
+          'border-sky-400/40 bg-gradient-to-br from-sky-500/[0.14] via-indigo-500/[0.05] to-transparent shadow-[0_0_40px_-12px_rgba(56,189,248,0.35)] dark:from-sky-500/[0.12]',
+        )}
+      >
+        <CardHeader className="border-b border-sky-500/25 pb-4">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400/45 to-indigo-500/35 text-sky-50 shadow-inner shadow-sky-500/25 ring-1 ring-white/15">
+              <Activity className="size-4" />
+            </span>
+            Movimiento del día
+          </CardTitle>
+          <CardDescription>
+            Leads nuevos y cambios de etapa registrados hoy.
+            {data.length > 0 ? ` ${data.length} eventos` : ''}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea className="h-[min(320px,50vh)]">
+            <div className="flex flex-col">
+              {data.map((item) => (
+                <ActivityRow key={item.id} item={item} onNavigate={handleActivityClick} />
+              ))}
+              {data.length === 0 && (
+                <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
+                    <Target className="size-7 text-muted-foreground/60" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">Aún sin movimiento</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    Cuando entren leads o muevas etapas, lo verás aquí al instante.
+                  </p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </CardContent>
       </Card>
     )
@@ -344,7 +383,7 @@ export function ActivityFeed({
                 </div>
                 <p className="text-sm font-medium text-foreground">Todo tranquilo por ahora</p>
                 <p className="max-w-xs text-xs text-muted-foreground">
-                  No hay eventos hoy. Los recordatorios y movimientos de etapa se listarán aquí.
+                  No hay eventos hoy. El movimiento de etapas y leads nuevos se listará aquí.
                 </p>
               </div>
             )}

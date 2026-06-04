@@ -18,6 +18,7 @@ class LandingPage < ApplicationRecord
 
   before_validation :normalize_slug
   before_save :set_published_at
+  before_save :sanitize_grapejs_content
 
   scope :published, -> { where(published: true) }
 
@@ -28,7 +29,18 @@ class LandingPage < ApplicationRecord
   end
 
   def public_url
-    "https://#{tenant.slug}.crm.iswo.com.co/#{slug}"
+    "#{public_base_url}/#{slug}"
+  end
+
+  def public_base_url
+    if ENV["LANDING_PUBLIC_HOST"].present?
+      ENV["LANDING_PUBLIC_HOST"].strip.chomp("/")
+    elsif Rails.env.production?
+      "https://#{tenant.slug}.crm.iswo.com.co"
+    else
+      port = ENV.fetch("VITE_FRONTEND_PORT", "3001")
+      "http://#{tenant.slug}.localhost:#{port}"
+    end
   end
 
   private
@@ -40,5 +52,11 @@ class LandingPage < ApplicationRecord
   def set_published_at
     self.published_at ||= Time.current if published && published_at.blank?
     self.published_at = nil unless published
+  end
+
+  def sanitize_grapejs_content
+    return unless content.is_a?(Hash)
+
+    self.content = LandingContentSanitizer.sanitize_content!(content)
   end
 end

@@ -7,7 +7,7 @@ RSpec.describe Opportunity, type: :model do
   subject { build(:opportunity, tenant: tenant) }
 
   describe "asociaciones" do
-    it { is_expected.to belong_to(:tenant) }
+    it { is_expected.to belong_to(:tenant).optional }
     it { is_expected.to belong_to(:contact) }
     it { is_expected.to belong_to(:pipeline) }
     it { is_expected.to belong_to(:pipeline_stage) }

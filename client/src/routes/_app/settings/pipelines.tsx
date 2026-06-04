@@ -2,6 +2,21 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   Plus,
   MoreHorizontal,
   GripVertical,
@@ -9,6 +24,8 @@ import {
   Trash2,
   Check,
   Star,
+  Power,
+  PowerOff,
 } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import { Button } from '@/components/ui/button'
@@ -33,6 +50,16 @@ import {
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
 import type { Pipeline, PipelineStage } from '@/types'
 import { cn } from '@/lib/utils'
@@ -77,20 +104,103 @@ function maxStagePosition(stages: PipelineStage[]): number {
   return max
 }
 
+// ---------------------------------------------------------------------------
+// SortableStage — pill individual con handle de arrastre
+// ---------------------------------------------------------------------------
+type SortableStageProps = {
+  stage: PipelineStage
+  pipeline: Pipeline
+  onEdit: (pipeline: Pipeline, stage: PipelineStage) => void
+  onDelete: (pipelineId: string, stageId: string, stageName: string) => void
+}
+
+function SortableStage({ stage, pipeline, onEdit, onDelete }: SortableStageProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stage.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="group flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 transition-colors hover:border-primary/50"
+    >
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+        aria-label="Arrastrar para reordenar"
+      >
+        <GripVertical className="h-3 w-3" />
+      </span>
+      <div
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: stage.color || '#94A3B8' }}
+      />
+      <span className="text-sm">{stage.name}</span>
+      {(stage.is_closed_won || stage.is_closed_lost) && (
+        <Badge variant="outline" className="text-[10px]">
+          {stage.is_closed_won ? 'Ganada' : 'Perdida'}
+        </Badge>
+      )}
+      <div className="ml-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5"
+          type="button"
+          onClick={() => onEdit(pipeline, stage)}
+        >
+          <Edit className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5 text-destructive hover:text-destructive"
+          type="button"
+          onClick={() => onDelete(pipeline.id, stage.id, stage.name)}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Página principal
+// ---------------------------------------------------------------------------
 function PipelinesSettingsPage() {
   const queryClient = useQueryClient()
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [newPipelineName, setNewPipelineName] = useState('')
+  const [newPipelineDescription, setNewPipelineDescription] = useState('')
+  const [editPipelineOpen, setEditPipelineOpen] = useState(false)
+  const [editPipeline, setEditPipeline] = useState<Pipeline | null>(null)
+  const [editPipelineName, setEditPipelineName] = useState('')
+  const [editPipelineDescription, setEditPipelineDescription] = useState('')
   const [isStageDialogOpen, setIsStageDialogOpen] = useState(false)
   const [editingStage, setEditingStage] = useState<PipelineStage | null>(null)
   const [newStageName, setNewStageName] = useState('')
   const [newStageColor, setNewStageColor] = useState('#3B82F6')
+  const [newStageProbability, setNewStageProbability] = useState(0)
   const [newStageClosedWon, setNewStageClosedWon] = useState(false)
   const [newStageClosedLost, setNewStageClosedLost] = useState(false)
-  const [newPipelineName, setNewPipelineName] = useState('')
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [renamePipeline, setRenamePipeline] = useState<Pipeline | null>(null)
-  const [renameName, setRenameName] = useState('')
+  const [confirmDeletePipeline, setConfirmDeletePipeline] = useState<Pipeline | null>(null)
+  const [confirmDeleteStage, setConfirmDeleteStage] = useState<{ pipelineId: string; stageId: string; stageName: string } | null>(null)
 
   const { data: pipelines = [], isLoading } = useQuery({
     queryKey: queryKeys.pipelines.all,
@@ -107,10 +217,11 @@ function PipelinesSettingsPage() {
   }
 
   const createPipelineMutation = useMutation({
-    mutationFn: async (payload: { name: string; is_default: boolean }) => {
+    mutationFn: async (payload: { name: string; description: string; is_default: boolean }) => {
       await api.post('/pipelines', {
         pipeline: {
           name: payload.name,
+          description: payload.description || undefined,
           is_default: payload.is_default,
         },
       })
@@ -120,19 +231,33 @@ function PipelinesSettingsPage() {
       toast.success('Pipeline creado')
       setIsCreateDialogOpen(false)
       setNewPipelineName('')
+      setNewPipelineDescription('')
     },
     onError: (err) => toast.error(apiMessage(err)),
   })
 
-  const renamePipelineMutation = useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      await api.patch(`/pipelines/${id}`, { pipeline: { name } })
+  const updatePipelineMutation = useMutation({
+    mutationFn: async ({ id, name, description }: { id: string; name: string; description: string }) => {
+      await api.patch(`/pipelines/${id}`, {
+        pipeline: { name, description: description || undefined },
+      })
     },
     onSuccess: () => {
       invalidatePipelines()
-      toast.success('Nombre actualizado')
-      setRenameOpen(false)
-      setRenamePipeline(null)
+      toast.success('Pipeline actualizado')
+      setEditPipelineOpen(false)
+      setEditPipeline(null)
+    },
+    onError: (err) => toast.error(apiMessage(err)),
+  })
+
+  const toggleActivePipelineMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      await api.patch(`/pipelines/${id}`, { pipeline: { active } })
+    },
+    onSuccess: (_, vars) => {
+      invalidatePipelines()
+      toast.success(vars.active ? 'Pipeline activado' : 'Pipeline desactivado')
     },
     onError: (err) => toast.error(apiMessage(err)),
   })
@@ -155,6 +280,7 @@ function PipelinesSettingsPage() {
     onSuccess: () => {
       invalidatePipelines()
       toast.success('Pipeline eliminado')
+      setConfirmDeletePipeline(null)
     },
     onError: (err) => toast.error(apiMessage(err)),
   })
@@ -182,6 +308,7 @@ function PipelinesSettingsPage() {
       setEditingStage(null)
       setNewStageName('')
       setNewStageColor('#3B82F6')
+      setNewStageProbability(0)
       setNewStageClosedWon(false)
       setNewStageClosedLost(false)
     },
@@ -195,9 +322,43 @@ function PipelinesSettingsPage() {
     onSuccess: () => {
       invalidatePipelines()
       toast.success('Etapa eliminada')
+      setConfirmDeleteStage(null)
     },
     onError: (err) => toast.error(apiMessage(err)),
   })
+
+  const reorderStagesMutation = useMutation({
+    mutationFn: async ({
+      pipelineId,
+      orderedIds,
+    }: {
+      pipelineId: string
+      orderedIds: string[]
+    }) => {
+      await api.patch(`/pipelines/${pipelineId}/stages/reorder`, { order: orderedIds })
+    },
+    onSuccess: () => invalidatePipelines(),
+    onError: (err) => toast.error(apiMessage(err)),
+  })
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+
+  const handleDragEnd = (pipelineId: string, stages: PipelineStage[], event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = stages.findIndex((s) => s.id === active.id)
+    const newIndex = stages.findIndex((s) => s.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(stages, oldIndex, newIndex)
+    reorderStagesMutation.mutate({
+      pipelineId,
+      orderedIds: reordered.map((s) => s.id),
+    })
+  }
 
   const colors = [
     '#6B7280',
@@ -215,6 +376,7 @@ function PipelinesSettingsPage() {
     setEditingStage(null)
     setNewStageName('')
     setNewStageColor('#3B82F6')
+    setNewStageProbability(0)
     setNewStageClosedWon(false)
     setNewStageClosedLost(false)
     setIsStageDialogOpen(true)
@@ -225,6 +387,7 @@ function PipelinesSettingsPage() {
     setEditingStage(stage)
     setNewStageName(stage.name)
     setNewStageColor(stage.color || '#3B82F6')
+    setNewStageProbability(stage.probability ?? 0)
     setNewStageClosedWon(stage.is_closed_won)
     setNewStageClosedLost(stage.is_closed_lost)
     setIsStageDialogOpen(true)
@@ -235,7 +398,7 @@ function PipelinesSettingsPage() {
     const stages = selectedPipeline.stages || []
     const maxPos = maxStagePosition(stages)
     const nextPosition = maxPos + 1
-    const probability = Math.min(100, Math.max(0, (nextPosition + 1) * 15))
+    const autoProbability = Math.min(100, Math.max(0, (nextPosition + 1) * 15))
 
     if (editingStage) {
       saveStageMutation.mutate({
@@ -244,6 +407,7 @@ function PipelinesSettingsPage() {
         body: {
           name: newStageName.trim(),
           color: newStageColor,
+          probability: Math.min(100, Math.max(0, Math.floor(newStageProbability))),
           closed_won: newStageClosedWon,
           closed_lost: newStageClosedLost,
         },
@@ -257,7 +421,7 @@ function PipelinesSettingsPage() {
         name: newStageName.trim(),
         color: newStageColor,
         position: Math.max(0, Math.floor(nextPosition)),
-        probability: Math.min(100, Math.max(0, Math.floor(probability))),
+        probability: Math.min(100, Math.max(0, Math.floor(newStageProbability || autoProbability))),
         closed_won: newStageClosedWon,
         closed_lost: newStageClosedLost,
       },
@@ -305,14 +469,17 @@ function PipelinesSettingsPage() {
       ) : (
         <div className="space-y-4">
           {pipelines.map((pipeline) => {
-            const sortedStages = [...(pipeline.stages || [])].sort((a, b) => a.position - b.position)
+            const sortedStages = [...(pipeline.stages || [])].sort(
+              (a, b) => a.position - b.position
+            )
             return (
-              <Card key={pipeline.id}>
+              <Card key={pipeline.id} className={cn(!pipeline.active && 'opacity-60')}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-base">{pipeline.name}</CardTitle>
                       {pipeline.is_default && <Badge variant="secondary">Por defecto</Badge>}
+                      {!pipeline.active && <Badge variant="outline" className="text-muted-foreground">Inactivo</Badge>}
                     </div>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -323,12 +490,14 @@ function PipelinesSettingsPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={() => {
-                            setRenamePipeline(pipeline)
-                            setRenameName(pipeline.name)
-                            setRenameOpen(true)
+                            setEditPipeline(pipeline)
+                            setEditPipelineName(pipeline.name)
+                            setEditPipelineDescription(pipeline.description ?? '')
+                            setEditPipelineOpen(true)
                           }}
                         >
-                          Editar nombre
+                          <Edit className="mr-2 h-4 w-4" />
+                          Editar pipeline
                         </DropdownMenuItem>
                         {!pipeline.is_default && (
                           <DropdownMenuItem
@@ -339,84 +508,67 @@ function PipelinesSettingsPage() {
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `¿Eliminar el pipeline "${pipeline.name}"? No debe tener oportunidades activas.`
-                              )
-                            ) {
-                              deletePipelineMutation.mutate(pipeline.id)
-                            }
-                          }}
+                          onClick={() =>
+                            toggleActivePipelineMutation.mutate({ id: pipeline.id, active: !pipeline.active })
+                          }
                         >
+                          {pipeline.active
+                            ? <><PowerOff className="mr-2 h-4 w-4" />Desactivar</>
+                            : <><Power className="mr-2 h-4 w-4" />Activar</>
+                          }
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={() => setConfirmDeletePipeline(pipeline)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
                           Eliminar pipeline
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <CardDescription>{sortedStages.length} etapas</CardDescription>
+                  <CardDescription>
+                    {sortedStages.length} etapa{sortedStages.length !== 1 ? 's' : ''}
+                    {pipeline.description && (
+                      <span className="block text-xs text-muted-foreground/80 mt-0.5">{pipeline.description}</span>
+                    )}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-2">
-                    {sortedStages.map((stage) => (
-                      <div
-                        key={stage.id}
-                        className="group flex items-center gap-2 rounded-md border bg-background px-3 py-1.5 transition-colors hover:border-primary/50"
-                      >
-                        <GripVertical className="h-3 w-3 cursor-grab text-muted-foreground" />
-                        <div
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: stage.color || '#94A3B8' }}
-                        />
-                        <span className="text-sm">{stage.name}</span>
-                        {(stage.is_closed_won || stage.is_closed_lost) && (
-                          <Badge variant="outline" className="text-[10px]">
-                            {stage.is_closed_won ? 'Ganada' : 'Perdida'}
-                          </Badge>
-                        )}
-                        <div className="ml-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            type="button"
-                            onClick={() => openEditStage(pipeline, stage)}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 text-destructive hover:text-destructive"
-                            type="button"
-                            onClick={() => {
-                              if (
-                                window.confirm(`¿Eliminar la etapa "${stage.name}"?`)
-                              ) {
-                                deleteStageMutation.mutate({
-                                  pipelineId: pipeline.id,
-                                  stageId: stage.id,
-                                })
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      type="button"
-                      onClick={() => openCreateStage(pipeline)}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event) => handleDragEnd(pipeline.id, sortedStages, event)}
+                  >
+                    <SortableContext
+                      items={sortedStages.map((s) => s.id)}
+                      strategy={horizontalListSortingStrategy}
                     >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Agregar etapa
-                    </Button>
-                  </div>
+                      <div className="flex flex-wrap gap-2">
+                        {sortedStages.map((stage) => (
+                          <SortableStage
+                            key={stage.id}
+                            stage={stage}
+                            pipeline={pipeline}
+                            onEdit={openEditStage}
+                            onDelete={(pipelineId, stageId, stageName) =>
+                              setConfirmDeleteStage({ pipelineId, stageId, stageName })
+                            }
+                          />
+                        ))}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          type="button"
+                          onClick={() => openCreateStage(pipeline)}
+                        >
+                          <Plus className="mr-1 h-3 w-3" />
+                          Agregar etapa
+                        </Button>
+                      </div>
+                    </SortableContext>
+                  </DndContext>
                 </CardContent>
               </Card>
             )
@@ -424,12 +576,14 @@ function PipelinesSettingsPage() {
         </div>
       )}
 
+      {/* Dialog: crear pipeline */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nuevo pipeline</DialogTitle>
             <DialogDescription>
-              Un pipeline agrupa etapas (columnas del Kanban). El primero puede marcarse como predeterminado.
+              Un pipeline agrupa etapas (columnas del Kanban). El primero puede marcarse como
+              predeterminado.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -442,6 +596,15 @@ function PipelinesSettingsPage() {
                 placeholder="Ej: Ventas"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="pipelineDesc">Descripción</Label>
+              <Input
+                id="pipelineDesc"
+                value={newPipelineDescription}
+                onChange={(e) => setNewPipelineDescription(e.target.value)}
+                placeholder="Opcional — describe el propósito del pipeline"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -451,6 +614,7 @@ function PipelinesSettingsPage() {
               onClick={() =>
                 createPipelineMutation.mutate({
                   name: newPipelineName.trim(),
+                  description: newPipelineDescription.trim(),
                   is_default: pipelines.length === 0,
                 })
               }
@@ -463,38 +627,103 @@ function PipelinesSettingsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+      {/* Dialog: editar pipeline */}
+      <Dialog open={editPipelineOpen} onOpenChange={setEditPipelineOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Renombrar pipeline</DialogTitle>
+            <DialogTitle>Editar pipeline</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="renameName">Nombre</Label>
-            <Input
-              id="renameName"
-              value={renameName}
-              onChange={(e) => setRenameName(e.target.value)}
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editPipelineName">Nombre</Label>
+              <Input
+                id="editPipelineName"
+                value={editPipelineName}
+                onChange={(e) => setEditPipelineName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editPipelineDesc">Descripción</Label>
+              <Input
+                id="editPipelineDesc"
+                value={editPipelineDescription}
+                onChange={(e) => setEditPipelineDescription(e.target.value)}
+                placeholder="Opcional"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+            <Button variant="outline" onClick={() => setEditPipelineOpen(false)}>
               Cancelar
             </Button>
             <Button
-              disabled={!renameName.trim() || !renamePipeline || renamePipelineMutation.isPending}
+              disabled={!editPipelineName.trim() || !editPipeline || updatePipelineMutation.isPending}
               onClick={() => {
-                if (renamePipeline) {
-                  renamePipelineMutation.mutate({ id: renamePipeline.id, name: renameName.trim() })
+                if (editPipeline) {
+                  updatePipelineMutation.mutate({
+                    id: editPipeline.id,
+                    name: editPipelineName.trim(),
+                    description: editPipelineDescription.trim(),
+                  })
                 }
               }}
             >
-              {renamePipelineMutation.isPending && <Spinner className="mr-2" />}
+              {updatePipelineMutation.isPending && <Spinner className="mr-2" />}
               Guardar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* AlertDialog: eliminar pipeline */}
+      <AlertDialog open={!!confirmDeletePipeline} onOpenChange={(open) => { if (!open) setConfirmDeletePipeline(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar pipeline?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará «{confirmDeletePipeline?.name}» y todas sus etapas. El pipeline no debe tener oportunidades activas. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => confirmDeletePipeline && deletePipelineMutation.mutate(confirmDeletePipeline.id)}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog: eliminar etapa */}
+      <AlertDialog open={!!confirmDeleteStage} onOpenChange={(open) => { if (!open) setConfirmDeleteStage(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar etapa?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la etapa «{confirmDeleteStage?.stageName}». Las oportunidades en esta etapa quedarán sin etapa asignada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() =>
+                confirmDeleteStage &&
+                deleteStageMutation.mutate({
+                  pipelineId: confirmDeleteStage.pipelineId,
+                  stageId: confirmDeleteStage.stageId,
+                })
+              }
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dialog: crear/editar etapa */}
       <Dialog open={isStageDialogOpen} onOpenChange={setIsStageDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -531,12 +760,24 @@ function PipelinesSettingsPage() {
                     style={{ backgroundColor: color }}
                     onClick={() => setNewStageColor(color)}
                   >
-                    {newStageColor === color && (
-                      <Check className="mx-auto h-4 w-4 text-white" />
-                    )}
+                    {newStageColor === color && <Check className="mx-auto h-4 w-4 text-white" />}
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stageProbability">Probabilidad de cierre (%)</Label>
+              <Input
+                id="stageProbability"
+                type="number"
+                min={0}
+                max={100}
+                value={newStageProbability}
+                onChange={(e) =>
+                  setNewStageProbability(Math.min(100, Math.max(0, Number(e.target.value))))
+                }
+                placeholder="0 – 100"
+              />
             </div>
             <div className="flex flex-col gap-3 rounded-md border p-3">
               <p className="text-xs font-medium text-muted-foreground">Opciones de etapa final</p>

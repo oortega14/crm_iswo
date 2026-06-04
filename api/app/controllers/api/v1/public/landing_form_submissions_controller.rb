@@ -32,9 +32,19 @@ module Api
 
           if submission.save
             landing.increment!(:lead_count)
-            LandingSubmissionProcessor.new(submission).call_later if defined?(LandingSubmissionProcessor)
+            if defined?(LandingSubmissionProcessor)
+              LandingSubmissionProcessor.new(submission).call
+              submission.reload
+            end
 
-            render json: { data: { id: submission.id, status: "received" } }, status: :created
+            render json: {
+              data: {
+                id:              submission.id,
+                status:          "received",
+                opportunity_id:  submission.opportunity_id,
+                contact_id:      submission.contact_id
+              }
+            }, status: :created
           else
             render json: { error: "unprocessable_entity",
                            details: submission.errors.as_json(full_messages: true) },

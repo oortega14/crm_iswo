@@ -1,26 +1,30 @@
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Briefcase, Gauge, Sparkles, TrendingUp } from 'lucide-react'
+import { Briefcase, Gauge, Sparkles, Target, TrendingUp } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatCurrency } from '@/lib/utils'
 
 export function DashboardDateLine() {
   const now = new Date()
+  const raw = format(now, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es })
+  const dateStr = raw.charAt(0).toUpperCase() + raw.slice(1)
   return (
-    <p className="text-sm capitalize text-muted-foreground">
-      {format(now, "EEEE d 'de' MMMM yyyy", { locale: es })}
+    <p className="text-sm text-muted-foreground">
+      {dateStr}
     </p>
   )
 }
 
 interface DashboardKpiStripProps {
+  currency?: string
   totalInPipeline: number
   pipelineValue: number
   bantAverage: number | null
   monthClosedValue: number
-  loadingPipeline?: boolean
-  loadingBant?: boolean
-  loadingConsultants?: boolean
+  winRate: number | null
+  wonCount: number
+  lostCount: number
+  loadingKpis?: boolean
 }
 
 function KpiTile({
@@ -97,55 +101,70 @@ function KpiTile({
 }
 
 export function DashboardKpiStrip({
+  currency = 'COP',
   totalInPipeline,
   pipelineValue,
   bantAverage,
   monthClosedValue,
-  loadingPipeline,
-  loadingBant,
-  loadingConsultants,
+  winRate,
+  wonCount,
+  lostCount,
+  loadingKpis,
 }: DashboardKpiStripProps) {
-  const lp = loadingPipeline ?? false
-  const lb = loadingBant ?? false
-  const lc = loadingConsultants ?? false
+  const loading = loadingKpis ?? false
+
+  const winRateDisplay = winRate != null ? `${winRate}%` : '—'
+  const winRateHint =
+    winRate != null
+      ? `${wonCount} ganadas · ${lostCount} perdidas este mes`
+      : 'Sin oportunidades cerradas este mes'
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
       <KpiTile
         label="Valor en pipeline"
-        value={lp ? '—' : formatCurrency(pipelineValue, 'COP')}
+        value={loading ? '—' : formatCurrency(pipelineValue, currency)}
         hint="Estimado en etapas abiertas"
         icon={Sparkles}
         iconClassName="bg-primary/20 text-sky-200 ring-primary/40 shadow-[0_0_20px_-4px_rgba(59,130,246,0.4)]"
-        loading={lp}
+        loading={loading}
         className="border-primary/30 bg-gradient-to-br from-primary/[0.12] via-transparent to-transparent dark:from-primary/[0.1]"
       />
       <KpiTile
         label="Oportunidades activas"
-        value={lp ? '—' : String(totalInPipeline)}
+        value={loading ? '—' : String(totalInPipeline)}
         hint="En el embudo hoy"
         icon={Briefcase}
         iconClassName="bg-sky-500/20 text-sky-300 ring-sky-400/35 shadow-[0_0_20px_-4px_rgba(56,189,248,0.4)]"
-        loading={lp}
+        loading={loading}
         className="border-sky-500/25 bg-gradient-to-br from-sky-500/[0.12] via-transparent to-transparent dark:from-sky-500/[0.08]"
       />
       <KpiTile
         label="Cierre generado (mes)"
-        value={lc ? '—' : formatCurrency(monthClosedValue, 'COP')}
-        hint="Suma de oportunidades cerradas este mes"
+        value={loading ? '—' : formatCurrency(monthClosedValue, currency)}
+        hint="Suma de oportunidades ganadas este mes"
         icon={TrendingUp}
         iconClassName="bg-amber-500/25 text-amber-200 ring-amber-400/40 shadow-[0_0_22px_-4px_rgba(251,191,36,0.45)]"
-        loading={lc}
+        loading={loading}
         className="border-amber-500/30 bg-gradient-to-br from-amber-500/[0.14] via-transparent to-transparent dark:from-amber-500/[0.1]"
       />
       <KpiTile
+        label="Tasa de cierre"
+        value={loading ? '—' : winRateDisplay}
+        hint={loading ? undefined : winRateHint}
+        icon={Target}
+        iconClassName="bg-emerald-500/20 text-emerald-300 ring-emerald-400/35 shadow-[0_0_20px_-4px_rgba(52,211,153,0.4)]"
+        loading={loading}
+        className="border-emerald-500/25 bg-gradient-to-br from-emerald-500/[0.12] via-transparent to-transparent dark:from-emerald-500/[0.08]"
+      />
+      <KpiTile
         label="BANT promedio"
-        value={lb ? '—' : bantAverage != null ? String(bantAverage) : '—'}
+        value={loading ? '—' : bantAverage != null ? String(bantAverage) : '—'}
         hint="Calificación media del portafolio"
         icon={Gauge}
         iconClassName="bg-violet-500/20 text-violet-300 ring-violet-400/35 shadow-[0_0_20px_-4px_rgba(167,139,250,0.45)]"
-        loading={lb}
-        className="border-violet-500/25 bg-gradient-to-br from-violet-500/[0.12] via-transparent to-transparent dark:from-violet-500/[0.08]"
+        loading={loading}
+        className="col-span-2 xl:col-span-1 border-violet-500/25 bg-gradient-to-br from-violet-500/[0.12] via-transparent to-transparent dark:from-violet-500/[0.08]"
       />
     </div>
   )

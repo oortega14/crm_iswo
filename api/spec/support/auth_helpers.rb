@@ -8,14 +8,14 @@
 # ----------------------------------------------------------------------------
 module AuthHelpers
   def json
-    @json ||= JSON.parse(response.body)
+    JSON.parse(response.body)
   rescue JSON::ParserError
     {}
   end
 
-  # Limpia caché de JSON entre requests
+  # Compatibilidad con specs que llamaban reset explícito entre requests.
   def reset_json_cache!
-    @json = nil
+    nil
   end
 
   def jwt_for(user)

@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getTenantFromHostname } from '@/lib/landingUrls'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -160,20 +161,17 @@ export function hasPermission(
   return requiredRoles.includes(userRole)
 }
 
-// Get subdomain from hostname
+// Get subdomain from hostname (app CRM) or session fallback on flat localhost
 export function getSubdomain(): string {
   if (typeof window === 'undefined') return ''
-  const envTenant = import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase()
-  if (envTenant) return envTenant
+
+  const fromHost = getTenantFromHostname()
+  if (fromHost) return fromHost
+
   const selectedTenant = window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase()
   if (selectedTenant) return selectedTenant
-  const hostname = window.location.hostname
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return ''
-  const parts = hostname.split('.')
-  if (parts.length >= 3) {
-    return parts[0]
-  }
-  return ''
+
+  return import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() || ''
 }
 
 // Debounce function
@@ -197,3 +195,38 @@ export function getInitials(name: string): string {
     .toUpperCase()
     .slice(0, 2)
 }
+
+// Temperature helpers (cold / warm / hot)
+export type TemperatureLevel = 'cold' | 'warm' | 'hot'
+
+export function getTemperatureColor(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':
+      return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/60 dark:text-red-400 dark:border-red-800/60'
+    case 'warm':
+      return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-800/60'
+    case 'cold':
+      return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-800/60'
+    default:
+      return 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950/60 dark:text-sky-400 dark:border-sky-800/60'
+  }
+}
+
+export function getTemperatureIcon(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':  return '🔥'
+    case 'warm': return '☀️'
+    case 'cold': return '🧊'
+    default:     return '🧊'
+  }
+}
+
+export function formatTemperatureLabel(temp: TemperatureLevel): string {
+  switch (temp) {
+    case 'hot':  return 'Caliente'
+    case 'warm': return 'Tibio'
+    case 'cold': return 'Frío'
+    default:     return 'Frío'
+  }
+}
+

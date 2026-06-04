@@ -43,9 +43,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList, mapPipelineResource, mapUserResource } from '@/lib/opportunityApi'
+import { jsonApiPrimaryList, mapPipelineResource, mapUserResource, buildOpportunityExportFilters } from '@/lib/opportunityApi'
+import { buildContactExportFilters, triggerBlobDownload } from '@/lib/contactApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -145,36 +146,42 @@ function mapExportRow(r: JsonApiResource): ExportRow | null {
   }
 }
 
-function buildFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
-  const filters: Record<string, string> = {}
-  const daysByRange: Record<string, number> = {
-    all: 0, week: 7, month: 30, quarter: 90, year: 365,
+function buildExportFilters(config: typeof INITIAL_CONFIG): Record<string, string> {
+  if (config.resource === 'contacts') {
+    return buildContactExportFilters({
+      dateRange: config.dateRange,
+      contactKind: config.contactKind,
+      ownerId: config.ownerId,
+      contactSourceKind: config.contactSourceKind,
+    })
   }
-  const days = daysByRange[config.dateRange] ?? 0
-  if (days > 0) {
-    const d = new Date(Date.now() - days * 86400000)
-    filters.updated_at_gteq = d.toISOString()
-  }
-  if (config.stageId)    filters.pipeline_stage_id_eq = config.stageId
-  if (config.ownerId)    filters.owner_user_id_eq     = config.ownerId
-  if (config.sourceId)   filters.lead_source_id_eq    = config.sourceId
-  return filters
+  return buildOpportunityExportFilters({
+    stage_id: config.stageId || undefined,
+    owner_id: config.ownerId || undefined,
+    source_id: config.sourceId || undefined,
+    date_range: config.dateRange !== 'all' ? config.dateRange : undefined,
+  })
 }
 
 const INITIAL_CONFIG = {
-  resource:  'opportunities' as ExportResource,
+  resource: 'opportunities' as ExportResource,
+  format: 'xlsx' as ExportFormat,
   dateRange: 'all',
-  stageId:   '',
-  ownerId:   '',
-  sourceId:  '',
+  stageId: '',
+  ownerId: '',
+  sourceId: '',
+  contactKind: '' as '' | 'person' | 'company',
+  contactSourceKind: '',
 }
 
 function ExportsPage() {
   const queryClient = useQueryClient()
   const userRole = useAuthStore((s) => s.user?.role)
-  const canCreateExport = userRole === 'admin' || userRole === 'manager'
+  const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager'
+  const canCreateExport = isManagerOrAdmin
   const canImportContacts =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+  const authScope = getAuthQueryScope()
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -200,7 +207,7 @@ function ExportsPage() {
           const res = await api.get('/users')
           return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapUserResource)
         },
-        enabled: isExportDialogOpen && isOpportunities,
+        enabled: isExportDialogOpen,
         staleTime: 60_000,
       },
       {
@@ -229,7 +236,8 @@ function ExportsPage() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: queryKeys.exports.list({ page: 1, items: 50 }),
+    queryKey: queryKeys.exports.list(authScope, { page: 1, items: 50 }),
+    enabled: authScope.length > 0,
     queryFn: async () => {
       const response = await api.get('/exports', {
         params: { page: 1, items: 50 },
@@ -239,14 +247,23 @@ function ExportsPage() {
         .map(mapExportRow)
         .filter((row): row is ExportRow => row !== null)
     },
+    refetchInterval: (query) => {
+      const rows = query.state.data
+      if (!rows?.length) return false
+      const pending = rows.some(
+        (e) => e.uiStatus === 'queued' || e.uiStatus === 'processing',
+      )
+      return pending ? 5_000 : false
+    },
+    refetchIntervalInBackground: true,
   })
 
   const createExportMutation = useMutation({
     mutationFn: async (config: typeof exportConfig) => {
-      const filters = buildFilters(config)
+      const filters = buildExportFilters(config)
       const response = await api.post('/exports', {
         resource: config.resource,
-        export_format: 'xlsx' satisfies ExportFormat,
+        export_format: config.format,
         filters,
       })
       return response.data
@@ -261,36 +278,53 @@ function ExportsPage() {
     },
   })
 
+  const syncDownloadMutation = useMutation({
+    mutationFn: async (config: typeof exportConfig) => {
+      const filters = buildExportFilters(config)
+      const response = await api.get(`/${config.resource}/export.${config.format}`, {
+        params: { filters },
+        responseType: 'blob',
+      })
+      return {
+        blob: response.data as Blob,
+        resource: config.resource,
+        format: config.format,
+      }
+    },
+    onSuccess: ({ blob, resource, format }) => {
+      triggerBlobDownload(
+        blob,
+        `${resource}_${new Date().toISOString().slice(0, 10)}.${format}`,
+      )
+      toast.success('Archivo descargado (exportación directa, RFC §6.7)')
+      setIsExportDialogOpen(false)
+    },
+    onError: (err: unknown) => {
+      toast.error(
+        formatRailsError(
+          err,
+          'No se pudo descargar. Si hay muchos registros, usa «Encolar exportación».'
+        )
+      )
+    },
+  })
+
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const handleDownload = async (exp: ExportRow) => {
-    if (!exp.fileUrl) return
+    if (!exp.ready && exp.uiStatus !== 'completed') return
     setDownloadingId(exp.id)
     try {
-      const { accessToken } = useAuthStore.getState()
-      const tenantSlug = window.localStorage.getItem('crm-tenant-slug') || ''
-      // fileUrl ya incluye el path completo ("/api/v1/exports/:id/download")
-      const url = exp.fileUrl
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'X-Tenant-Slug': tenantSlug,
-        },
+      const response = await api.get(`/exports/${exp.id}/download`, {
+        responseType: 'blob',
       })
-      if (!res.ok) throw new Error('No se pudo descargar el archivo')
-      const arrayBuffer = await res.arrayBuffer()
-      const mime = exp.format === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      const blob = new Blob([arrayBuffer], { type: mime })
-      const objectUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = objectUrl
-      a.download = `export_${exp.resource}_${exp.id}.${exp.format}`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(objectUrl)
-    } catch {
-      toast.error('No se pudo descargar el archivo')
+      triggerBlobDownload(
+        response.data as Blob,
+        `export_${exp.resource}_${exp.id}.${exp.format}`,
+      )
+      toast.success('Exportación descargada')
+    } catch (err: unknown) {
+      toast.error(formatRailsError(err, 'No se pudo descargar el archivo'))
     } finally {
       setDownloadingId(null)
     }
@@ -346,7 +380,11 @@ function ExportsPage() {
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Exportaciones e importaciones"
-        description="Descarga archivos Excel (.xlsx) del servidor e importa contactos masivamente con la misma plantilla Excel que en Contactos."
+        description={
+          isManagerOrAdmin
+            ? 'RFC §6.7: exportación directa (≤5.000 filas) o asíncrona con descarga segura (7 días). Aplica a todo el tenant.'
+            : 'Importación de contactos vía Excel. Las exportaciones masivas las gestionan admin y manager del tenant.'
+        }
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2 size-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -368,16 +406,24 @@ function ExportsPage() {
           <span className="hidden sm:inline">Importar contactos</span>
           <span className="sm:hidden">Importar</span>
         </Button>
-        <Button size="sm" className="shadow-sm" onClick={() => setIsExportDialogOpen(true)} disabled={!canCreateExport}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nueva exportación
-        </Button>
+        {canCreateExport && (
+          <Button size="sm" className="shadow-sm" onClick={() => setIsExportDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nueva exportación
+          </Button>
+        )}
       </PageHeader>
 
-      {!canCreateExport && (
+      {!canCreateExport && userRole === 'consultant' && (
         <p className="text-sm text-muted-foreground">
-          Solo administradores y managers pueden crear exportaciones. Si tienes permiso y no ves el botón, revisa tu
-          sesión.
+          Como consultor puedes importar contactos desde Excel. Para exportar datos del tenant, pide a un manager o
+          administrador.
+        </p>
+      )}
+      {!canCreateExport && userRole === 'viewer' && (
+        <p className="text-sm text-muted-foreground">
+          Tu rol es de solo lectura: no puedes importar ni exportar. Los managers o administradores del tenant gestionan
+          estos procesos.
         </p>
       )}
       {!canImportContacts && (
@@ -437,8 +483,8 @@ function ExportsPage() {
             Importación de contactos (Excel)
           </CardTitle>
           <CardDescription>
-            Sube un archivo Excel (.xlsx) para crear contactos en bloque. Descarga la plantilla, revisa errores por fila
-            en el asistente (igual que en Contactos).
+            Sube un archivo Excel (.xlsx) para crear contactos en bloque. Descarga la plantilla y revisa errores por fila
+            en el asistente.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3 pt-0">
@@ -481,8 +527,7 @@ function ExportsPage() {
             </div>
           ) : exports.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              No hay exportaciones en el historial activo. Las fallidas o expiradas pueden no listarse según la
-              configuración del servidor.
+              No hay exportaciones en el historial. Las expiradas no se listan; crea una nueva desde el botón superior.
             </div>
           ) : (
             <Table>
@@ -527,11 +572,11 @@ function ExportsPage() {
                     <TableCell className="text-muted-foreground">{bytesLabel(exp.fileSize)}</TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(exp.createdAt)}</TableCell>
                     <TableCell className="text-right">
-                      {exp.fileUrl && (exp.ready || exp.uiStatus === 'completed') ? (
+                      {exp.ready || exp.uiStatus === 'completed' ? (
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={downloadingId === exp.id}
+                          disabled={downloadingId === exp.id || exp.expired}
                           onClick={() => void handleDownload(exp)}
                         >
                           {downloadingId === exp.id
@@ -556,7 +601,8 @@ function ExportsPage() {
           <DialogHeader>
             <DialogTitle>Nueva exportación</DialogTitle>
             <DialogDescription>
-              Se encola un trabajo en el servidor. El archivo generado es Excel (.xlsx). Elige contactos u oportunidades.
+              Descarga directa para volúmenes pequeños, o encola un trabajo async (Sidekiq) para listas grandes.
+              Los archivos async se cifran en reposo y expiran a los 7 días.
             </DialogDescription>
           </DialogHeader>
 
@@ -569,6 +615,7 @@ function ExportsPage() {
                   setExportConfig((c) => ({
                     ...INITIAL_CONFIG,
                     dateRange: c.dateRange,
+                    format: c.format,
                     resource: v as ExportResource,
                   }))
                 }
@@ -579,6 +626,22 @@ function ExportsPage() {
                 <SelectContent>
                   <SelectItem value="opportunities">Oportunidades</SelectItem>
                   <SelectItem value="contacts">Contactos</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Formato</Label>
+              <Select
+                value={exportConfig.format}
+                onValueChange={(v) => setExportConfig((c) => ({ ...c, format: v as ExportFormat }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">CSV (.csv)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -601,6 +664,81 @@ function ExportsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {!isOpportunities && (
+              <>
+                <div className="space-y-2">
+                  <Label>Tipo (opcional)</Label>
+                  <Select
+                    value={exportConfig.contactKind || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({
+                        ...c,
+                        contactKind: v === '__all__' ? '' : (v as 'person' | 'company'),
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Personas y empresas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      <SelectItem value="person">Solo personas</SelectItem>
+                      <SelectItem value="company">Solo empresas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Consultor responsable (opcional)</Label>
+                  <Select
+                    value={exportConfig.ownerId || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({ ...c, ownerId: v === '__all__' ? '' : v }))
+                    }
+                    disabled={usersQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      {(usersQ.data ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Origen del contacto (opcional)</Label>
+                  <Select
+                    value={exportConfig.contactSourceKind || '__all__'}
+                    onValueChange={(v) =>
+                      setExportConfig((c) => ({
+                        ...c,
+                        contactSourceKind: v === '__all__' ? '' : v,
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todos</SelectItem>
+                      <SelectItem value="web">Web / Orgánico</SelectItem>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="meta">Meta Ads</SelectItem>
+                      <SelectItem value="google">Google Ads</SelectItem>
+                      <SelectItem value="referral">Referido</SelectItem>
+                      <SelectItem value="manual">Manual / Presencial</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
 
             {isOpportunities && (
               <>
@@ -664,9 +802,17 @@ function ExportsPage() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setIsExportDialogOpen(false)}>
               Cancelar
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => syncDownloadMutation.mutate(exportConfig)}
+              disabled={syncDownloadMutation.isPending || !canCreateExport}
+            >
+              {syncDownloadMutation.isPending && <Spinner className="mr-2" />}
+              Descargar ahora
             </Button>
             <Button
               onClick={() => createExportMutation.mutate(exportConfig)}

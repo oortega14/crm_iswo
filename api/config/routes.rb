@@ -10,13 +10,16 @@ Rails.application.routes.draw do
   # En producción se protege con HTTP Basic (ver ApplicationController de
   # Sidekiq Web) o detrás de VPN. En desarrollo queda abierto.
   # ==========================================================================
-  if Rails.env.production?
+  unless Rails.env.development?
     Sidekiq::Web.use Rack::Auth::Basic do |user, pass|
       ActiveSupport::SecurityUtils.secure_compare(user, ENV.fetch("SIDEKIQ_WEB_USERNAME", "")) &
         ActiveSupport::SecurityUtils.secure_compare(pass, ENV.fetch("SIDEKIQ_WEB_PASSWORD", ""))
     end
   end
   mount Sidekiq::Web => "/sidekiq"
+
+  # Bandeja de correos en desarrollo: http://localhost:3000/letter_opener
+  mount LetterOpenerWeb::Engine, at: "/letter_opener" if Rails.env.development?
 
   # ==========================================================================
   # Health check
@@ -41,6 +44,9 @@ Rails.application.routes.draw do
   # ==========================================================================
   namespace :api, defaults: { format: :json } do
     namespace :v1 do
+      # ---- IA (Claude / Anthropic) -------------------------------------------
+      get "/ai/capabilities", to: "ai_capabilities#show"
+
       # ---- Autenticación auxiliar --------------------------------------------
       post "/sessions/refresh", to: "sessions#refresh"
       post "/password/forgot",  to: "passwords#forgot"
@@ -54,6 +60,9 @@ Rails.application.routes.draw do
       # ---- Configuración del tenant ------------------------------------------
       resource :tenant,          only: %i[show update], controller: "tenants"
       resource :bant_criterion,  only: %i[show update], controller: "bant_criteria"
+      resources :tenant_field_definitions, only: %i[index show create update destroy] do
+        collection { patch :reorder }
+      end
 
       # ---- Usuarios del tenant -----------------------------------------------
       resources :users do
@@ -78,10 +87,14 @@ Rails.application.routes.draw do
       # ---- Contactos ---------------------------------------------------------
       resources :contacts do
         collection do
-          get  :check_duplicates      # ?phone=...&email=...
-          get  :import_template       # plantilla CSV
-          post :import                # multipart CSV
-          post :export                # encola ExportGenerationJob
+          get    :stats                  # métricas rápidas (clientes, prospectos, …)
+          get    :check_duplicates      # ?phone=...&email=...
+          get    :import_template       # plantilla CSV
+          post   :import                # multipart CSV
+          get    "export.csv",  action: :export_download, defaults: { file_format: "csv" }
+          get    "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
+          post   :export                # encola ExportGenerationJob
+          delete :bulk_destroy          # { ids: [...] }
         end
       end
 
@@ -92,10 +105,15 @@ Rails.application.routes.draw do
           post :assign               # { owner_user_id }
           post :merge                # { target_id }
           post :recalculate_bant
+          post :sync_temperature     # reglas BANT + actividad → temperature
+          post :classify             # IA (o reglas) → actualiza temperature
         end
         collection do
           get  :kanban               # vista agrupada por etapa
+          get  "export.csv",  action: :export_download, defaults: { file_format: "csv" }
+          get  "export.xlsx", action: :export_download, defaults: { file_format: "xlsx" }
           post :export
+          delete :bulk_destroy       # { ids: [...] }
         end
 
         resources :logs,
@@ -118,6 +136,7 @@ Rails.application.routes.draw do
 
       # ---- Recordatorios standalone ------------------------------------------
       resources :reminders, only: %i[index show update destroy] do
+        collection { get :stats }
         member { post :complete; post :snooze }
       end
 
@@ -131,15 +150,18 @@ Rails.application.routes.draw do
       get "/search", to: "searches#index"
 
       # ---- Dashboard home (SPA) ----------------------------------------------
-      get "/dashboard/kpis",             to: "dashboard#kpis"
-      get "/dashboard/pipeline",         to: "dashboard#pipeline"
-      get "/dashboard/activity",         to: "dashboard#activity"
-      get "/dashboard/bant_distribution", to: "dashboard#bant_distribution"
-      get "/dashboard/top_consultants",  to: "dashboard#top_consultants"
+      get "/dashboard/briefing",             to: "dashboard#briefing"
+      get "/dashboard/kpis",                 to: "dashboard#kpis"
+      get "/dashboard/pipeline",             to: "dashboard#pipeline"
+      get "/dashboard/activity",             to: "dashboard#activity"
+      get "/dashboard/bant_distribution",    to: "dashboard#bant_distribution"
+      get "/dashboard/top_consultants",      to: "dashboard#top_consultants"
+      get "/dashboard/lead_sources_breakdown", to: "dashboard#lead_sources_breakdown"
 
       # ---- Duplicados --------------------------------------------------------
       resources :duplicate_flags, only: %i[index show] do
         collection do
+          get :stats
           post :scan
         end
         member do
@@ -150,7 +172,7 @@ Rails.application.routes.draw do
       end
 
       # ---- Red de consultores ------------------------------------------------
-      resources :referral_networks, only: %i[index create destroy] do
+      resources :referral_networks, only: %i[index create update destroy] do
         collection do
           get :tree                 # ?root_user_id=…&depth=…
           get :my_network
@@ -212,13 +234,17 @@ Rails.application.routes.draw do
       end
 
       # ========================================================================
-      # Super-admin — operaciones fuera del scope de tenant (SUPER_ADMIN_TOKEN)
+      # Admin plataforma — onboarding de tenants (sesión JWT super-admin)
       # ========================================================================
       namespace :admin do
-        resources :tenants, only: :create
+        resources :tenants, only: %i[index create update]
       end
     end
   end
+
+  # Favicon en :3000 (evita 404 JSON en letter_opener / pestañas del API)
+  get "/icon.png",     to: "favicon#icon"
+  get "/favicon.ico",  to: "favicon#icon"
 
   # Fallback 404 JSON para rutas fuera del API
   match "*unmatched", to: "application#route_not_found", via: :all

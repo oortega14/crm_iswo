@@ -11,6 +11,13 @@ class Contact < ApplicationRecord
   include TenantScoped
   include Discard::Model
   include DataClassifiable
+  include ExportRansackable
+
+  EXPORT_RANSACKABLE_ATTRIBUTES = %w[
+    kind owner_user_id source_kind updated_at
+    first_name last_name email company_name phone_e164 phone_normalized
+  ].freeze
+  EXPORT_RANSACKABLE_ASSOCIATIONS = [].freeze
 
   # Compatibilidad con serializers/frontend que usan company/position.
   alias_attribute :company, :company_name

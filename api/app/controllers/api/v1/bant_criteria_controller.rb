@@ -6,6 +6,7 @@ module Api
     # BantCriteriaController — singleton por tenant
     # ========================================================================
     class BantCriteriaController < BaseController
+      auditable_resource :criterion
       before_action :set_criterion
 
       def show
@@ -31,7 +32,7 @@ module Api
       def permitted
         params.require(:bant_criterion).permit(
           :budget_weight, :authority_weight, :need_weight, :timeline_weight,
-          :description, :active
+          :threshold_qualified, :description, :active
         )
       end
     end

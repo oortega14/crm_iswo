@@ -1,14 +1,11 @@
-import { createFileRoute, useSearch } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { createFileRoute, useSearch, useRouter } from '@tanstack/react-router'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { 
-  Plus, 
-  Search, 
-  Upload, 
-  Download, 
-  Filter, 
-  Building2, 
+import {
+  Plus,
+  Search,
+  Building2,
   User,
   Mail,
   Phone,
@@ -16,13 +13,16 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
-  Target,
+  RefreshCw,
+  Filter,
+  Trash2,
+  Upload,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
@@ -38,22 +38,55 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { ContactSlideOver } from '@/components/contacts/ContactSlideOver'
 import { ContactDialog } from '@/components/contacts/ContactDialog'
 import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
-import { ContactEditDialog } from '@/components/contacts/ContactEditDialog'
-import { QuickAddOpportunity } from '@/components/opportunities/QuickAddOpportunity'
+import {
+  ContactEditDialog,
+  contactEditInitialFromSummary,
+} from '@/components/contacts/ContactEditDialog'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { useUserRole } from '@/stores/auth'
+import { useAuthStore, useUser, useUserRole } from '@/stores/auth'
 import api, { formatRailsError } from '@/lib/api'
-import { jsonApiPrimaryList, jsonApiPrimaryOne } from '@/lib/opportunityApi'
-import { queryKeys } from '@/lib/queryClient'
+import { ContactsQuickMetrics } from '@/components/contacts/ContactsQuickMetrics'
+import {
+  bulkDeleteContacts,
+  contactListErrorMessage,
+  deleteContact,
+  fetchContactsList,
+  fetchContactStats,
+  getCompanyLabel,
+  type ContactSegment,
+  type ContactSummary,
+} from '@/lib/contactApi'
+import { jsonApiPrimaryList, mapUserResource } from '@/lib/opportunityApi'
+import { getAuthQueryScope, invalidateContactsQueries, queryKeys } from '@/lib/queryClient'
+import { tenantHasModule } from '@/lib/tenantModules'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const contactsSearchSchema = z.object({
   selected: z.string().optional(),
+  owner: z.string().optional(),
+  segment: z.enum(['clients', 'prospects', 'hot_leads', 'stale']).optional(),
 })
 
 export const Route = createFileRoute('/_app/contacts')({
@@ -61,111 +94,108 @@ export const Route = createFileRoute('/_app/contacts')({
   component: ContactsPage,
 })
 
-interface ContactRow {
-  id: string
-  fullName: string
-  firstName: string
-  lastName: string
-  email: string
-  phone: string
-  company: unknown
-  position: string
-  opportunitiesCount: number
-  kind: 'person' | 'company'
-  city?: string
-  country?: string
-  notes?: string
-  /** Etiqueta de origen / fuente (API: source_label) */
-  sourceLabel?: string
-}
-
-const getInitialsSafe = (value: string | undefined): string => {
-  if (!value) return '--'
-  return value
-    .trim()
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
-
-const getCompanyLabel = (company: unknown): string => {
-  if (!company) return '-'
-  if (typeof company === 'string') return company
-  if (typeof company === 'object' && company !== null && 'name' in company) {
-    const name = (company as { name?: unknown }).name
-    return typeof name === 'string' && name.trim() ? name : '-'
-  }
-  return '-'
-}
-
-type ContactAttributes = {
-  kind: 'person' | 'company'
-  first_name?: string
-  last_name?: string
-  full_name?: string
-  email?: string
-  phone_e164?: string
-  phone_display?: string
-  company?: string
-  position?: string
-  city?: string
-  country?: string
-  notes?: string
-  opportunities_count?: number
-  source_label?: string
-}
-
-type JsonApiContact = {
-  id: string
-  attributes: ContactAttributes
-}
-
-const mapContact = (resource: JsonApiContact): ContactRow => {
-  const attrs = resource.attributes
-  const fallbackName = [attrs.first_name, attrs.last_name].filter(Boolean).join(' ').trim()
-  return {
-    id: resource.id,
-    fullName: attrs.full_name || fallbackName || attrs.email || 'Sin nombre',
-    firstName: attrs.first_name || '',
-    lastName: attrs.last_name || '',
-    email: attrs.email || '-',
-    phone: attrs.phone_display || attrs.phone_e164 || '-',
-    company: attrs.company || '-',
-    position: attrs.position || '-',
-    opportunitiesCount: attrs.opportunities_count || 0,
-    kind: attrs.kind || 'person',
-    city: attrs.city,
-    country: attrs.country,
-    notes: attrs.notes,
-    sourceLabel: attrs.source_label?.trim() || undefined,
-  }
-}
+type ContactRow = ContactSummary
 
 function ContactsPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const authScope = getAuthQueryScope()
+  const hasContactsModule = tenantHasModule(tenant, 'contacts')
   const userRole = useUserRole()
+  const currentUser = useUser()
   const searchFromUrl = useSearch({ from: '/_app/contacts' })
   const navigate = Route.useNavigate()
-  const [searchTerm, setSearchTerm] = useState('')
+  const router = useRouter()
+  const [searchInput, setSearchInput] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [activeTab, setActiveTab] = useState<'contacts' | 'companies'>('contacts')
-  const [selectedContact, setSelectedContact] = useState<ContactRow | null>(null)
-  const [isSlideOverOpen, setIsSlideOverOpen] = useState(false)
+  const selectedId = searchFromUrl.selected
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [quickAddContact, setQuickAddContact] = useState<{ id: string; name: string } | null>(null)
-  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [editingContact, setEditingContact] = useState<ContactRow | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [companyPage, setCompanyPage] = useState(1)
   const pageSize = 10
+  const [confirmDeleteContact, setConfirmDeleteContact] = useState<ContactRow | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
 
-  const canExportContacts = userRole === 'admin' || userRole === 'manager'
-  const canImportContacts =
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await invalidateContactsQueries(queryClient)
+    setRefreshing(false)
+  }
+
+  const segmentLabels: Record<ContactSegment, string> = {
+    clients: 'Clientes',
+    prospects: 'Prospectos',
+    hot_leads: 'Leads calientes',
+    stale: 'Sin actividad',
+  }
+
+  const showOwnerFilter = userRole === 'admin' || userRole === 'manager'
+  const canCreateContact =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(searchInput.trim()), 350)
+    return () => window.clearTimeout(t)
+  }, [searchInput])
+
+  useEffect(() => {
+    setCurrentPage(1)
+    setCompanyPage(1)
+  }, [debouncedQ, searchFromUrl.owner, searchFromUrl.segment])
+
+  const { data: contactStats, isLoading: statsLoading } = useQuery({
+    queryKey: queryKeys.contacts.stats(authScope),
+    queryFn: fetchContactStats,
+    enabled: Boolean(authScope) && hasContactsModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+  })
+
+  const { data: users = [] } = useQuery({
+    queryKey: queryKeys.users.all,
+    queryFn: async () => {
+      const response = await api.get('/users')
+      return jsonApiPrimaryList(response.data)
+        .filter((r) => r.id)
+        .map(mapUserResource)
+    },
+    enabled: showOwnerFilter && Boolean(authScope),
+    staleTime: 60_000,
+  })
+
+  const listFiltersPerson = useMemo(
+    () => ({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      kind: 'person' as const,
+      owner_id: searchFromUrl.owner,
+      segment: searchFromUrl.segment,
+      page: currentPage,
+      items: pageSize,
+    }),
+    [debouncedQ, searchFromUrl.owner, searchFromUrl.segment, currentPage],
+  )
+
+  const listFiltersCompany = useMemo(
+    () => ({
+      q: debouncedQ.length >= 2 ? debouncedQ : undefined,
+      kind: 'company' as const,
+      owner_id: searchFromUrl.owner,
+      segment: searchFromUrl.segment,
+      page: companyPage,
+      items: pageSize,
+    }),
+    [debouncedQ, searchFromUrl.owner, searchFromUrl.segment, companyPage],
+  )
+
+  const handleSegmentChange = (segment: ContactSegment | undefined) => {
+    void navigate({ search: (prev) => ({ ...prev, segment }) })
+  }
 
   const {
     data: contactsData,
@@ -174,31 +204,11 @@ function ContactsPage() {
     error: contactsQueryError,
     refetch: refetchContacts,
   } = useQuery({
-    queryKey: queryKeys.contacts.list({ q: searchTerm, page: currentPage, pageSize, kind: 'person' }),
-    queryFn: async () => {
-      const response = await api.get('/contacts', {
-        params: {
-          q: searchTerm || undefined,
-          kind: 'person',
-          page: currentPage,
-          items: pageSize,
-        },
-      })
-      const rows = jsonApiPrimaryList(response.data)
-      const pagination = (response.data as { meta?: { pagination?: { count?: number; page?: number; pages?: number } } })
-        ?.meta?.pagination
-      const resources = rows.filter((r) => r.id).map((r) => ({
-        id: String(r.id),
-        attributes: (r.attributes ?? {}) as ContactAttributes,
-      }))
-      return {
-        contacts: resources.map(mapContact),
-        total: pagination?.count ?? resources.length,
-        page: pagination?.page ?? currentPage,
-        pageSize,
-        totalPages: pagination?.pages ?? 1,
-      }
-    },
+    queryKey: queryKeys.contacts.list(authScope, listFiltersPerson),
+    queryFn: () => fetchContactsList(listFiltersPerson),
+    enabled: Boolean(authScope) && hasContactsModule,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
   const {
@@ -208,81 +218,23 @@ function ContactsPage() {
     error: companiesQueryError,
     refetch: refetchCompanies,
   } = useQuery({
-    queryKey: queryKeys.contacts.list({
-      q: searchTerm,
-      page: companyPage,
-      pageSize,
-      kind: 'company',
-    }),
-    queryFn: async () => {
-      const response = await api.get('/contacts', {
-        params: {
-          q: searchTerm || undefined,
-          kind: 'company',
-          page: companyPage,
-          items: pageSize,
-        },
-      })
-      const rows = jsonApiPrimaryList(response.data)
-      const pagination = (
-        response.data as {
-          meta?: { pagination?: { count?: number; page?: number; pages?: number } }
-        }
-      )?.meta?.pagination
-      const resources = rows.filter((r) => r.id).map((r) => ({
-        id: String(r.id),
-        attributes: (r.attributes ?? {}) as ContactAttributes,
-      }))
-      return {
-        companies: resources.map(mapContact),
-        total: pagination?.count ?? resources.length,
-        page: pagination?.page ?? companyPage,
-        pageSize,
-        totalPages: pagination?.pages ?? 1,
-      }
-    },
-    enabled: activeTab === 'companies',
+    queryKey: queryKeys.contacts.list(authScope, listFiltersCompany),
+    queryFn: () => fetchContactsList(listFiltersCompany),
+    enabled: Boolean(authScope) && hasContactsModule && activeTab === 'companies',
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   })
 
-  const selectedIdFromUrl = searchFromUrl.selected
-
-  useEffect(() => {
-    if (!selectedIdFromUrl) {
-      return
-    }
-
-    const inList = contactsData?.contacts.find((c) => c.id === selectedIdFromUrl)
-    if (inList) {
-      setSelectedContact(inList)
-      setIsSlideOverOpen(true)
-      return
-    }
-
-    if (contactsData === undefined) return
-
-    let cancelled = false
-    void (async () => {
-      try {
-        const response = await api.get(`/contacts/${selectedIdFromUrl}`)
-        const one = jsonApiPrimaryOne(response.data)
-        if (cancelled || !one) return
-        setSelectedContact(
-          mapContact({ id: one.id, attributes: (one.attributes ?? {}) as ContactAttributes })
-        )
-        setIsSlideOverOpen(true)
-      } catch {
-        toast.error('No se encontró el contacto')
-        void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [selectedIdFromUrl, contactsData, navigate])
+  const selectedPreview = useMemo(() => {
+    if (!selectedId) return null
+    return (
+      contactsData?.contacts.find((c) => c.id === selectedId) ??
+      companiesData?.contacts.find((c) => c.id === selectedId) ??
+      null
+    )
+  }, [selectedId, contactsData, companiesData])
 
   const handleContactClick = (contact: ContactRow) => {
-    setSelectedContact(contact)
-    setIsSlideOverOpen(true)
     void navigate({ search: (prev) => ({ ...prev, selected: contact.id }) })
   }
 
@@ -290,22 +242,27 @@ function ContactsPage() {
   const companyTotalPages = companiesData?.totalPages ?? 1
   const canDeleteContacts = userRole === 'admin'
 
-  useEffect(() => {
-    setCompanyPage(1)
-  }, [searchTerm])
+  const canEditContact = (contact: ContactRow) => {
+    if (userRole === 'viewer') return false
+    if (userRole === 'admin' || userRole === 'manager') return true
+    return String(contact.ownerId ?? '') === String(currentUser?.id ?? '')
+  }
 
   const openEditDialog = (contact: ContactRow) => {
+    if (!canEditContact(contact)) {
+      toast.error('No tienes permiso para editar este contacto')
+      return
+    }
     setEditingContact(contact)
     setIsEditDialogOpen(true)
   }
 
   const deleteContactMutation = useMutation({
-    mutationFn: async (contact: ContactRow) => api.delete(`/contacts/${contact.id}`),
+    mutationFn: async (contact: ContactRow) => deleteContact(contact.id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.contacts.all })
+      await invalidateContactsQueries(queryClient)
       toast.success('Contacto eliminado')
-      setIsSlideOverOpen(false)
-      setSelectedContact(null)
+      setConfirmDeleteContact(null)
       void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
     },
     onError: (err: unknown) => {
@@ -318,74 +275,122 @@ function ContactsPage() {
       toast.error('Solo un administrador puede eliminar contactos')
       return
     }
-    if (!window.confirm(`Eliminar contacto "${contact.fullName}"?`)) return
-    deleteContactMutation.mutate(contact)
+    setConfirmDeleteContact(contact)
+  }
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => bulkDeleteContacts(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      toast.success(`${result.deleted} contacto(s) eliminado(s)`)
+      setSelectedIds(new Set())
+      setConfirmBulkDelete(false)
+      void invalidateContactsQueries(queryClient)
+    },
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudieron eliminar los contactos'))
+    },
+  })
+
+  const currentContacts = contactsData?.contacts ?? []
+  const allOnPageSelected =
+    currentContacts.length > 0 && currentContacts.every((c) => selectedIds.has(c.id))
+  const someOnPageSelected = currentContacts.some((c) => selectedIds.has(c.id))
+
+  const setContactSelected = (id: string, selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (selected) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const setAllOnPageSelected = (selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      currentContacts.forEach((c) => {
+        if (selected) next.add(c.id)
+        else next.delete(c.id)
+      })
+      return next
+    })
   }
 
 
-  const exportContactsMutation = useMutation({
-    mutationFn: async () => {
-      const filters =
-        activeTab === 'companies' ? { kind_eq: 'company' } : { kind_eq: 'person' }
-      return api.post('/contacts/export', {
-        export_format: 'xlsx',
-        filters,
-      })
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.exports.all })
-      toast.success(
-        'Exportación iniciada. Cuando esté lista podrás descargar el archivo en Exportaciones.'
-      )
-    },
-    onError: (err: unknown) => {
-      toast.error(formatRailsError(err, 'No se pudo iniciar la exportación'))
-    },
-  })
+  if (!hasContactsModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Contactos"
+          description="El módulo de contactos no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
 
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Contactos"
-        description="Gestiona tu base de contactos y empresas"
+        description="Solo datos del contacto. Pipeline, temperatura y valor en Oportunidades."
       >
         <Button
-          variant="outline"
           size="sm"
-          disabled={!canImportContacts}
-          title={
-            canImportContacts
-              ? 'Importar desde archivo Excel (.xlsx)'
-              : 'Solo consultores, managers y administradores pueden importar'
-          }
-          onClick={() => setImportDialogOpen(true)}
-        >
-          <Upload className="mr-2 h-4 w-4" />
-          Importar
-        </Button>
-        <Button
           variant="outline"
-          size="sm"
-          disabled={!canExportContacts || exportContactsMutation.isPending}
-          title={
-            canExportContacts
-              ? `Exportar ${activeTab === 'companies' ? 'empresas' : 'contactos'} a Excel (asíncrono)`
-              : 'Solo managers y administradores pueden exportar'
-          }
-          onClick={() => exportContactsMutation.mutate()}
+          className="gap-1.5"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Actualizar contactos"
         >
-          <Download className="mr-2 h-4 w-4" />
-          {exportContactsMutation.isPending ? 'Exportando…' : 'Exportar'}
+          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Actualizar</span>
         </Button>
-        <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo contacto
-        </Button>
+        {canCreateContact && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setImportDialogOpen(true)}
+              title="Importar contactos desde Excel"
+            >
+              <Upload className="size-3.5" />
+              <span className="hidden sm:inline">Importar</span>
+            </Button>
+            <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo contacto
+            </Button>
+          </>
+        )}
       </PageHeader>
+
+      <ContactsQuickMetrics
+        stats={contactStats}
+        activeSegment={searchFromUrl.segment}
+        isLoading={statsLoading}
+        onSegmentChange={handleSegmentChange}
+      />
+
+      {searchFromUrl.segment && (
+        <p className="text-sm text-muted-foreground -mt-4">
+          Filtrando por: <span className="font-medium text-foreground">{segmentLabels[searchFromUrl.segment]}</span>
+          {searchFromUrl.segment === 'stale' && contactStats?.stale_days != null && (
+            <span> (sin actividad hace más de {contactStats.stale_days} días)</span>
+          )}
+          <button
+            type="button"
+            className="ml-2 text-primary hover:underline"
+            onClick={() => handleSegmentChange(undefined)}
+          >
+            Quitar filtro
+          </button>
+        </p>
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contacts' | 'companies')}>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <TabsList>
             <TabsTrigger value="contacts" className="gap-2">
               <User className="h-4 w-4" />
@@ -396,30 +401,84 @@ function ContactsPage() {
               Empresas
             </TabsTrigger>
           </TabsList>
-          
-          <div className="flex items-center gap-2">
+
+          <div className="flex flex-wrap items-center gap-2">
+            {showOwnerFilter && (
+              <Select
+                value={searchFromUrl.owner ?? '__all__'}
+                onValueChange={(v) =>
+                  navigate({ search: (prev) => ({ ...prev, owner: v === '__all__' ? undefined : v }) })
+                }
+              >
+                <SelectTrigger className="h-9 w-[150px] text-sm">
+                  <SelectValue placeholder="Consultor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todos</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {searchFromUrl.owner && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-9 text-xs gap-1"
+                onClick={() => navigate({ search: (prev) => ({ ...prev, owner: undefined }) })}
+              >
+                <Filter className="size-3" />
+                Limpiar filtro
+              </Button>
+            )}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Buscar..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 w-64"
+                placeholder="Buscar (mín. 2 letras)..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="pl-9 w-56 sm:w-64"
               />
             </div>
-            <Button variant="outline" size="icon">
-              <Filter className="h-4 w-4" />
-            </Button>
           </div>
         </div>
 
         <TabsContent value="contacts" className="mt-4">
+          {/* Barra de acción masiva */}
+          {selectedIds.size > 0 && canDeleteContacts && (
+            <div className="mb-2 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2">
+              <span className="text-sm font-medium">
+                {selectedIds.size} contacto(s) seleccionado(s)
+              </span>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="ml-auto gap-1.5"
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                <Trash2 className="size-3.5" />
+                Eliminar seleccionados
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Cancelar
+              </Button>
+            </div>
+          )}
+
           <Card>
             <CardContent className="p-0">
               {contactsError ? (
                 <div className="p-6 space-y-3">
                   <p className="text-sm text-destructive">
-                    {formatRailsError(contactsQueryError, 'No se pudieron cargar los contactos')}
+                    {contactListErrorMessage(contactsQueryError)}
                   </p>
                   <Button type="button" variant="outline" size="sm" onClick={() => void refetchContacts()}>
                     Reintentar
@@ -432,34 +491,69 @@ function ContactsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {canDeleteContacts && (
+                          <TableHead className="w-10">
+                            <Checkbox
+                              checked={
+                                allOnPageSelected
+                                  ? true
+                                  : someOnPageSelected
+                                    ? 'indeterminate'
+                                    : false
+                              }
+                              onCheckedChange={(checked) =>
+                                setAllOnPageSelected(checked === true)
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Seleccionar todos"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Nombre</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Telefono</TableHead>
                         <TableHead>Empresa</TableHead>
                         <TableHead>Cargo</TableHead>
-                        <TableHead>Oportunidades</TableHead>
-                        <TableHead>Tags</TableHead>
+                        <TableHead>Origen</TableHead>
                         <TableHead className="w-10"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+                      {(contactsData?.contacts.length ?? 0) === 0 ? (
+                        <TableRow>
+                          <TableCell
+                            colSpan={canDeleteContacts ? 8 : 7}
+                            className="h-32 text-center text-sm text-muted-foreground"
+                          >
+                            {debouncedQ.length >= 2 || searchFromUrl.owner || searchFromUrl.segment
+                              ? 'No hay contactos con los filtros aplicados.'
+                              : 'No hay contactos registrados. Crea el primero con «Nuevo contacto».'}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
                       {contactsData?.contacts.map((contact) => (
-                        <TableRow 
-                          key={contact.id} 
-                          className="cursor-pointer"
+                        <TableRow
+                          key={contact.id}
+                          className={selectedIds.has(contact.id) ? 'bg-muted/40 cursor-pointer' : 'cursor-pointer'}
                           onClick={() => handleContactClick(contact)}
                         >
+                          {canDeleteContacts && (
+                            <TableCell
+                              className="w-10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Checkbox
+                                checked={selectedIds.has(contact.id)}
+                                onCheckedChange={(checked) =>
+                                  setContactSelected(contact.id, checked === true)
+                                }
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`Seleccionar ${contact.fullName}`}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell>
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-8 w-8">
-                                <AvatarFallback>
-                                  {getInitialsSafe(contact.fullName)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <span className="font-medium">
-                                {contact.fullName}
-                              </span>
-                            </div>
+                            <span className="font-medium">{contact.fullName}</span>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 text-muted-foreground">
@@ -486,14 +580,13 @@ function ContactsPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="secondary">
-                              {contact.opportunitiesCount}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {contact.kind}
-                            </Badge>
+                            {contact.sourceLabel ? (
+                              <Badge variant="outline" className="text-xs">
+                                {contact.sourceLabel}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
@@ -503,24 +596,38 @@ function ContactsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {canEditContact(contact) && (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openEditDialog(contact)
+                                    }}
+                                  >
+                                    Editar
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    openEditDialog(contact)
+                                    void router.navigate({
+                                      to: '/opportunities',
+                                      search: { view: 'table', contact: contact.id },
+                                    })
                                   }}
                                 >
-                                  Editar
+                                  Ir a Oportunidades
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>Ver Oportunidades</DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="text-destructive"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeleteContact(contact)
-                                  }}
-                                >
-                                  Eliminar
-                                </DropdownMenuItem>
+                                {canDeleteContacts && (
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteContact(contact)
+                                    }}
+                                  >
+                                    Eliminar
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -568,7 +675,7 @@ function ContactsPage() {
               {companiesError ? (
                 <div className="p-6 space-y-3">
                   <p className="text-sm text-destructive">
-                    {formatRailsError(companiesQueryError, 'No se pudieron cargar las empresas')}
+                    {contactListErrorMessage(companiesQueryError)}
                   </p>
                   <Button type="button" variant="outline" size="sm" onClick={() => void refetchCompanies()}>
                     Reintentar
@@ -592,13 +699,13 @@ function ContactsPage() {
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-                    {(companiesData?.companies.length ?? 0) === 0 ? (
+                    {(companiesData?.contacts.length ?? 0) === 0 ? (
                       <div className="col-span-full flex flex-col items-center justify-center py-12 text-center text-sm text-muted-foreground">
                         <Building2 className="size-10 mb-3 opacity-50" />
                         <p>No hay empresas registradas con los filtros actuales.</p>
                       </div>
                     ) : (
-                      companiesData?.companies.map((company) => {
+                      companiesData?.contacts.map((company) => {
                         const secondaryLine = company.sourceLabel?.trim()
                           ? `Origen: ${company.sourceLabel.trim()}`
                           : [company.city, company.country].filter(Boolean).join(', ') ||
@@ -639,23 +746,27 @@ function ContactsPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openEditDialog(company)
-                                      }}
-                                    >
-                                      Editar
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleDeleteContact(company)
-                                      }}
-                                    >
-                                      Eliminar
-                                    </DropdownMenuItem>
+                                    {canEditContact(company) && (
+                                      <DropdownMenuItem
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openEditDialog(company)
+                                        }}
+                                      >
+                                        Editar
+                                      </DropdownMenuItem>
+                                    )}
+                                    {canDeleteContacts && (
+                                      <DropdownMenuItem
+                                        className="text-destructive"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteContact(company)
+                                        }}
+                                      >
+                                        Eliminar
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
@@ -664,12 +775,6 @@ function ContactsPage() {
                               <div className="flex flex-wrap gap-2">
                                 <Badge variant="secondary">Empresa</Badge>
                               </div>
-                              <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Target className="h-3 w-3" aria-hidden />
-                                  {company.opportunitiesCount} oportunidades
-                                </span>
-                              </div>
                             </CardContent>
                           </Card>
                         )
@@ -677,7 +782,7 @@ function ContactsPage() {
                     )}
                   </div>
 
-                  {(companiesData?.companies.length ?? 0) > 0 && (
+                  {(companiesData?.contacts.length ?? 0) > 0 && (
                     <div className="flex items-center justify-between border-t px-4 py-3">
                       <p className="text-sm text-muted-foreground">
                         Mostrando {(companyPage - 1) * pageSize + 1} -{' '}
@@ -716,61 +821,91 @@ function ContactsPage() {
 
       {/* Contact Slide Over */}
       <ContactSlideOver
-        contact={selectedContact}
-        open={isSlideOverOpen}
+        contactId={selectedId}
+        contactPreview={selectedPreview}
+        open={!!selectedId}
         onOpenChange={(open) => {
-          setIsSlideOverOpen(open)
-          if (!open) {
-            setSelectedContact(null)
-            void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
-          }
+          if (!open) void navigate({ search: (prev) => ({ ...prev, selected: undefined }) })
         }}
-        onEdit={openEditDialog}
-        onDelete={handleDeleteContact}
-        onAddOpportunity={(contact) => {
-          setIsSlideOverOpen(false)
-          setQuickAddContact({ id: contact.id, name: contact.fullName })
-          setIsQuickAddOpen(true)
+        onEdit={(c) => {
+          if (canEditContact(c)) openEditDialog(c)
         }}
+        canEdit={selectedPreview ? canEditContact(selectedPreview) : false}
+        onDelete={canDeleteContacts ? (c) => handleDeleteContact(c) : undefined}
         canDelete={canDeleteContacts}
       />
 
-      {/* Quick Add Opportunity para contacto existente */}
-      <QuickAddOpportunity
-        open={isQuickAddOpen}
-        onOpenChange={(open) => {
-          setIsQuickAddOpen(open)
-          if (!open) setQuickAddContact(null)
-        }}
-        prefilledContact={quickAddContact ?? undefined}
-      />
-
       {/* Create Contact Dialog */}
+      <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+
       <ContactDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
         onCreated={() => {
           setCurrentPage(1)
-          setSearchTerm('')
+          setSearchInput('')
+          setDebouncedQ('')
         }}
       />
 
-      <ContactImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+      <AlertDialog
+        open={confirmBulkDelete}
+        onOpenChange={(o) => { if (!o) setConfirmBulkDelete(false) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar {selectedIds.size} contacto(s)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán también las oportunidades vinculadas a estos contactos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => bulkDeleteMutation.mutate()}
+            >
+              Eliminar {selectedIds.size} contacto(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!confirmDeleteContact}
+        onOpenChange={(o) => { if (!o) setConfirmDeleteContact(null) }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar contacto</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Eliminar a <strong>{confirmDeleteContact?.fullName}</strong>? Esta acción no se puede deshacer y eliminará también sus oportunidades vinculadas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => { if (confirmDeleteContact) deleteContactMutation.mutate(confirmDeleteContact) }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ContactEditDialog
         contactId={editingContact?.id ?? null}
-        initialData={editingContact ? {
-          firstName: editingContact.firstName,
-          lastName:  editingContact.lastName,
-          email:     editingContact.email === '-' ? '' : editingContact.email,
-          phone:     editingContact.phone === '-' ? '' : editingContact.phone,
-          company:   getCompanyLabel(editingContact.company) === '-' ? '' : getCompanyLabel(editingContact.company),
-          position:  editingContact.position === '-' ? '' : editingContact.position,
-        } : undefined}
+        initialData={editingContact ? contactEditInitialFromSummary(editingContact) : undefined}
         open={isEditDialogOpen}
         onOpenChange={(open) => {
           setIsEditDialogOpen(open)
           if (!open) setEditingContact(null)
+        }}
+        onSaved={(updated) => {
+          if (editingContact?.id === updated.id) {
+            setEditingContact(updated)
+          }
         }}
       />
     </AppPageShell>

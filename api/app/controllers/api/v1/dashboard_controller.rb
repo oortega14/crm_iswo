@@ -10,24 +10,36 @@ module Api
       def kpis
         authorize Opportunity, :index?
 
-        scope = policy_scope(Opportunity).kept
+        scope = dashboard_opportunities_scope
 
         open_scope   = scope.open
         total        = open_scope.count
         pipe_value   = open_scope.sum(:estimated_value).to_f
 
         start_month  = Time.current.beginning_of_month
-        closed_value = scope.won.where("closed_at >= ?", start_month).sum(:estimated_value).to_f
+        month_scope  = scope.where("closed_at >= ?", start_month)
+        closed_value = month_scope.won.sum(:estimated_value).to_f
+        won_count    = month_scope.won.count
+        lost_count   = month_scope.lost.count
+        decided      = won_count + lost_count
+        win_rate     = decided.positive? ? (won_count.to_f / decided * 100).round(1) : nil
 
         avg          = scope.average(:bant_score)
         bant_avg     = avg ? avg.round.to_i : 0
 
+        open = open_scope
         render json: {
           data: {
             total_in_pipeline:  total,
             pipeline_value:     pipe_value,
             month_closed_value: closed_value,
-            bant_average:       bant_avg
+            bant_average:       bant_avg,
+            win_rate:           win_rate,
+            won_count:          won_count,
+            lost_count:         lost_count,
+            hot_count:          open.where(temperature: "hot").count,
+            warm_count:         open.where(temperature: "warm").count,
+            cold_count:         open.where(temperature: "cold").count
           }
         }, status: :ok
       end
@@ -74,19 +86,22 @@ module Api
         authorize Reminder, :index?
 
         today = Time.zone.today.all_day
+        opp_scope = dashboard_opportunities_scope
 
         logs = OpportunityLog
                .includes(:user, opportunity: [:lead_source])
                .joins(:opportunity)
-               .merge(policy_scope(Opportunity).kept)
+               .merge(opp_scope)
                .where(action: %w[create stage_change])
                .where(created_at: today)
                .recent
                .limit(40)
 
+        # Mismo alcance que GET /reminders: vencidos + programados para hoy (RFC §6.4)
+        end_of_today = Time.zone.today.end_of_day
         reminders = policy_scope(Reminder).status_pending
-                        .includes(:user, opportunity: [])
-                        .where(remind_at: today)
+                        .includes(:user, :opportunity)
+                        .where(remind_at: ..end_of_today)
                         .order(:remind_at)
                         .limit(40)
 
@@ -113,7 +128,7 @@ module Api
       def bant_distribution
         authorize Opportunity, :index?
 
-        scope        = policy_scope(Opportunity).kept
+        scope        = dashboard_opportunities_scope.open
         low          = scope.where(bant_score: ...40).count
         medium       = scope.where(bant_score: 40...70).count
         high         = scope.where(bant_score: 70..).count
@@ -123,11 +138,71 @@ module Api
         render json: { data: { low: low, medium: medium, high: high, average: average } }, status: :ok
       end
 
+      def briefing
+        authorize Opportunity, :index?
+        authorize Reminder, :index?
+
+        scopes = Dashboard::Scopes.new(current_user, current_tenant, pipeline_id: params[:pipeline_id])
+        raw = Opportunities::BriefingBuilder.new(
+          current_user,
+          current_tenant,
+          opportunity_scope: scopes.opportunities,
+          reminder_scope: scopes.reminders
+        ).call
+
+        render json: { data: Opportunities::BriefingPayload.from(raw) }, status: :ok
+      end
+
+      def lead_sources_breakdown
+        authorize Opportunity, :index?
+
+        scope = dashboard_opportunities_scope
+
+        # Agrupa oportunidades activas (open) por lead_source
+        rows = scope.open
+                    .joins("LEFT JOIN lead_sources ON lead_sources.id = opportunities.lead_source_id")
+                    .group("lead_sources.id, lead_sources.name, lead_sources.kind")
+                    .pluck(
+                      "lead_sources.id",
+                      "lead_sources.name",
+                      "lead_sources.kind",
+                      Arel.sql("COUNT(opportunities.id)"),
+                      Arel.sql("COALESCE(SUM(opportunities.estimated_value), 0)")
+                    )
+
+        payload = rows.map do |id, name, kind, count, value|
+          {
+            id: id&.to_s,
+            name: name.presence || "Sin fuente",
+            kind: kind,
+            count: count.to_i,
+            value: value.to_f
+          }
+        end.sort_by { |r| -r[:count] }
+
+        # Evita duplicar "Sin fuente" si el GROUP BY ya devolvió fila con id nil
+        unless payload.any? { |r| r[:id].nil? }
+          no_source_count = scope.open.where(lead_source_id: nil).count
+          if no_source_count.positive?
+            no_source_value = scope.open.where(lead_source_id: nil).sum(:estimated_value).to_f
+            payload << {
+              id: nil,
+              name: "Sin fuente",
+              kind: nil,
+              count: no_source_count,
+              value: no_source_value
+            }
+          end
+        end
+
+        render json: { data: payload }, status: :ok
+      end
+
       def top_consultants
         authorize Opportunity, :index?
 
         start_month = Time.current.beginning_of_month
-        tuples = policy_scope(Opportunity).kept.won
+        tuples = dashboard_opportunities_scope.won
                   .where("closed_at >= ?", start_month)
                   .group(:owner_user_id)
                   .pluck(
@@ -156,9 +231,20 @@ module Api
 
       private
 
+      # Oportunidades visibles según rol (RFC §6.3 / A.8.2). Opcionalmente filtradas por pipeline_id.
+      def dashboard_opportunities_scope
+        Dashboard::Scopes.new(current_user, current_tenant, pipeline_id: params[:pipeline_id]).opportunities
+      end
+
+      def pipeline_from_optional_param
+        return if params[:pipeline_id].blank?
+
+        current_tenant.pipelines.kept.find_by(id: params[:pipeline_id])
+      end
+
       def resolve_dashboard_pipeline
         if params[:pipeline_id].present?
-          return current_tenant.pipelines.kept.find(params[:pipeline_id])
+          return current_tenant.pipelines.kept.find_by(id: params[:pipeline_id])
         end
 
         current_tenant.pipelines.kept.order(Arel.sql("is_default DESC NULLS LAST"), :created_at).first

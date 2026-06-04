@@ -4,7 +4,7 @@
 # OpportunityPolicy
 # ============================================================================
 # - admin/manager: ven y editan todas las oportunidades del tenant.
-# - consultant: ve y edita las suyas (owner_user_id == user.id).
+# - consultant: solo ve y edita oportunidades donde es owner (no las de otros consultores).
 # - viewer: solo lectura sobre todas.
 #
 # Reasignar (assign) y mergear son acciones sensibles → solo admin/manager.
@@ -30,11 +30,7 @@ class OpportunityPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        # RFC F2: consultor ve sus oportunidades + las de su red de referidos
-        depth = user.tenant&.settings&.dig("network_depth").to_i
-        depth = 3 if depth < 1
-        network_ids = user.network_user_ids(depth: depth)
-        scope.where(owner_user_id: [user.id] + network_ids)
+        scope.where(owner_user_id: ConsultantNetworkAccess.visible_owner_ids(user))
       else
         scope.none
       end

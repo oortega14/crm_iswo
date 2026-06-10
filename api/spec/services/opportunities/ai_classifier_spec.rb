@@ -10,7 +10,15 @@ RSpec.describe Opportunities::AiClassifier do
   let(:contact) { create(:contact, tenant: tenant) }
   let(:opp) do
     create(:opportunity, tenant: tenant, contact: contact, pipeline: pipeline,
-           pipeline_stage: stage, owner_user: user, bant_score: 75,
+           pipeline_stage: stage, owner_user: user,
+           custom_fields: {
+             "bant_data" => {
+               "budget"    => { "score" => 75 },
+               "authority" => { "score" => 75 },
+               "need"      => { "score" => 75 },
+               "timeline"  => { "score" => 75 }
+             }
+           },
            last_activity_at: 2.days.ago, temperature: "cold")
   end
 

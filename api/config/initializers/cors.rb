@@ -17,10 +17,20 @@ allowed = ENV.fetch("CORS_ALLOWED_ORIGINS", "http://localhost:3001,http://localh
 
 tenant_localhost_origin = %r{\Ahttp://[\w-]+\.localhost(:\d+)?\z}
 
+# Landings públicas por subdominio en producción (RFC §6.5):
+# https://{tenant}.crm.iswo.com.co. El dominio base sale de APP_HOST
+# (ya requerido por Fase 1 seguridad) para no duplicar configuración.
+tenant_production_origin =
+  if ENV["APP_HOST"].present?
+    /\Ahttps:\/\/[\w-]+\.#{Regexp.escape(ENV["APP_HOST"].strip)}\z/
+  end
+
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins do |source, _env|
-      allowed.include?(source) || source.match?(tenant_localhost_origin)
+      allowed.include?(source) ||
+        source.match?(tenant_localhost_origin) ||
+        tenant_production_origin&.match?(source)
     end
 
     resource "/api/*",

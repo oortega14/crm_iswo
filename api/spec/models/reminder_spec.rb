@@ -38,6 +38,13 @@ RSpec.describe Reminder, type: :model do
       r = create(:reminder, tenant: tenant, opportunity: opp, user: user, remind_at: 1.hour.from_now)
       expect(r.status).to eq("pending")
     end
+
+    it "rechaza viewer como destinatario" do
+      viewer = create(:user, :viewer, tenant: tenant)
+      reminder.user = viewer
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:user]).to be_present
+    end
   end
 
   describe "scopes" do
@@ -54,6 +61,53 @@ RSpec.describe Reminder, type: :model do
     it ".upcoming devuelve pending futuros ordenados" do
       expect(Reminder.upcoming).to include(future_pending)
       expect(Reminder.upcoming).not_to include(past_pending)
+    end
+
+    it ".due incluye un 'processing' atascado (stale) y excluye uno reciente" do
+      stale_processing = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                             remind_at: 1.hour.ago, status: "processing",
+                                             updated_at: 10.minutes.ago)
+      fresh_processing = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                             remind_at: 1.hour.ago, status: "processing",
+                                             updated_at: 1.minute.ago)
+
+      expect(Reminder.due).to include(stale_processing)
+      expect(Reminder.due).not_to include(fresh_processing)
+    end
+  end
+
+  describe "#claim_for_dispatch!" do
+    it "reclama un recordatorio pending y lo marca processing" do
+      reminder = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                    remind_at: 1.hour.ago, status: "pending")
+
+      expect(reminder.claim_for_dispatch!).to be(true)
+      expect(reminder.reload.status_processing?).to be(true)
+    end
+
+    it "no reclama dos veces el mismo recordatorio (evita doble despacho)" do
+      reminder = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                    remind_at: 1.hour.ago, status: "pending")
+      same_reminder = Reminder.find(reminder.id)
+
+      expect(reminder.claim_for_dispatch!).to be(true)
+      expect(same_reminder.claim_for_dispatch!).to be(false)
+    end
+
+    it "reclama un 'processing' atascado (stale)" do
+      reminder = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                    remind_at: 1.hour.ago, status: "processing",
+                                    updated_at: 10.minutes.ago)
+
+      expect(reminder.claim_for_dispatch!).to be(true)
+    end
+
+    it "no reclama un 'processing' reciente" do
+      reminder = create(:reminder, tenant: tenant, opportunity: opp, user: user,
+                                    remind_at: 1.hour.ago, status: "processing",
+                                    updated_at: 1.minute.ago)
+
+      expect(reminder.claim_for_dispatch!).to be(false)
     end
   end
 

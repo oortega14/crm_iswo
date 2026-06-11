@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_10_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -78,6 +78,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
     t.jsonb "custom_fields", default: {}, null: false, comment: "Campos extra por tenant"
     t.datetime "discarded_at", comment: "Soft-delete"
     t.string "document_id", comment: "Cédula / NIT"
+    t.string "document_id_bidx"
+    t.text "document_id_ciphertext"
     t.string "email"
     t.string "first_name"
     t.string "job_title"
@@ -86,6 +88,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
     t.text "notes"
     t.bigint "owner_user_id"
     t.string "phone_e164", comment: "Formato E.164 (+57…)"
+    t.string "phone_e164_bidx"
+    t.text "phone_e164_ciphertext"
     t.string "phone_normalized", comment: "Solo dígitos para matching"
     t.string "source_kind"
     t.string "source_label"
@@ -95,11 +99,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
     t.index "tenant_id, lower((email)::text)", name: "index_contacts_on_lower_email", where: "((email IS NOT NULL) AND (discarded_at IS NULL))"
     t.index ["discarded_at"], name: "index_contacts_on_discarded_at"
     t.index ["owner_user_id"], name: "index_contacts_on_owner_user_id"
-    t.index ["phone_normalized"], name: "index_contacts_on_phone_normalized_trgm", opclass: :gin_trgm_ops, where: "((phone_normalized IS NOT NULL) AND (discarded_at IS NULL))", using: :gin
-    t.index ["tenant_id", "document_id"], name: "index_contacts_on_tenant_id_and_document_id"
+    t.index ["tenant_id", "document_id_bidx"], name: "index_contacts_on_tenant_id_and_document_id_bidx", where: "((document_id_bidx IS NOT NULL) AND (discarded_at IS NULL))"
     t.index ["tenant_id", "email"], name: "index_contacts_on_tenant_id_and_email"
     t.index ["tenant_id", "owner_user_id"], name: "index_contacts_on_tenant_id_and_owner_user_id"
-    t.index ["tenant_id", "phone_e164"], name: "index_contacts_on_tenant_id_and_phone_e164"
+    t.index ["tenant_id", "phone_e164_bidx"], name: "index_contacts_on_tenant_id_and_phone_e164_bidx", where: "((phone_e164_bidx IS NOT NULL) AND (discarded_at IS NULL))"
     t.index ["tenant_id"], name: "index_contacts_on_tenant_id"
   end
 
@@ -350,7 +353,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_03_120000) do
     t.bigint "opportunity_id", null: false
     t.datetime "remind_at", null: false
     t.datetime "sent_at"
-    t.string "status", default: "pending", null: false, comment: "pending | sent | failed | done"
+    t.string "status", default: "pending", null: false, comment: "pending | processing | sent | failed | done"
     t.string "subject"
     t.bigint "tenant_id", null: false
     t.datetime "upcoming_notified_at", comment: "Aviso previo por correo/in-app antes de remind_at"

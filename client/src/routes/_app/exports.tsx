@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import {
@@ -47,12 +47,20 @@ import { jsonApiPrimaryList, mapPipelineResource, mapUserResource, buildOpportun
 import { buildContactExportFilters, triggerBlobDownload } from '@/lib/contactApi'
 import type { JsonApiResource } from '@/lib/opportunityApi'
 import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
+import { currentAuth } from '@/lib/authGuards'
 import { useAuthStore } from '@/stores/auth'
+import { tenantHasModule } from '@/lib/tenantModules'
 import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ContactImportDialog } from '@/components/contacts/ContactImportDialog'
 
 export const Route = createFileRoute('/_app/exports')({
+  beforeLoad: () => {
+    const role = currentAuth().user?.role
+    if (role !== 'admin' && role !== 'manager') {
+      throw redirect({ to: role === 'consultant' ? '/contacts' : '/' })
+    }
+  },
   component: ExportsPage,
 })
 
@@ -176,11 +184,12 @@ const INITIAL_CONFIG = {
 
 function ExportsPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
+  const hasExportsModule = tenantHasModule(tenant, 'exports')
   const userRole = useAuthStore((s) => s.user?.role)
   const isManagerOrAdmin = userRole === 'admin' || userRole === 'manager'
   const canCreateExport = isManagerOrAdmin
-  const canImportContacts =
-    userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+  const canImportContacts = isManagerOrAdmin
   const authScope = getAuthQueryScope()
 
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
@@ -237,7 +246,7 @@ function ExportsPage() {
     isRefetching,
   } = useQuery({
     queryKey: queryKeys.exports.list(authScope, { page: 1, items: 50 }),
-    enabled: authScope.length > 0,
+    enabled: authScope.length > 0 && hasExportsModule,
     queryFn: async () => {
       const response = await api.get('/exports', {
         params: { page: 1, items: 50 },
@@ -376,15 +385,22 @@ function ExportsPage() {
   const completedExports = exports.filter((e) => e.uiStatus === 'completed' && e.ready).length
   const inProgressExports = exports.filter((e) => e.uiStatus === 'queued' || e.uiStatus === 'processing').length
 
+  if (!hasExportsModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Exportaciones e importaciones"
+          description="El módulo de exportaciones no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
+
   return (
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Exportaciones e importaciones"
-        description={
-          isManagerOrAdmin
-            ? 'RFC §6.7: exportación directa (≤5.000 filas) o asíncrona con descarga segura (7 días). Aplica a todo el tenant.'
-            : 'Importación de contactos vía Excel. Las exportaciones masivas las gestionan admin y manager del tenant.'
-        }
+        description="Exportación directa (≤5.000 filas) o asíncrona con descarga segura (7 días). Importación masiva de contactos vía Excel. Aplica a todo el tenant (RFC §6.7)."
       >
         <Button variant="outline" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
           {isRefetching ? <Spinner className="mr-2 size-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -398,7 +414,7 @@ function ExportsPage() {
           title={
             canImportContacts
               ? 'Importar contactos desde Excel (.xlsx)'
-              : 'Solo consultores, managers y administradores pueden importar'
+              : 'Solo administradores y managers pueden importar'
           }
           onClick={() => setImportDialogOpen(true)}
         >
@@ -413,24 +429,6 @@ function ExportsPage() {
           </Button>
         )}
       </PageHeader>
-
-      {!canCreateExport && userRole === 'consultant' && (
-        <p className="text-sm text-muted-foreground">
-          Como consultor puedes importar contactos desde Excel. Para exportar datos del tenant, pide a un manager o
-          administrador.
-        </p>
-      )}
-      {!canCreateExport && userRole === 'viewer' && (
-        <p className="text-sm text-muted-foreground">
-          Tu rol es de solo lectura: no puedes importar ni exportar. Los managers o administradores del tenant gestionan
-          estos procesos.
-        </p>
-      )}
-      {!canImportContacts && (
-        <p className="text-sm text-muted-foreground">
-          La importación de contactos está reservada a consultores, managers y administradores.
-        </p>
-      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>

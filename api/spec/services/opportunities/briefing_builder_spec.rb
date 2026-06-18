@@ -34,8 +34,9 @@ RSpec.describe Opportunities::BriefingBuilder do
   it "incluye oportunidades de la red del consultor en el alcance" do
     referred = create(:user, :consultant, tenant: tenant)
     create(:referral_network, tenant: tenant, referrer_user: consultant, referred_user: referred)
-    create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
-           owner_user: referred, temperature: "hot", bant_score: 90)
+    hot_opp = create(:opportunity, :skip_bant_recalc,
+                     tenant: tenant, pipeline: pipeline, pipeline_stage: stage, owner_user: referred)
+    hot_opp.update_columns(temperature: "hot", bant_score: 90)
 
     briefing = build_for(consultant)
 

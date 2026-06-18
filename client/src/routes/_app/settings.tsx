@@ -4,10 +4,12 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { useAuthStore } from '@/stores/auth'
 import { filterSettingsNav } from '@/lib/settingsNav'
 import { isPlatformTenant } from '@/lib/platformTenant'
+import { currentAuth } from '@/lib/authGuards'
 
 export const Route = createFileRoute('/_app/settings')({
-  beforeLoad: ({ context, location }) => {
-    const visible = filterSettingsNav(context.auth.user?.role, context.auth.tenant)
+  beforeLoad: ({ location }) => {
+    const { user, tenant } = currentAuth()
+    const visible = filterSettingsNav(user?.role, tenant)
     if (visible.length === 0) {
       throw redirect({ to: '/' })
     }

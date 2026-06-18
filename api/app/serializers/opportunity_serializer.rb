@@ -35,7 +35,7 @@ class OpportunitySerializer < ApplicationSerializer
   end
 
   attribute :contact_phone do |o|
-    o.contact&.phone_e164
+    o.contact&.phone_e164_safe
   end
 
   attribute :contact_city do |o|
@@ -103,9 +103,21 @@ class OpportunitySerializer < ApplicationSerializer
     ((Time.current - o.last_activity_at) / 1.day).floor
   end
 
-  # RFC §6.3 — true si el owner de esta oportunidad es referido de alguien en la red del tenant.
+  # RFC §6.3 — oportunidad de referido (respecto al usuario que consulta).
   attribute :from_network do |o, params|
-    params[:referred_user_ids]&.include?(o.owner_user_id) || false
+    viewer = params[:current_user]
+    tenant = params[:tenant]
+    next false unless viewer
+
+    ConsultantNetworkAccess.from_network?(viewer, o, tenant)
+  end
+
+  attribute :network_read_only do |o, params|
+    viewer = params[:current_user]
+    tenant = params[:tenant]
+    next false unless viewer
+
+    ConsultantNetworkAccess.network_read_only?(viewer, o, tenant)
   end
 
   belongs_to :contact,        serializer: :contact

@@ -30,6 +30,7 @@ import {
   type OpportunityReminderRow,
   type ReminderChannel,
 } from '@/lib/reminderApi'
+import { REMINDER_CHANNEL_OPTIONS, reminderChannelLabel } from '@/lib/reminderChannels'
 import {
   invalidateNotificationsQueries,
   invalidateReminderDashboardQueries,
@@ -41,19 +42,13 @@ interface RemindersTabProps {
   reminders: OpportunityReminderRow[]
 }
 
-const channelLabel: Record<string, string> = {
-  email: 'Email',
-  whatsapp: 'WhatsApp',
-  in_app: 'En app',
-}
-
 export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
   const queryClient = useQueryClient()
   const [isAdding, setIsAdding] = useState(false)
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
   const [remindAt, setRemindAt] = useState('')
-  const [channel, setChannel] = useState<ReminderChannel>('in_app')
+  const [channel, setChannel] = useState<ReminderChannel>('email')
 
   const invalidate = async () => {
     await invalidateReminderDashboardQueries(queryClient)
@@ -82,7 +77,7 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
       setSubject('')
       setMessage('')
       setRemindAt('')
-      setChannel('in_app')
+      setChannel('email')
       setIsAdding(false)
     },
     onError: (e: unknown) => {
@@ -181,17 +176,22 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Canal</Label>
+              <Label>Cómo avisarte al vencer</Label>
               <Select value={channel} onValueChange={(v) => setChannel(v as ReminderChannel)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="in_app">En app</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  {REMINDER_CHANNEL_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {REMINDER_CHANNEL_OPTIONS.find((o) => o.value === channel)?.description}
+              </p>
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -242,7 +242,7 @@ export function RemindersTab({ opportunityId, reminders }: RemindersTabProps) {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <Badge variant="outline" className="text-[10px]">
-                  {channelLabel[reminder.channel] ?? reminder.channel}
+                  {reminderChannelLabel(reminder.channel)}
                 </Badge>
                 {statusBadge(reminder.status)}
                 {reminder.status === 'pending' && (

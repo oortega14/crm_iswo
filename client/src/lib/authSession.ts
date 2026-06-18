@@ -1,10 +1,58 @@
 import axios, { type AxiosResponse } from 'axios'
 import { getSubdomain } from '@/lib/utils'
-import { clearSessionQueryCache } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
+import { normalizeTenantBranding } from '@/lib/tenantBrand'
+import { readTenantBranding } from '@/lib/tenantStorage'
+import { clearSessionQueryCache, queryClient } from '@/lib/queryClient'
 import type { Tenant, TenantSettings, User } from '@/types'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+
+let logoutInProgress = false
+let bootstrapPromise: Promise<boolean> | null = null
+
+/** Evita que el interceptor de refresh re-autentique durante el cierre de sesión. */
+export function isLogoutInProgress(): boolean {
+  return logoutInProgress
+}
+
+function resolveTenantSlugForLogout(): string {
+  const fromStore = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
+  if (fromStore) return fromStore
+
+  const fromHost = getSubdomain()
+  if (fromHost) return fromHost
+
+  return window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() || ''
+}
+
+/** Cierra sesión: limpia el cliente al instante y revoca la cookie en segundo plano. */
+export function logoutSession(): void {
+  if (logoutInProgress) return
+  logoutInProgress = true
+
+  const tenantSlug = resolveTenantSlugForLogout()
+
+  window.localStorage.removeItem('crm-tenant-slug')
+  clearSessionQueryCache(queryClient)
+  useAuthStore.getState().logout()
+
+  const headers: Record<string, string> = {}
+  if (tenantSlug) headers['X-Tenant-Slug'] = tenantSlug
+
+  // Solo cookie de refresh (no JWT): un Bearer expirado puede romper el DELETE en el API.
+  void axios
+    .delete(`${apiBaseUrl}/sessions`, {
+      withCredentials: true,
+      headers,
+    })
+    .catch(() => {
+      // El cliente ya quedó limpio aunque falle el servidor.
+    })
+    .finally(() => {
+      logoutInProgress = false
+    })
+}
 
 export type JsonApiResource<TAttributes> = {
   id: string
@@ -55,7 +103,7 @@ export const buildUserFromSession = (resource: JsonApiResource<SessionAttributes
 
 export const buildTenant = (resource: JsonApiResource<TenantAttributes>): Tenant => {
   const attrs = resource.attributes
-  return {
+  return normalizeTenantBranding({
     id: resource.id,
     name: attrs.name,
     subdomain: attrs.slug,
@@ -65,12 +113,13 @@ export const buildTenant = (resource: JsonApiResource<TenantAttributes>): Tenant
     timezone: attrs.timezone || 'America/Bogota',
     settings: attrs.settings,
     created_at: attrs.created_at || new Date().toISOString(),
-  }
+  })
 }
 
 /** Extrae el bearer JWT del header Authorization (mismo mecanismo que login). */
 export function extractBearerToken(response: AxiosResponse): string | null {
-  const authHeader = response.headers.authorization as string | undefined
+  const headers = response.headers as Record<string, string | undefined>
+  const authHeader = headers.authorization ?? headers.Authorization
   return authHeader?.replace(/^Bearer\s+/i, '').trim() || null
 }
 
@@ -101,6 +150,7 @@ export async function refreshAccessToken(): Promise<{
       {
         withCredentials: true,
         headers,
+        timeout: 8_000,
       },
     )
 
@@ -122,54 +172,145 @@ export async function refreshAccessToken(): Promise<{
   return refreshInFlight
 }
 
-/** Restaura sesión al cargar la app si hay cookie de refresh válida. */
-export async function bootstrapAuth(): Promise<boolean> {
-  const { isAuthenticated, accessToken, tenant } = useAuthStore.getState()
+type TenantMeta = {
+  id?: string | number
+  slug?: string
+  name?: string
+}
+
+export function resolveTenantSlug(
+  tenantSlug?: string,
+  meta?: TenantMeta,
+): string {
+  return (
+    meta?.slug?.trim().toLowerCase() ||
+    tenantSlug?.trim().toLowerCase() ||
+    window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() ||
+    getSubdomain() ||
+    import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
+    ''
+  )
+}
+
+export function minimalTenantFromMeta(meta: TenantMeta): Tenant {
+  const slug = meta.slug?.trim().toLowerCase() || 'tenant'
+  return normalizeTenantBranding({
+    id: String(meta.id ?? '0'),
+    name: meta.name ?? slug,
+    subdomain: slug,
+    primary_color: '#2563eb',
+    currency: 'COP',
+    timezone: 'America/Bogota',
+    created_at: new Date().toISOString(),
+  })
+}
+
+export function minimalTenantFromSlug(slug: string): Tenant {
+  const normalized = slug.trim().toLowerCase()
+  return normalizeTenantBranding({
+    id: '0',
+    name: normalized,
+    subdomain: normalized,
+    primary_color: '#2563eb',
+    currency: 'COP',
+    timezone: 'America/Bogota',
+    created_at: new Date().toISOString(),
+  })
+}
+
+export function resolveInitialTenant(
+  tenantSlug: string,
+  meta?: TenantMeta,
+): Tenant | null {
+  if (!tenantSlug) return null
+  return (
+    readTenantBranding(tenantSlug) ??
+    (meta?.slug ? minimalTenantFromMeta(meta) : minimalTenantFromSlug(tenantSlug))
+  )
+}
+
+/** Completa logo/color del tenant sin bloquear login ni bootstrap. */
+export async function fetchTenantBranding(
+  token: string,
+  tenantSlug: string,
+): Promise<Tenant | null> {
+  if (!tenantSlug) return null
+
+  try {
+    const tenantResponse = await axios.get(`${apiBaseUrl}/tenant`, {
+      withCredentials: true,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-Tenant-Slug': tenantSlug,
+      },
+      timeout: 8_000,
+    })
+    const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
+    return tenantData ? buildTenant(tenantData) : null
+  } catch {
+    return null
+  }
+}
+
+export function hydrateTenantBranding(token: string, tenantSlug: string): void {
+  void fetchTenantBranding(token, tenantSlug).then((tenant) => {
+    if (!tenant) return
+
+    const { isAuthenticated, tenant: currentTenant } = useAuthStore.getState()
+    if (
+      !isAuthenticated ||
+      currentTenant?.subdomain?.trim().toLowerCase() !== tenantSlug.trim().toLowerCase()
+    ) {
+      return
+    }
+
+    useAuthStore.getState().setTenant(tenant)
+  })
+}
+
+async function runBootstrapAuth(): Promise<boolean> {
+  const { isAuthenticated, accessToken } = useAuthStore.getState()
   if (isAuthenticated && accessToken) return true
 
   try {
     const session = await refreshAccessToken()
-    if (!session) return false
+    if (!session) {
+      useAuthStore.getState().logout()
+      return false
+    }
 
-    const tenantSlug =
-      session.tenantSlug ||
-      tenant?.subdomain?.trim().toLowerCase() ||
-      getSubdomain() ||
-      import.meta.env.VITE_TENANT_SLUG?.trim().toLowerCase() ||
-      ''
+    const tenantSlug = resolveTenantSlug(session.tenantSlug)
+    const tenant = resolveInitialTenant(tenantSlug, session.tenantSlug ? { slug: session.tenantSlug } : undefined)
 
-    const { login, setTenant } = useAuthStore.getState()
-    clearSessionQueryCache()
-    login(session.user, session.token)
+    useAuthStore.getState().restoreSession({
+      user: session.user,
+      token: session.token,
+      tenant,
+    })
 
     if (tenantSlug) {
-      try {
-        const tenantResponse = await axios.get(`${apiBaseUrl}/tenant`, {
-          withCredentials: true,
-          headers: {
-            Authorization: `Bearer ${session.token}`,
-            'X-Tenant-Slug': tenantSlug,
-          },
-        })
-        const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
-        if (tenantData) setTenant(buildTenant(tenantData))
-      } catch {
-        if (session.tenantSlug) {
-          setTenant({
-            id: '0',
-            name: session.tenantSlug,
-            subdomain: session.tenantSlug,
-            primary_color: '#2563eb',
-            currency: 'COP',
-            timezone: 'America/Bogota',
-            created_at: new Date().toISOString(),
-          })
-        }
-      }
+      hydrateTenantBranding(session.token, tenantSlug)
     }
 
     return true
   } catch {
+    useAuthStore.getState().logout()
     return false
   }
+}
+
+/** Espera el bootstrap en curso (rutas protegidas / redirect si ya hay sesión). */
+export function waitForAuthBootstrap(): Promise<boolean> {
+  if (bootstrapPromise) return bootstrapPromise
+  return Promise.resolve(useAuthStore.getState().isAuthenticated)
+}
+
+/** Restaura sesión al cargar la app si hay cookie de refresh válida. */
+export function bootstrapAuth(): Promise<boolean> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = runBootstrapAuth().finally(() => {
+      useAuthStore.getState().setLoading(false)
+    })
+  }
+  return bootstrapPromise
 }

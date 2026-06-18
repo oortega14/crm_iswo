@@ -39,8 +39,16 @@ import {
 } from '@/lib/opportunityApi'
 import api, { formatRailsError } from '@/lib/api'
 import { fetchLandingPageDetail, fetchLandingPagesIndex } from '@/lib/landingPagesApi'
+import { tenantHasModule } from '@/lib/tenantModules'
+import {
+  countOpportunitiesByOwnership,
+  matchesOwnershipFilter,
+  type OpportunityOwnershipFilter,
+} from '@/lib/opportunityOwnership'
+import { OpportunityOwnershipToolbar } from '@/components/opportunities/OpportunityOwnershipToolbar'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from 'sonner'
+
 const opportunitiesSearchSchema = z.object({
   view: z.enum(['kanban', 'table']).optional().default('kanban'),
   pipeline: z.string().optional(),
@@ -53,6 +61,7 @@ const opportunitiesSearchSchema = z.object({
   owner: z.string().optional(),
   status: z.string().optional(),
   stale: z.coerce.boolean().optional(),
+  ownership: z.enum(['all', 'own', 'network']).optional(),
 })
 
 export const Route = createFileRoute('/_app/opportunities')({
@@ -75,6 +84,11 @@ function OpportunitiesPage() {
   const canCreateOpportunity = userRole !== 'viewer'
   const canDeleteOpportunities = userRole === 'admin'
   const tenant = useAuthStore((s) => s.tenant)
+  const hasOpportunitiesModule = tenantHasModule(tenant, 'opportunities')
+  const showOwnershipToolbar =
+    hasOpportunitiesModule &&
+    (userRole === 'consultant' || userRole === 'admin' || userRole === 'manager')
+  const ownershipFilter: OpportunityOwnershipFilter = search.ownership ?? 'all'
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
@@ -184,6 +198,7 @@ function OpportunitiesPage() {
     queryKey: listQueryKey,
     queryFn: () => fetchOpportunities(listFilters),
     enabled:
+      hasOpportunitiesModule &&
       isAuthenticated &&
       !!authScope &&
       !pipelinesLoading &&
@@ -239,8 +254,18 @@ function OpportunitiesPage() {
           o.contact_phone?.includes(q),
       )
     }
+    if (showOwnershipToolbar && ownershipFilter !== 'all') {
+      all = all.filter((o) =>
+        matchesOwnershipFilter(o, ownershipFilter, user?.id),
+      )
+    }
     return all
-  }, [opportunities, searchInput])
+  }, [opportunities, searchInput, showOwnershipToolbar, ownershipFilter, user?.id])
+
+  const ownershipCounts = useMemo(
+    () => countOpportunitiesByOwnership(opportunities ?? [], user?.id),
+    [opportunities, user?.id],
+  )
 
   const selectedPreview = opportunities?.find((o) => o.id === selectedId)
 
@@ -349,12 +374,13 @@ function OpportunitiesPage() {
   }
 
   const listScopeActive = !!contactFilterId || !!landingFilterId
+  // Solo carga inicial: isFetching en el poll cada 15s no debe vaciar el Kanban.
   const isLoading =
     pipelinesLoading ||
     (!authScope && isAuthenticated) ||
     (listScopeActive
-      ? opportunitiesLoading || opportunitiesFetching
-      : !!activePipelineId && (opportunitiesLoading || opportunitiesFetching))
+      ? opportunitiesLoading
+      : !!activePipelineId && opportunitiesLoading)
   const oppCount = filteredOpportunities.length
   const subtitle =
     oppCount === 1 ? '1 oportunidad' : `${oppCount} oportunidades`
@@ -381,6 +407,17 @@ function OpportunitiesPage() {
         stale: undefined,
       }),
     })
+  }
+
+  if (!hasOpportunitiesModule) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Oportunidades"
+          description="El módulo de oportunidades no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
   }
 
   return (
@@ -443,7 +480,9 @@ function OpportunitiesPage() {
           disabled={refreshing}
           title="Actualizar leads"
         >
-          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw
+            className={`size-3.5 ${refreshing || opportunitiesFetching ? 'animate-spin' : ''}`}
+          />
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
 
@@ -454,6 +493,17 @@ function OpportunitiesPage() {
           </Button>
         )}
       </PageHeader>
+
+      {showOwnershipToolbar && !listScopeActive && (
+        <OpportunityOwnershipToolbar
+          value={ownershipFilter}
+          onChange={(ownership) =>
+            navigate({ search: (prev) => ({ ...prev, ownership: ownership === 'all' ? undefined : ownership }) })
+          }
+          counts={ownershipCounts}
+          showOwnFilter={userRole === 'consultant'}
+        />
+      )}
 
       {landingFilterId && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-4 py-2 text-sm">

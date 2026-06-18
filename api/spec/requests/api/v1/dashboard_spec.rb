@@ -12,7 +12,7 @@ RSpec.describe "Api::V1::Dashboard", type: :request do
   describe "GET /api/v1/dashboard/briefing" do
     it "responde 200 con resumen diario" do
       create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
-             owner_user: manager, temperature: "hot", bant_score: 80)
+             owner_user: manager, temperature: "hot", estimated_value: 5_000_000)
 
       get "/api/v1/dashboard/briefing", headers: auth_headers(manager)
       expect(response).to have_http_status(:ok)
@@ -38,6 +38,7 @@ RSpec.describe "Api::V1::Dashboard", type: :request do
         "win_rate",
         "bant_average"
       )
+      expect(json["data"]["kpis"]["bant_average"]).to be > 0
       expect(json["data"]).to include("pending_reminders")
     end
   end

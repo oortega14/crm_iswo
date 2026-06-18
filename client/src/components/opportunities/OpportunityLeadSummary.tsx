@@ -5,13 +5,15 @@ import {
   ExternalLink,
   FileText,
   Globe,
+  Mail,
   MapPin,
   Pencil,
+  Phone,
   Radio,
   UserRound,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ContactActionButtons } from './ContactActionButtons'
+import { mailtoHref, telHref } from '@/lib/contactChannels'
 import type { ContactSummary } from '@/lib/contactApi'
 import { getCompanyLabel } from '@/lib/contactApi'
 import type { Opportunity } from '@/types'
@@ -57,7 +59,6 @@ export interface OpportunityLeadSummaryProps {
   contactDetail?: ContactSummary | null
   canEditLead?: boolean
   onEditLead?: () => void
-  onOpenWhatsApp?: () => void
 }
 
 export function OpportunityLeadSummary({
@@ -65,7 +66,6 @@ export function OpportunityLeadSummary({
   contactDetail,
   canEditLead,
   onEditLead,
-  onOpenWhatsApp,
 }: OpportunityLeadSummaryProps) {
   const name =
     contactDetail?.fullName?.trim() ||
@@ -127,11 +127,26 @@ export function OpportunityLeadSummary({
         </div>
 
         {(email || phone) && (
-          <ContactActionButtons
-            phone={phone}
-            email={email}
-            onOpenWhatsAppInApp={onOpenWhatsApp}
-          />
+          <div className="flex flex-col gap-1">
+            {phone ? (
+              <a
+                href={telHref(phone)}
+                className="text-xs text-primary inline-flex items-center gap-1.5 hover:underline"
+              >
+                <Phone className="size-3.5 shrink-0" />
+                {phone}
+              </a>
+            ) : null}
+            {email ? (
+              <a
+                href={mailtoHref(email)}
+                className="text-xs text-primary inline-flex items-center gap-1.5 hover:underline break-all"
+              >
+                <Mail className="size-3.5 shrink-0" />
+                {email}
+              </a>
+            ) : null}
+          </div>
         )}
 
         {city && (

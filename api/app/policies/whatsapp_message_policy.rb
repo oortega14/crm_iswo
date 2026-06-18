@@ -22,7 +22,7 @@ class WhatsappMessagePolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user)
+        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user, ActsAsTenant.current_tenant)
         scope.joins(:opportunity)
              .where(opportunities: { owner_user_id: owner_ids })
              .distinct

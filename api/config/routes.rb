@@ -105,6 +105,7 @@ Rails.application.routes.draw do
           post :assign               # { owner_user_id }
           post :merge                # { target_id }
           post :recalculate_bant
+          get  :temperature_context  # dossier / señales para clasificación IA
           post :sync_temperature     # reglas BANT + actividad → temperature
           post :classify             # IA (o reglas) → actualiza temperature
         end

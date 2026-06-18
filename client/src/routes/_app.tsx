@@ -1,13 +1,14 @@
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { enforcePlatformRouteAccess } from '@/lib/platformRouteGuard'
+import { requireAuth } from '@/lib/authGuards'
+import { waitForAuthBootstrap } from '@/lib/authSession'
 
 export const Route = createFileRoute('/_app')({
-  beforeLoad: ({ context, location }) => {
-    if (!context.auth.isAuthenticated) {
-      throw redirect({ to: '/login' })
-    }
-    enforcePlatformRouteAccess(context.auth, location.pathname)
+  beforeLoad: async ({ location }) => {
+    await waitForAuthBootstrap()
+    requireAuth()
+    enforcePlatformRouteAccess(location.pathname)
   },
   component: AppLayoutRoute,
 })

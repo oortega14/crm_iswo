@@ -22,7 +22,7 @@ module Tenants
     DEFINITIONS = {
       "iswo" => Entry.new(
         slug:            "iswo",
-        primary_color:   "#0F172A",
+        primary_color:   "#1D4ED8",
         tenant_settings: {
           "modules"       => %w[opportunities contacts pipeline reminders network exports landings],
           "industry"      => "consulting_iso",
@@ -60,7 +60,7 @@ module Tenants
       ),
       "micasita" => Entry.new(
         slug:            "micasita",
-        primary_color:   "#1D4ED8",
+        primary_color:   "#B45309",
         tenant_settings: {
           "modules"            => %w[opportunities contacts pipeline reminders network exports landings],
           "industry"           => "real_estate",
@@ -104,7 +104,7 @@ module Tenants
       ),
       "libranzas" => Entry.new(
         slug:            "libranzas",
-        primary_color:   "#166534",
+        primary_color:   "#047857",
         tenant_settings: {
           "modules"            => %w[opportunities contacts pipeline reminders network exports landings],
           "industry"           => "payroll_credit",

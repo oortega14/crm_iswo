@@ -72,9 +72,14 @@ class Opportunity < ApplicationRecord
   validates :currency, length: { is: 3 }
   validate  :stage_belongs_to_pipeline
 
+  # Flags de control para recálculo BANT (controller / factories / jobs internos).
+  attr_accessor :preserve_temperature_on_bant_recalc, :skip_bant_recalc
+
   # ---- Callbacks ------------------------------------------------------------
   before_validation :set_last_activity_at, on: :create
   before_save       :track_close_transition
+  after_create      :recalculate_bant_after_create
+  after_update      :recalculate_bant_after_update
   after_commit      :enqueue_google_conversion_upload, on: %i[create update]
 
   # ---- Scopes ---------------------------------------------------------------
@@ -105,6 +110,24 @@ class Opportunity < ApplicationRecord
     Opportunities::TemperatureCalculator.new(self).apply!
   end
 
+  # Recalcula bant_score (y opcionalmente temperatura) vía BantScorer.
+  def recalculate_bant!(sync_temperature: nil)
+    return unless defined?(Opportunities::BantScorer)
+
+    sync = if sync_temperature.nil?
+             !preserve_temperature_on_bant_recalc
+           else
+             sync_temperature
+           end
+
+    previous_skip = skip_bant_recalc
+    self.skip_bant_recalc = true
+    Opportunities::BantScorer.new(self).call_and_persist!(sync_temperature: sync)
+    reload
+  ensure
+    self.skip_bant_recalc = previous_skip
+  end
+
   # BANT detallado vive en custom_fields["bant_data"] (no hay columna dedicada).
   def bant_data
     (custom_fields || {})["bant_data"] || {}
@@ -129,6 +152,26 @@ class Opportunity < ApplicationRecord
   end
 
   private
+
+  def recalculate_bant_after_create
+    return if skip_bant_recalc
+
+    recalculate_bant!
+  end
+
+  def recalculate_bant_after_update
+    return if skip_bant_recalc
+    return unless saved_change_to_estimated_value? || bant_custom_fields_changed_on_save?
+
+    recalculate_bant!
+  end
+
+  def bant_custom_fields_changed_on_save?
+    return false unless saved_change_to_custom_fields?
+
+    before_cf, after_cf = saved_change_to_custom_fields
+    (before_cf || {})["bant_data"] != (after_cf || {})["bant_data"]
+  end
 
   def set_last_activity_at
     self.last_activity_at ||= Time.current

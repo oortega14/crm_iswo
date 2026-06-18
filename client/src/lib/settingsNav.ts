@@ -86,7 +86,7 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
     href: '/reminders',
     label: 'Recordatorios',
     icon: Bell,
-    roles: ['admin', 'manager', 'consultant', 'viewer'],
+    roles: ['admin', 'manager', 'consultant'],
     module: 'reminders',
   },
   {
@@ -107,7 +107,7 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
     href: '/exports',
     label: 'Exportaciones',
     icon: Download,
-    roles: ['admin', 'manager', 'consultant'],
+    roles: ['admin', 'manager'],
     module: 'exports',
   },
   {

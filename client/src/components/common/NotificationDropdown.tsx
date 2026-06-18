@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Target, AlertCircle, UserPlus, CheckCheck, Loader2 } from 'lucide-react'
@@ -78,8 +78,16 @@ export function NotificationDropdown() {
     retry: 1,
   })
 
+  const duplicateNotifIdsRef = useRef('')
   useEffect(() => {
-    if (!isStaff || !notifications.some((n) => n.type === 'duplicate_found')) return
+    if (!isStaff) return
+    const dupKey = notifications
+      .filter((n) => n.type === 'duplicate_found')
+      .map((n) => n.id)
+      .sort()
+      .join(',')
+    if (!dupKey || dupKey === duplicateNotifIdsRef.current) return
+    duplicateNotifIdsRef.current = dupKey
     void invalidateDuplicateFlagsQueries(queryClient)
   }, [notifications, isStaff, queryClient])
 

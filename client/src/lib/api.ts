@@ -1,11 +1,34 @@
 import axios, { AxiosError, InternalAxiosRequestConfig, isAxiosError } from 'axios'
-import { refreshAccessToken } from '@/lib/authSession'
+import { refreshAccessToken, isLogoutInProgress } from '@/lib/authSession'
 import { clearSessionQueryCache } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiError } from '@/types'
 import { getSubdomain } from './utils'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+
+function requestPath(url: string): string {
+  return (url.split('?')[0] ?? '').replace(/\/+$/, '') || '/'
+}
+
+function isLoginPost(method: string, url: string): boolean {
+  return method === 'post' && requestPath(url).endsWith('/sessions')
+}
+
+function isForgotPasswordPost(method: string, url: string): boolean {
+  return method === 'post' && url.includes('/password/forgot')
+}
+
+function deleteHeader(
+  headers: InternalAxiosRequestConfig['headers'],
+  name: string,
+): void {
+  if (headers && typeof headers.delete === 'function') {
+    headers.delete(name)
+  } else if (headers) {
+    delete headers[name]
+  }
+}
 
 // Create axios instance
 const api = axios.create({
@@ -21,28 +44,28 @@ const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = useAuthStore.getState().accessToken
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    
-    // Backend tenant resolver expects X-Tenant-Slug.
-    // Login / forgot: sin header → el API resuelve empresa por correo (no usar localStorage stale).
     const requestUrl = String(config.url ?? '')
     const method = (config.method ?? 'get').toLowerCase()
-    const isCredentialRequest =
-      !token &&
-      method === 'post' &&
-      (requestUrl.includes('/sessions') || requestUrl.includes('/password/forgot'))
+    const explicitTenant = config.headers['X-Tenant-Slug']
 
-    if (isCredentialRequest) {
-      if (typeof config.headers.delete === 'function') {
-        config.headers.delete('X-Tenant-Slug')
-      } else {
-        delete config.headers['X-Tenant-Slug']
+    if (isLoginPost(method, requestUrl)) {
+      // Login siempre limpio: un JWT expirado en memoria rompe el POST /sessions.
+      deleteHeader(config.headers, 'Authorization')
+      if (!explicitTenant) {
+        deleteHeader(config.headers, 'X-Tenant-Slug')
       }
-    } else if (!config.headers['X-Tenant-Slug']) {
-      const fromAuth = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
-      config.headers['X-Tenant-Slug'] = fromAuth || getSubdomain()
+    } else if (isForgotPasswordPost(method, requestUrl)) {
+      if (!explicitTenant) {
+        deleteHeader(config.headers, 'X-Tenant-Slug')
+      }
+    } else {
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
+      if (!explicitTenant) {
+        const fromAuth = useAuthStore.getState().tenant?.subdomain?.trim().toLowerCase()
+        config.headers['X-Tenant-Slug'] = fromAuth || getSubdomain()
+      }
     }
 
     // FormData: quitar Content-Type para que el navegador añada boundary (importaciones, uploads)
@@ -86,11 +109,16 @@ api.interceptors.response.use(
     const requestUrl = originalRequest?.url || ''
     const isAuthEndpoint =
       requestUrl.includes('/password/') ||
-      requestUrl.endsWith('/sessions') ||
+      isLoginPost((originalRequest?.method ?? 'get').toLowerCase(), requestUrl) ||
       requestUrl.endsWith('/sessions/refresh')
 
     // Handle 401 - try to refresh token
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthEndpoint &&
+      !isLogoutInProgress()
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -112,7 +140,12 @@ api.interceptors.response.use(
         }
 
         const { token, user } = session
-        useAuthStore.getState().login(user, token)
+        const store = useAuthStore.getState()
+        store.restoreSession({
+          user,
+          token,
+          tenant: store.tenant ?? undefined,
+        })
 
         processQueue(null, token)
 

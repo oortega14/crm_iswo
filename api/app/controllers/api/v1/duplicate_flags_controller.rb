@@ -128,7 +128,7 @@ module Api
       private
 
       def set_flag
-        @flag = current_tenant.duplicate_flags.includes(
+        @flag = policy_scope(DuplicateFlag).includes(
           :detected_by_user,
           :resolved_by_user,
           opportunity:              %i[contact owner_user],

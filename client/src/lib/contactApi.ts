@@ -42,6 +42,7 @@ export interface ContactSummary {
   documentId?: string
   ownerName?: string
   ownerId?: string
+  canEdit?: boolean
   sourceLabel?: string
   lastContactedAt?: string
   customFields?: Record<string, unknown>
@@ -64,6 +65,7 @@ type ContactAttributes = {
   document_id?: string
   owner_name?: string
   owner_user_id?: string
+  can_edit?: boolean
   opportunities_count?: number
   source_label?: string
   last_contacted_at?: string
@@ -115,6 +117,7 @@ export function mapContactResource(resource: JsonApiResource): ContactSummary {
         : attrs.owner_user_id != null
           ? String(attrs.owner_user_id)
           : undefined,
+    canEdit: attrs.can_edit === true,
     sourceLabel: attrs.source_label?.trim() || undefined,
     lastContactedAt: attrs.last_contacted_at,
     customFields:

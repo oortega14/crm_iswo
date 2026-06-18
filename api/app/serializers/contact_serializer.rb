@@ -9,9 +9,17 @@
 class ContactSerializer < ApplicationSerializer
   set_type :contact
 
-  attributes :kind, :first_name, :last_name, :email, :phone_e164,
+  attributes :kind, :first_name, :last_name, :email,
              :company, :position, :city, :country,
-             :notes, :document_id, :custom_fields, :discarded_at
+             :notes, :custom_fields, :discarded_at
+
+  attribute :phone_e164 do |c|
+    c.phone_e164_safe
+  end
+
+  attribute :document_id do |c|
+    c.document_id_safe
+  end
 
   attribute :owner_name do |c|
     c.owner_user&.name
@@ -41,9 +49,7 @@ class ContactSerializer < ApplicationSerializer
     [c.first_name, c.last_name].compact.join(" ").strip.presence || c.company.presence || "—"
   end
 
-  attribute :phone_display do |c|
-    c.phone_e164.presence || c.phone_normalized.presence
-  end
+  attribute :phone_display, &:phone_display_value
 
   attribute :opportunities_count do |c, params|
     scope = c.opportunities.kept
@@ -52,6 +58,13 @@ class ContactSerializer < ApplicationSerializer
       scope = scope.where(owner_user_id: user.id)
     end
     scope.count
+  end
+
+  attribute :can_edit do |c, params|
+    user = params&.dig(:current_user)
+    next false unless user
+
+    ContactPolicy.new(user, c).update?
   end
 
   attribute :landing_origins, if: ->(_r, params) { params && params[:include_landing_origins] } do |c|

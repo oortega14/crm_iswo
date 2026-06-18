@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -14,6 +14,8 @@ import {
   type TenantLoginOption,
 } from '@/lib/loginTenant'
 import { PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
+import { redirectIfAuthenticated } from '@/lib/authGuards'
+import { waitForAuthBootstrap } from '@/lib/authSession'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,10 +35,9 @@ const forgotSearchSchema = z.object({
 
 export const Route = createFileRoute('/forgot-password')({
   validateSearch: forgotSearchSchema,
-  beforeLoad: ({ context }) => {
-    if (context.auth.isAuthenticated) {
-      throw redirect({ to: '/' })
-    }
+  beforeLoad: async () => {
+    await waitForAuthBootstrap()
+    redirectIfAuthenticated()
   },
   component: ForgotPasswordPage,
 })

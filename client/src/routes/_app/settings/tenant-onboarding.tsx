@@ -1,12 +1,12 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, Copy, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatAdminApiError } from '@/lib/adminApi'
+import { formatAdminApiError, adminPlatformHeaders } from '@/lib/adminApi'
 import api from '@/lib/api'
-import { PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
-import { requirePlatformTenant } from '@/lib/platformRouteGuard'
+import { PLATFORM_TENANT_SLUG, isPlatformTenant } from '@/lib/platformTenant'
+import { requirePlatformAdmin } from '@/lib/platformRouteGuard'
 import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,11 +47,8 @@ const VERTICAL_OPTIONS = [
 ] as const
 
 export const Route = createFileRoute('/_app/settings/tenant-onboarding')({
-  beforeLoad: ({ context }) => {
-    if (context.auth.user?.role !== 'admin') {
-      throw redirect({ to: '/' })
-    }
-    requirePlatformTenant(context.auth)
+  beforeLoad: () => {
+    requirePlatformAdmin()
   },
   component: TenantOnboardingPage,
 })
@@ -74,7 +71,9 @@ type CreateSuccess = {
 
 function TenantOnboardingPage() {
   const queryClient = useQueryClient()
+  const tenant = useAuthStore((s) => s.tenant)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const canManageTenants = isAuthenticated && isPlatformTenant(tenant)
   const [slug, setSlug] = useState('')
   const [name, setName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
@@ -85,10 +84,12 @@ function TenantOnboardingPage() {
   const [togglingId, setTogglingId] = useState<number | null>(null)
 
   const { data: tenants = [], isLoading, isError, error: listError } = useQuery<TenantRow[]>({
-    queryKey: ['admin-tenants'],
-    enabled: isAuthenticated,
+    queryKey: ['admin-tenants', PLATFORM_TENANT_SLUG],
+    enabled: canManageTenants,
     queryFn: async () => {
-      const res = await api.get<{ data: TenantRow[] }>('/admin/tenants')
+      const res = await api.get<{ data: TenantRow[] }>('/admin/tenants', {
+        headers: adminPlatformHeaders(),
+      })
       return res.data.data ?? []
     },
     retry: false,
@@ -96,16 +97,20 @@ function TenantOnboardingPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post<{ data: Record<string, unknown> }>('/admin/tenants', {
-        tenant: {
-          slug: slug.trim().toLowerCase(),
-          name: name.trim(),
-          admin_email: adminEmail.trim(),
-          admin_name: adminName.trim() || 'Administrador',
-          admin_password: adminPassword || undefined,
-          ...(vertical !== 'auto' ? { vertical } : {}),
+      const res = await api.post<{ data: Record<string, unknown> }>(
+        '/admin/tenants',
+        {
+          tenant: {
+            slug: slug.trim().toLowerCase(),
+            name: name.trim(),
+            admin_email: adminEmail.trim(),
+            admin_name: adminName.trim() || 'Administrador',
+            admin_password: adminPassword || undefined,
+            ...(vertical !== 'auto' ? { vertical } : {}),
+          },
         },
-      })
+        { headers: adminPlatformHeaders() },
+      )
       return res.data.data
     },
     onSuccess: (data) => {
@@ -135,9 +140,11 @@ function TenantOnboardingPage() {
 
   const updateActiveMutation = useMutation({
     mutationFn: async ({ id, active }: { id: number; active: boolean }) => {
-      const res = await api.patch<{ data: TenantRow }>(`/admin/tenants/${id}`, {
-        tenant: { active },
-      })
+      const res = await api.patch<{ data: TenantRow }>(
+        `/admin/tenants/${id}`,
+        { tenant: { active } },
+        { headers: adminPlatformHeaders() },
+      )
       return res.data.data
     },
     onMutate: ({ id }) => {

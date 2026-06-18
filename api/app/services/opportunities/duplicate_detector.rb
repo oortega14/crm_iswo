@@ -7,7 +7,7 @@ module Opportunities
   # Estrategia de matching (prioridad descendente):
   #   1. `phone_normalized` igualdad estricta (tras Phonelib E.164)     → score 1.0
   #   2. `email` case-insensitive igualdad estricta                      → score 0.95
-  #   3. Similitud trigram de `phone_normalized` (pg_trgm % 0.6)         → score variable
+  #   3. Similitud trigram de teléfono — deshabilitado con PII cifrada (Fase 2)
   #   4. Similitud trigram de `full_name` combinada con email/phone      → score variable
   #
   # Devuelve un array de hashes: [{ contact:, score:, matched_on: }].
@@ -46,7 +46,7 @@ module Opportunities
       matches = []
       matches.concat(exact_phone_matches)    if @phone
       matches.concat(exact_email_matches)    if @email
-      matches.concat(trigram_phone_matches)  if @phone
+      # trigram_phone_matches omitido: phone_e164 cifrado (Fase 2)
       matches.concat(trigram_name_matches)   if @full_name
 
       dedupe_and_sort(matches).select { |m| m.score >= @threshold }
@@ -63,10 +63,10 @@ module Opportunities
     end
 
     def exact_phone_matches
-      normalized = Phonelib.parse(@phone).sanitized
-      return [] if normalized.blank?
+      e164 = Phonelib.parse(@phone).e164
+      return [] if e164.blank?
 
-      base_scope.where(phone_normalized: normalized).map do |c|
+      base_scope.where(phone_e164: e164).map do |c|
         Match.new(contact: c, score: 1.0, matched_on: "phone_exact")
       end
     end
@@ -75,17 +75,6 @@ module Opportunities
       base_scope.where("LOWER(email) = ?", @email).map do |c|
         Match.new(contact: c, score: 0.95, matched_on: "email_exact")
       end
-    end
-
-    def trigram_phone_matches
-      normalized = Phonelib.parse(@phone).sanitized
-      return [] if normalized.blank?
-
-      base_scope
-        .where("similarity(phone_normalized, ?) > ?", normalized, @threshold)
-        .select("contacts.*, similarity(phone_normalized, #{ActiveRecord::Base.connection.quote(normalized)}) AS sim")
-        .limit(10)
-        .map { |c| Match.new(contact: c, score: c[:sim].to_f, matched_on: "phone_trigram") }
     end
 
     def trigram_name_matches

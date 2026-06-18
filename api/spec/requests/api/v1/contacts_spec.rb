@@ -110,6 +110,20 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(ids).to include(own.id)
       expect(ids).not_to include(contact_a.id, contact_b.id)
     end
+
+    it "expone can_edit según ContactPolicy#update?" do
+      pipe = create(:pipeline_with_stages, tenant: tenant)
+      shared = create(:contact, tenant: tenant, owner_user: manager)
+      create(:opportunity, tenant: tenant, contact: shared, owner_user: consultant,
+             pipeline: pipe, pipeline_stage: pipe.pipeline_stages.first)
+
+      get "/api/v1/contacts", headers: auth_headers(consultant)
+      row = json["data"].find { |d| d["id"].to_i == shared.id }
+      expect(row.dig("attributes", "can_edit")).to be(true)
+
+      foreign = json["data"].find { |d| d["id"].to_i == contact_a.id }
+      expect(foreign).to be_nil
+    end
   end
 
   describe "POST /api/v1/contacts" do
@@ -161,11 +175,11 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(contact.reload.first_name).to eq("Editado")
     end
 
-    it "consultant ajeno es bloqueado por Pundit (403)" do
+    it "consultant ajeno no encuentra el contacto (404 vía policy_scope)" do
       patch "/api/v1/contacts/#{contact.id}",
             params: { contact: { first_name: "Hackeado" } }.to_json,
             headers: auth_headers(consultant)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
     end
   end
 

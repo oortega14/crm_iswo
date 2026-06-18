@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import api from '@/lib/api'
+import api, { formatRailsError } from '@/lib/api'
 import { landingUtmSearchSchema, resolvePublicLandingTenant } from '@/lib/landingSearch'
 import { sanitizeLandingCss, stripLandingFormElements } from '@/lib/sanitizeLanding'
 
@@ -337,14 +337,23 @@ function LandingForm({
 
   const submitMutation = useMutation({
     mutationFn: async (data: FormValues) => {
-      const res = await api.post(`/public/landings/${slug}/submit`, {
-        payload: data,
-        ...utmParams,
-      }, { headers: tenantHeaders })
-      return res.data?.data as {
-        opportunity_id?: number | string
-        contact_id?: number | string
-      } | undefined
+      try {
+        const res = await api.post(`/public/landings/${slug}/submit`, {
+          payload: data,
+          ...utmParams,
+        }, { headers: tenantHeaders })
+        const payload = res.data?.data as {
+          opportunity_id?: number | string
+          contact_id?: number | string
+        } | undefined
+        if (!payload?.opportunity_id) {
+          const msg = (res.data as { message?: string })?.message
+          throw new Error(msg || 'No se creó la oportunidad en el CRM')
+        }
+        return payload
+      } catch (err: unknown) {
+        throw new Error(formatRailsError(err, 'No se pudo registrar el lead en el CRM'))
+      }
     },
     onSuccess: (data) => {
       reset()
@@ -395,7 +404,9 @@ function LandingForm({
         {submitMutation.isError && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
-            Ocurrió un error al enviar. Intenta de nuevo.
+            {submitMutation.error instanceof Error
+              ? submitMutation.error.message
+              : 'Ocurrió un error al enviar. Intenta de nuevo.'}
           </div>
         )}
 

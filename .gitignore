@@ -45,6 +45,15 @@
 # Exportaciones generadas en runtime
 /api/public/exports/
 
+# Claude Code — preferencias locales (máquina / permisos personales)
+.claude/settings.local.json
+
+# Secretos raíz (nunca commitear)
+/.env
+/.env.local
+/.env.*
+!/.env.example
+
 # CLIENT IGNORES
 
 # Build output
@@ -61,4 +70,3 @@
 
 # Lock file (generado automáticamente)
 /client/package-lock.json
-

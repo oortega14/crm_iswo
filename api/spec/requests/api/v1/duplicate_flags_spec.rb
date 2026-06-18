@@ -41,6 +41,16 @@ RSpec.describe "Api::V1::DuplicateFlags", type: :request do
       expect(ids).to include(flag.id)
     end
 
+    it "consultant solo ve flags donde participa" do
+      flag.update!(detected_by_user: consultant)
+      foreign_flag = create(:duplicate_flag, tenant: tenant, detected_by_user: manager)
+
+      get "/api/v1/duplicate_flags", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:ok)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to include(flag.id)
+      expect(ids).not_to include(foreign_flag.id)
+    end
   end
 
   describe "GET /api/v1/duplicate_flags/:id" do
@@ -60,9 +70,15 @@ RSpec.describe "Api::V1::DuplicateFlags", type: :request do
       expect(attrs["opportunity_a"]["created_at"]).to be_present
     end
 
-    it "consultant puede ver un flag (show? = staff?)" do
+    it "consultant puede ver un flag donde participa" do
+      flag.update!(detected_by_user: consultant)
       get "/api/v1/duplicate_flags/#{flag.id}", headers: auth_headers(consultant)
       expect(response).to have_http_status(:ok)
+    end
+
+    it "consultant recibe 404 en flag ajeno" do
+      get "/api/v1/duplicate_flags/#{flag.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:not_found)
     end
   end
 

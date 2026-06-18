@@ -30,10 +30,13 @@ RSpec.describe ReminderPolicy do
   let(:foreign_reminder) { create(:reminder, tenant: tenant, user: admin,      opportunity: foreign_opp) }
 
   describe "show?" do
-    it "admin/manager/viewer ven todo" do
+    it "admin/manager ven todo" do
       expect(described_class.new(admin,   foreign_reminder).show?).to be(true)
       expect(described_class.new(manager, foreign_reminder).show?).to be(true)
-      expect(described_class.new(viewer,  foreign_reminder).show?).to be(true)
+    end
+
+    it "viewer no tiene acceso" do
+      expect(described_class.new(viewer, foreign_reminder).show?).to be(false)
     end
 
     it "consultant ve los suyos" do
@@ -85,8 +88,8 @@ RSpec.describe ReminderPolicy do
       expect(described_class::Scope.new(manager, Reminder).resolve).to match_array([own_reminder, foreign_reminder])
     end
 
-    it "viewer ve todo (read-only)" do
-      expect(described_class::Scope.new(viewer, Reminder).resolve).to match_array([own_reminder, foreign_reminder])
+    it "viewer no ve recordatorios" do
+      expect(described_class::Scope.new(viewer, Reminder).resolve).to be_empty
     end
 
     it "consultant ve los propios o ligados a sus opps" do

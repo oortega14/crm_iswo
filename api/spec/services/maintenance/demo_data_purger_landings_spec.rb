@@ -18,17 +18,22 @@ RSpec.describe Maintenance::DemoDataPurger, "landings" do
     ActsAsTenant.with_tenant(tenant) { purger.send(:purge_landing_demo_data!) }
   end
 
-  it "elimina todas las landings en vertical F5 (sin plantillas conservadas)" do
+  it "elimina landings demo y conserva plantillas ISWO" do
     expect(LandingPage.where(tenant: tenant).count).to eq(2)
 
     purge_landings!
 
-    expect(LandingPage.where(tenant: tenant)).to be_empty
+    expect(LandingPage.where(tenant: tenant).pluck(:slug)).to contain_exactly("diagnostico-iso-gratuito")
   end
 
-  it "reset_landing_templates deja F5 sin landings" do
+  it "reset_landing_templates deja las 3 plantillas ISWO" do
     described_class.new(wipe_tenant_slugs: []).send(:reset_landing_templates!)
 
-    expect(LandingPage.where(tenant: tenant)).to be_empty
+    slugs = LandingPage.where(tenant: tenant).pluck(:slug)
+    expect(slugs).to contain_exactly(
+      "diagnostico-iso-gratuito",
+      "certificacion-iso-9001",
+      "iso-45001-seguridad-borrador"
+    )
   end
 end

@@ -79,6 +79,8 @@ export interface Opportunity {
   reminder_due_at?: string
   custom_fields?: Record<string, unknown>
   from_network?: boolean
+  /** RFC §6.3 — consultor: solo lectura en opps de la red */
+  network_read_only?: boolean
   created_at: string
   updated_at: string
 }

@@ -3,15 +3,40 @@
 # ============================================================================
 # Contact — persona o empresa prospecto
 # ============================================================================
-# `phone_normalized` se calcula con phonelib y se indexa con pg_trgm.
-# El servicio Opportunities::DuplicateDetector consulta este modelo para
-# encontrar coincidencias en tiempo real.
+# Fase 2: `document_id` y `phone_e164` cifrados (Lockbox + blind_index).
+# Duplicados por teléfono: coincidencia exacta E.164 (sin trigram en claro).
 # ============================================================================
 class Contact < ApplicationRecord
   include TenantScoped
   include Discard::Model
   include DataClassifiable
   include ExportRansackable
+
+  # Fase 2 — PII cifrada. Modo migración one-shot: CONTACT_PII_MIGRATING=true (ver SECURITY_FASE2.md).
+  if ENV["CONTACT_PII_MIGRATING"].to_s.match?(/\A(1|true|yes)\z/i)
+    has_encrypted :document_id, migrating: true
+    has_encrypted :phone_e164, migrating: true
+
+    blind_index :document_id,
+                migrating: true,
+                expression: ->(v) { v.to_s.strip.gsub(/[.\s-]/, "").presence }
+
+    blind_index :phone_e164,
+                migrating: true,
+                expression: ->(v) { Contact.normalize_phone_digits(v) }
+  else
+    # Columnas legado ignoradas; Lockbox descifra vía atributo virtual.
+    self.ignored_columns += %w[document_id phone_e164]
+
+    has_encrypted :document_id
+    has_encrypted :phone_e164
+
+    blind_index :document_id,
+                expression: ->(v) { v.to_s.strip.gsub(/[.\s-]/, "").presence }
+
+    blind_index :phone_e164,
+                expression: ->(v) { Contact.normalize_phone_digits(v) }
+  end
 
   EXPORT_RANSACKABLE_ATTRIBUTES = %w[
     kind owner_user_id source_kind updated_at
@@ -46,13 +71,49 @@ class Contact < ApplicationRecord
   # ---- Scopes ---------------------------------------------------------------
   scope :persons,   -> { where(kind: "person") }
   scope :companies, -> { where(kind: "company") }
-  scope :with_phone, -> { where.not(phone_normalized: [nil, ""]) }
+  # phone_normalized queda en claro para búsqueda parcial (ILIKE); PII principal cifrada.
+  scope :with_phone, lambda {
+    where(<<~SQL.squish)
+      (phone_e164_bidx IS NOT NULL AND phone_e164_bidx <> '')
+      OR (phone_normalized IS NOT NULL AND phone_normalized <> '')
+    SQL
+  }
 
   # ---- Helpers --------------------------------------------------------------
   def display_name
     return company_name if kind_company?
 
     [first_name, last_name].compact.join(" ").presence || email
+  end
+
+  # Dígitos E.164 para blind_index (búsqueda/duplicados exactos).
+  def self.normalize_phone_digits(value)
+    return nil if value.blank?
+
+    parsed = Phonelib.parse(value)
+    parsed.sanitized.presence if parsed.valid?
+  end
+
+  # Evita 500 en listados si hay ciphertext corrupto (encrypt fallido previo).
+  def phone_e164_safe
+    phone_e164
+  rescue Lockbox::DecryptionError, Lockbox::Error
+    nil
+  end
+
+  def document_id_safe
+    document_id
+  rescue Lockbox::DecryptionError, Lockbox::Error
+    nil
+  end
+
+  # Columna legado en claro (búsqueda ILIKE); no usar Lockbox.
+  def phone_normalized_legacy
+    self[:phone_normalized]
+  end
+
+  def phone_display_value
+    phone_e164_safe.presence || phone_normalized_legacy.presence
   end
 
   private
@@ -63,8 +124,8 @@ class Contact < ApplicationRecord
     if phone_e164.present?
       parsed = Phonelib.parse(phone_e164, country)
       if parsed.valid?
-        self.phone_e164       = parsed.e164
-        self.phone_normalized = parsed.sanitized # solo dígitos
+        self.phone_e164 = parsed.e164
+        self.phone_normalized = parsed.sanitized
       end
     end
   end
@@ -79,5 +140,17 @@ class Contact < ApplicationRecord
     return if phone_e164.blank?
 
     errors.add(:phone_e164, "no es un teléfono válido") unless Phonelib.valid?(phone_e164)
+  end
+
+  # Limpia columnas legado SIN pasar por Lockbox#update_columns (evita borrar ciphertext).
+  def self.clear_legacy_pii_columns!(scope = all)
+    scope.in_batches(of: 500) do |batch|
+      batch.update_all(
+        document_id: nil,
+        phone_e164: nil,
+        phone_normalized: nil,
+        updated_at: Time.current
+      )
+    end
   end
 end

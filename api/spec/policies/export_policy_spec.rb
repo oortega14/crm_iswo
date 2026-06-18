@@ -14,24 +14,19 @@ RSpec.describe ExportPolicy do
   let(:foreign_export) { create(:export, tenant: tenant, user: admin) }
 
   describe "index?" do
-    it "todo staff" do
-      [admin, manager, consultant, viewer].each do |u|
-        expect(described_class.new(u, Export.new).index?).to be(true)
-      end
+    it "solo admin y manager (RFC §6.7)" do
+      expect(described_class.new(admin,   Export.new).index?).to be(true)
+      expect(described_class.new(manager, Export.new).index?).to be(true)
+      expect(described_class.new(consultant, Export.new).index?).to be(false)
+      expect(described_class.new(viewer,     Export.new).index?).to be(false)
     end
   end
 
   describe "show?" do
-    it "admin/manager ven cualquier export" do
+    it "solo admin y manager" do
       expect(described_class.new(admin,   foreign_export).show?).to be(true)
       expect(described_class.new(manager, foreign_export).show?).to be(true)
-    end
-
-    it "el usuario dueño puede verlo" do
-      expect(described_class.new(consultant, own_export).show?).to be(true)
-    end
-
-    it "consultant NO ve exports ajenos" do
+      expect(described_class.new(consultant, own_export).show?).to be(false)
       expect(described_class.new(consultant, foreign_export).show?).to be(false)
     end
   end
@@ -64,8 +59,8 @@ RSpec.describe ExportPolicy do
       expect(described_class::Scope.new(manager, Export).resolve).to match_array([own_export, foreign_export])
     end
 
-    it "consultant y viewer ven solo los suyos" do
-      expect(described_class::Scope.new(consultant, Export).resolve).to match_array([own_export])
+    it "consultant y viewer no ven historial" do
+      expect(described_class::Scope.new(consultant, Export).resolve).to be_empty
       expect(described_class::Scope.new(viewer,     Export).resolve).to be_empty
     end
 

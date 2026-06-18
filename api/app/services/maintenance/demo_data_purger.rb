@@ -7,7 +7,7 @@ module Maintenance
   # El resto de tenants solo borra registros que coinciden con patrones demo.
   #
   # NO modifica: Tenant, User, Pipeline, ReferralNetwork, BantCriterion, LeadSource
-  # F5 (iswo/micasita/libranzas): sin landings de plantilla; solo borra demo/extras.
+  # F5 (iswo/micasita/libranzas): plantillas por vertical; solo borra demo/extras.
   class DemoDataPurger
     PROTECTED_ROLES = %w[admin manager consultant viewer].freeze
     DEFAULT_WIPE_SLUGS = %w[iswo micasita].freeze
@@ -163,7 +163,7 @@ module Maintenance
     end
 
     def reset_landing_templates!
-      puts "\n[Landings] Sincronizando (F5 sin plantillas; otros tenants: genéricas opcionales)..."
+      puts "\n[Landings] Sincronizando plantillas por tenant..."
       ActsAsTenant.without_tenant do
         Tenant.find_each do |tenant|
           ActsAsTenant.with_tenant(tenant) do

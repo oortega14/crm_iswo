@@ -9,8 +9,9 @@ RSpec.describe BriefingMailer, type: :mailer do
   let!(:stage) { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, position: 1) }
 
   before do
-    create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
-           owner_user: user, temperature: "hot", bant_score: 75)
+    opp = create(:opportunity, :skip_bant_recalc,
+                 tenant: tenant, pipeline: pipeline, pipeline_stage: stage, owner_user: user)
+    opp.update_columns(temperature: "hot", bant_score: 75)
   end
 
   it "envía el briefing diario al email del usuario" do

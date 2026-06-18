@@ -3,14 +3,6 @@
 module Api
   module V1
     module Public
-      # ========================================================================
-      # Public::LandingFormSubmissionsController — intake público de leads
-      # ========================================================================
-      # Endpoint SIN autenticación. El SPA público postea aquí y:
-      #   1. Se crea LandingFormSubmission con payload + UTM.
-      #   2. LandingSubmissionProcessor (job) resuelve/crea Contact + Opportunity.
-      #   3. Se incrementa lead_count de la landing.
-      # ========================================================================
       class LandingFormSubmissionsController < BaseController
         skip_before_action :authenticate_user!, raise: false
 
@@ -30,33 +22,39 @@ module Api
             user_agent:   request.user_agent
           )
 
-          if submission.save
-            landing.increment!(:lead_count)
-            if defined?(LandingSubmissionProcessor)
-              LandingSubmissionProcessor.new(submission).call
-              submission.reload
-            end
-
-            render json: {
-              data: {
-                id:              submission.id,
-                status:          "received",
-                opportunity_id:  submission.opportunity_id,
-                contact_id:      submission.contact_id
-              }
-            }, status: :created
-          else
-            render json: { error: "unprocessable_entity",
-                           details: submission.errors.as_json(full_messages: true) },
-                   status: :unprocessable_entity
+          unless submission.save
+            return render json: {
+              error:   "unprocessable_entity",
+              details: submission.errors.as_json(full_messages: true)
+            }, status: :unprocessable_entity
           end
+
+          unless LandingSubmissionProcessor.new(submission).call
+            submission.reload
+            return render json: {
+              error:   "processing_failed",
+              message: submission.process_error.presence ||
+                       "No se pudo crear el contacto u oportunidad. Revisa pipeline y usuarios del tenant.",
+              data:    { id: submission.id, status: "failed" }
+            }, status: :unprocessable_entity
+          end
+
+          landing.increment!(:lead_count)
+          submission.reload
+
+          render json: {
+            data: {
+              id:             submission.id,
+              status:         "received",
+              opportunity_id: submission.opportunity_id,
+              contact_id:     submission.contact_id
+            }
+          }, status: :created
         end
 
         private
 
         def payload_params
-          # Acepta cualquier campo del form (GrapeJS es libre). Se sanitiza en
-          # el procesador, acá solo guardamos el hash completo.
           params.fetch(:payload, {}).permit!.to_h
         end
       end

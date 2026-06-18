@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatRailsError } from '@/lib/api'
 import { createOpportunityReminder, type ReminderChannel } from '@/lib/reminderApi'
+import { REMINDER_CHANNEL_OPTIONS } from '@/lib/reminderChannels'
 import { OpportunityLeadPicker } from '@/components/reminders/OpportunityLeadPicker'
 import {
   invalidateNotificationsQueries,
@@ -38,6 +39,19 @@ interface ReminderDialogProps {
   defaultOpportunityId?: string
 }
 
+function buildDefaultFormState(defaultOpportunityId?: string) {
+  const dueAt = new Date(Date.now() + 2 * 60 * 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    title: '',
+    description: '',
+    dueDate: `${dueAt.getFullYear()}-${pad(dueAt.getMonth() + 1)}-${pad(dueAt.getDate())}`,
+    dueTime: `${pad(dueAt.getHours())}:${pad(dueAt.getMinutes())}`,
+    channel: 'email' as ReminderChannel,
+    linkedOpportunity: defaultOpportunityId || '',
+  }
+}
+
 export function ReminderDialog({
   open,
   onOpenChange,
@@ -45,18 +59,7 @@ export function ReminderDialog({
   defaultOpportunityId,
 }: ReminderDialogProps) {
   const queryClient = useQueryClient()
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const defaultDate = tomorrow.toISOString().split('T')[0]
-
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    dueDate: defaultDate,
-    dueTime: '',
-    channel: 'in_app' as ReminderChannel,
-    linkedOpportunity: defaultOpportunityId || '',
-  })
+  const [formData, setFormData] = useState(() => buildDefaultFormState(defaultOpportunityId))
 
   useEffect(() => {
     if (open && defaultOpportunityId) {
@@ -92,14 +95,7 @@ export function ReminderDialog({
       onCreated?.()
       toast.success('Recordatorio creado exitosamente')
       onOpenChange(false)
-      setFormData({
-        title: '',
-        description: '',
-        dueDate: defaultDate,
-        dueTime: '',
-        channel: 'in_app',
-        linkedOpportunity: defaultOpportunityId || '',
-      })
+      setFormData(buildDefaultFormState(defaultOpportunityId))
     },
     onError: (error: unknown) => {
       toast.error(formatRailsError(error, 'Error al crear el recordatorio'))
@@ -121,7 +117,7 @@ export function ReminderDialog({
         <DialogHeader>
           <DialogTitle>Nuevo Recordatorio</DialogTitle>
           <DialogDescription>
-            Crea un recordatorio vinculado a una oportunidad (canal in-app, email o WhatsApp).
+            Tarea interna para ti o tu equipo. El aviso al vencer llega al consultor asignado, nunca al lead.
           </DialogDescription>
         </DialogHeader>
 
@@ -138,12 +134,12 @@ export function ReminderDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Descripcion (opcional)</Label>
+            <Label htmlFor="description">Notas (opcional)</Label>
             <Textarea
               id="description"
               value={formData.description}
               onChange={(e) => handleChange('description', e.target.value)}
-              placeholder="Detalles adicionales..."
+              placeholder="Detalles de la tarea (no el canal de aviso)..."
               rows={2}
             />
           </div>
@@ -171,7 +167,7 @@ export function ReminderDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="channel">Canal</Label>
+            <Label htmlFor="channel">Cómo avisarte al vencer</Label>
             <Select
               value={formData.channel}
               onValueChange={(value) => handleChange('channel', value)}
@@ -180,11 +176,27 @@ export function ReminderDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="in_app">En app</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                {REMINDER_CHANNEL_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              {REMINDER_CHANNEL_OPTIONS.find((o) => o.value === formData.channel)?.description}
+              {' '}
+              En local, los correos no van a tu bandeja real: revisa{' '}
+              <a
+                href="http://localhost:3000/letter_opener"
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                letter_opener
+              </a>
+              .
+            </p>
           </div>
 
           <div className="space-y-2">

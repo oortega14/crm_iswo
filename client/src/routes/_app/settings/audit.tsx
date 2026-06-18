@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
+import { currentAuth } from '@/lib/authGuards'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileSearch, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -57,8 +58,8 @@ const ENTITY_TYPES = [
 ]
 
 export const Route = createFileRoute('/_app/settings/audit')({
-  beforeLoad: ({ context }) => {
-    const role = context.auth.user?.role
+  beforeLoad: () => {
+    const role = currentAuth().user?.role
     if (role !== 'admin' && role !== 'manager') {
       throw redirect({ to: '/settings' })
     }

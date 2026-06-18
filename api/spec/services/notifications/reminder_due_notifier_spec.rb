@@ -33,6 +33,7 @@ RSpec.describe Notifications::ReminderDueNotifier do
 
     n = user.notifications.kind_reminder_due.last
     expect(n.title).to eq("Llamar cliente")
+    expect(n.body).to include("Recordatorio vencido")
     expect(n.body).to include("Confirmar propuesta")
     expect(n.body).to include("correo")
     expect(n.resource).to eq(opportunity)

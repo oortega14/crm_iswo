@@ -9,7 +9,10 @@ module Api
       include ExportAuditable
       include ExportDownloadable
 
-      before_action :set_opportunity, only: %i[show update destroy move_stage assign merge recalculate_bant classify sync_temperature]
+      before_action :set_opportunity, only: %i[
+        show update destroy move_stage assign merge recalculate_bant
+        classify sync_temperature temperature_context
+      ]
 
       # GET /api/v1/opportunities
       def index
@@ -39,19 +42,19 @@ module Api
           scope = scope.where(temperature: params[:temperature])
         end
 
-        referred_ids = ReferralNetwork.active.pluck(:referred_user_id).to_set
 
         render_collection(
           scope.order(last_activity_at: :desc),
           with:    OpportunitySerializer,
           include: [:owner_user, :lead_source, :contact],
-          params:  { referred_user_ids: referred_ids }
+          params:  opportunity_serializer_params
         )
       end
 
       def show
         authorize @opportunity
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact],
+                        params: opportunity_serializer_params)
       end
 
       def create
@@ -88,13 +91,11 @@ module Api
           owner_user:        current_user,
           currency:          current_tenant.currency
         )
+        @opportunity.preserve_temperature_on_bant_recalc = explicit_temp.present?
         if @opportunity.save
           log_action!("create", @opportunity.attributes)
           notify_new_lead!(@opportunity)
           flag_duplicates_for!(@opportunity, contact)
-          if explicit_temp.blank? && defined?(Opportunities::TemperatureCalculator)
-            Opportunities::TemperatureCalculator.new(@opportunity.reload).apply!
-          end
           render_created(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
         else
           render_unprocessable(@opportunity)
@@ -116,12 +117,15 @@ module Api
         attrs = update_params.to_h
         stage_in_request = stage_id_in_attrs?(attrs)
         apply_stage_status!(attrs)
+        @opportunity.preserve_temperature_on_bant_recalc = temperature_param_explicit?
         if @opportunity.update(attrs)
-          if bant_in && defined?(Opportunities::BantScorer)
-            Opportunities::BantScorer.new(@opportunity).call_and_persist!
-            @opportunity.reload
-          end
-          recalc_temp = !temperature_param_explicit? && !bant_in
+          bant_recalc = @opportunity.saved_change_to_estimated_value? ||
+                        (@opportunity.saved_change_to_custom_fields? && bant_in)
+          auto_queued = enqueue_auto_temperature_classify!(
+            changed_keys: @opportunity.saved_changes.keys,
+            source:       "auto_save"
+          )
+          recalc_temp = !temperature_param_explicit? && !bant_recalc && !auto_queued
           @opportunity.touch_activity!(recalc_temperature: recalc_temp)
           log_action!("update", diff(before, @opportunity.attributes))
           if @opportunity.pipeline_stage_id != before_stage_id
@@ -131,7 +135,10 @@ module Api
               automatic:  bant_in && !stage_in_request
             )
           end
-          render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
+          render_opportunity_resource(
+            @opportunity,
+            meta: temperature_classification_meta(auto_queued)
+          )
         else
           render_unprocessable(@opportunity)
         end
@@ -195,7 +202,8 @@ module Api
 
         notify_stage_change!(from_stage: from_stage, to_stage: new_stage) if from != new_stage.id
 
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact],
+                        params: opportunity_serializer_params)
       end
 
       # POST /api/v1/opportunities/:id/assign  { owner_user_id }
@@ -205,7 +213,8 @@ module Api
         from = @opportunity.owner_user_id
         @opportunity.update!(owner_user_id: new_owner.id)
         log_action!("assign", { from: from, to: new_owner.id })
-        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact])
+        render_resource(@opportunity, with: OpportunitySerializer, include: [:owner_user, :lead_source, :contact],
+                        params: opportunity_serializer_params)
       end
 
       # POST /api/v1/opportunities/:id/merge  { target_id }
@@ -241,19 +250,34 @@ module Api
         render json: payload, status: :ok
       end
 
+      # GET /api/v1/opportunities/:id/temperature_context — señales del lead para la UI / IA
+      def temperature_context
+        authorize @opportunity, :show?
+        ctx = Opportunities::TemperatureContext.new(@opportunity.reload)
+        render json: {
+          data: {
+            signal_count:        ctx.signals.size,
+            data_considered:     ctx.data_considered,
+            last_classification: Opportunities::TemperatureAutoClassifier.read_cached_result(@opportunity.id)
+          }
+        }, status: :ok
+      end
+
       # POST /api/v1/opportunities/:id/sync_temperature — reglas BANT + actividad (sin IA)
       def sync_temperature
         authorize @opportunity, :update?
         calc = Opportunities::TemperatureCalculator.new(@opportunity).apply!
         log_action!("classify", { temperature: calc.temperature, ai_used: false, source: "rules" })
 
+        ctx = Opportunities::TemperatureContext.new(@opportunity)
         render json: {
           data:      OpportunitySerializer.new(@opportunity.reload, include: [:owner_user, :lead_source, :contact]).serializable_hash[:data],
           ai_result: {
-            temperature: calc.temperature,
-            reasoning:   calc.reasoning,
-            next_action: calc.next_action,
-            ai_used:     false
+            temperature:     calc.temperature,
+            reasoning:       calc.reasoning,
+            next_action:     calc.next_action,
+            ai_used:         false,
+            data_considered: ctx.data_considered
           }
         }, status: :ok
       end
@@ -275,6 +299,20 @@ module Api
           }.compact
         )
 
+        Opportunities::TemperatureAutoClassifier.store_result!(
+          @opportunity.id,
+          {
+            temperature:     result.temperature,
+            reasoning:       result.reasoning,
+            next_action:     result.next_action,
+            ai_used:         result.ai_used?,
+            fallback_reason: result.fallback_reason,
+            data_considered: result.data_considered,
+            source:          "manual",
+            classified_at:   Time.current.iso8601
+          }
+        )
+
         render json: classify_response_payload(result, classifier), status: :ok
       end
 
@@ -287,11 +325,13 @@ module Api
         scope = policy_scope(Opportunity).kept.where(pipeline: pipeline).includes(:contact, :owner_user)
         grouped = scope.group_by(&:pipeline_stage_id)
 
+        ser_params = opportunity_serializer_params
         render json: {
           data: stages.map do |stage|
+            opps = grouped[stage.id] || []
             {
               stage:         PipelineStageSerializer.new(stage).serializable_hash[:data],
-              opportunities: OpportunitySerializer.new(grouped[stage.id] || []).serializable_hash[:data] || []
+              opportunities: OpportunitySerializer.new(opps, params: ser_params).serializable_hash[:data] || []
             }
           end
         }, status: :ok
@@ -322,7 +362,10 @@ module Api
 
       def set_opportunity
         @opportunity = policy_scope(Opportunity).kept
-                                               .includes(:lead_source, :owner_user, :contact)
+                                               .includes(
+                                                 :lead_source, :owner_user, :contact, :pipeline_stage, :pipeline,
+                                                 :opportunity_logs, :reminders
+                                               )
                                                .find(params[:id])
       end
 
@@ -434,31 +477,50 @@ module Api
       end
 
       def maybe_auto_classify_with_claude!
-        return {} unless Opportunities::AiClassifier.auto_classify_on_bant?
+        return {} unless Opportunities::AiClassifier.auto_classify_enabled?
 
-        result = Opportunities::AiClassifier.new(@opportunity).call
-        return { temperature_ai: { ai_used: false, fallback_reason: result.fallback_reason } } unless result.ai_used?
+        payload = Opportunities::TemperatureAutoClassifier.new(
+          @opportunity,
+          source:      "auto_bant",
+          user:        current_user,
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent
+        ).call
+        return {} unless payload
 
-        @opportunity.update!(temperature: result.temperature)
-        log_action!(
-          "classify",
-          {
-            temperature: result.temperature,
-            ai_used:     true,
-            model:       Opportunities::AiClassifier.model_name,
-            source:      "auto_bant"
-          }
-        )
-
+        @opportunity.reload
         {
-          temperature_ai: {
-            ai_used:     true,
-            temperature: result.temperature,
-            reasoning:   result.reasoning,
-            next_action: result.next_action,
-            model:       Opportunities::AiClassifier.model_name
-          }
+          temperature_ai: payload.merge(model: Opportunities::AiClassifier.model_name)
         }
+      end
+
+      def enqueue_auto_temperature_classify!(changed_keys:, source:)
+        return false if temperature_param_explicit?
+
+        Opportunities::TemperatureAutoClassifier.enqueue_for_opportunity!(
+          opportunity:  @opportunity,
+          source:       source,
+          user:         current_user,
+          changed_keys: changed_keys,
+          ip_address:   request.remote_ip,
+          user_agent:   request.user_agent
+        )
+      end
+
+      def temperature_classification_meta(queued)
+        return {} unless queued
+
+        { temperature_classification: { queued: true, auto: true } }
+      end
+
+      def render_opportunity_resource(record, meta: {}, status: :ok)
+        payload = OpportunitySerializer.new(
+          record,
+          include: [:owner_user, :lead_source, :contact],
+          params:  opportunity_serializer_params
+        ).serializable_hash
+        payload[:meta] = meta if meta.present?
+        render json: payload, status: status
       end
 
       def classify_response_payload(result, classifier = nil)
@@ -469,7 +531,8 @@ module Api
             reasoning:       result.reasoning,
             next_action:     result.next_action,
             ai_used:         result.ai_used?,
-            fallback_reason: result.fallback_reason
+            fallback_reason: result.fallback_reason,
+            data_considered: result.data_considered
           },
           meta:      {
             claude_configured: Opportunities::AiClassifier.configured?,
@@ -543,7 +606,7 @@ module Api
         joined.where(
           "opportunities.title ILIKE :q OR contacts.first_name ILIKE :q OR " \
           "contacts.last_name ILIKE :q OR contacts.company_name ILIKE :q OR contacts.email ILIKE :q OR " \
-          "contacts.phone_e164 ILIKE :phone OR contacts.phone_normalized ILIKE :phone",
+          "contacts.phone_normalized ILIKE :phone",
           q: like, phone: phone_like
         )
       end
@@ -606,6 +669,10 @@ module Api
         else
           scope.where(json_sql, *binds)
         end
+      end
+
+      def opportunity_serializer_params
+        { current_user: current_user, tenant: current_tenant }
       end
 
     end

@@ -12,6 +12,8 @@ module Reminders
     end
 
     def call
+      return false unless Reminders::StaffRecipient.eligible?(@reminder.user)
+
       deliver_email!
       notify_in_app!
       true

@@ -32,6 +32,27 @@ namespace :staging do
     puts "CRM ISWO — staging preflight (RFC §9)"
     puts "Entorno: #{Rails.env}#{production_check ? ' (checks estrictos)' : ' (Redis/Sidekiq = advertencia)'}\n\n"
 
+    # --- Fase 1 seguridad (Opción 1 infra) ----------------------------------
+    puts "Seguridad Fase 1 (security:infra):\n"
+    begin
+      Rake::Task["security:infra"].reenable
+      Rake::Task["security:infra"].invoke
+    rescue SystemExit => e
+      critical_failures += 1 if e.status.to_i.nonzero?
+    end
+    puts ""
+
+    if DatabaseTenantRls.enabled?
+      puts "Seguridad Fase 3 (security:rls):\n"
+      begin
+        Rake::Task["security:rls"].reenable
+        Rake::Task["security:rls"].invoke
+      rescue SystemExit => e
+        critical_failures += 1 if e.status.to_i.nonzero?
+      end
+      puts ""
+    end
+
     # --- Infraestructura ----------------------------------------------------
     begin
       ActiveRecord::Base.connection.execute("SELECT 1")
@@ -67,10 +88,17 @@ namespace :staging do
     # --- Sidekiq / jobs RFC §6.4, §9 ----------------------------------------
     schedule = YAML.load_file(Rails.root.join("config/sidekiq.yml")).dig(:scheduler, :schedule) || {}
     reminder_cron = schedule.dig("reminder_notification_job", "cron")
+    recurring = YAML.load_file(Rails.root.join("config/recurring.yml")).fetch(Rails.env, {}) rescue {}
+    solid_recurring = recurring.key?("reminder_notification_job")
+    reminder_scheduled = reminder_cron == "* * * * *" || solid_recurring
     report.call(
       "ReminderNotificationJob programado (cada minuto)",
-      reminder_cron == "* * * * *",
-      reminder_cron || "no encontrado en sidekiq.yml"
+      reminder_scheduled,
+      if solid_recurring
+        "Solid Queue recurring (config/recurring.yml)"
+      else
+        reminder_cron || "no encontrado en sidekiq.yml ni recurring.yml"
+      end
     )
 
     begin

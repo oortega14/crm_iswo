@@ -45,6 +45,20 @@ RSpec.describe "Api::V1::Public::LandingFormSubmissions", type: :request do
       }.to change { landing.reload.lead_count }.by(1)
     end
 
+    it "422 si el procesador falla (sin pipeline)" do
+      landing
+
+      expect {
+        post "/api/v1/public/landings/#{landing.slug}/submit",
+             params: body,
+             headers: { "Content-Type" => "application/json", "X-Tenant-Slug" => tenant.slug }
+      }.not_to change(Opportunity, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(json["error"]).to eq("processing_failed")
+      expect(json["message"]).to be_present
+    end
+
     it "404 si la landing no existe o no está publicada" do
       draft = create(:landing_page, tenant: tenant, slug: "borrador", published: false)
       expect {

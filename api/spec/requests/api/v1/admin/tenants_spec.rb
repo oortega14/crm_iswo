@@ -25,9 +25,22 @@ RSpec.describe "Api::V1::Admin::Tenants", type: :request do
       expect(slugs).to include(platform.slug, default_tenant.slug)
     end
 
+    it "lista tenants sin ActsAsTenant global (como producción)", :without_tenant do
+      get "/api/v1/admin/tenants", headers: platform_headers
+      expect(response).to have_http_status(:ok)
+      expect(json["data"]).to be_an(Array)
+    end
+
     it "deniega admin comercial de otro tenant" do
       get "/api/v1/admin/tenants", headers: auth_headers(commercial_admin)
       expect(response).to have_http_status(:forbidden)
+    end
+
+    it "400 si falta el tenant plataforma en la base", :without_tenant do
+      ActsAsTenant.without_tenant { Tenant.where(slug: PlatformTenant::SLUG).destroy_all }
+      get "/api/v1/admin/tenants", headers: platform_headers
+      expect(response).to have_http_status(:bad_request)
+      expect(json["error"]).to eq("tenant_not_found")
     end
   end
 

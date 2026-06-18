@@ -4,6 +4,7 @@ import { ArrowRight, CalendarDays, LayoutGrid, Plus, Sparkles, TrendingUp, BarCh
 import { useEffect, useMemo, useState } from 'react'
 import { getAuthQueryScope, queryKeys } from '@/lib/queryClient'
 import { tenantHasModule, tenantShowBant } from '@/lib/tenantModules'
+import { canUseReminders } from '@/lib/reminderChannels'
 import {
   fetchDashboardActivity,
   fetchDashboardBantDistribution,
@@ -67,7 +68,7 @@ function DashboardPage() {
 
   const hasOpportunities = tenantHasModule(tenant, 'opportunities')
   const hasPipeline = tenantHasModule(tenant, 'pipeline')
-  const hasReminders = tenantHasModule(tenant, 'reminders')
+  const hasReminders = tenantHasModule(tenant, 'reminders') && canUseReminders(user?.role)
   const showBant = tenantShowBant(tenant)
 
   // staleTime: 0 → siempre refetch al montar o enfocar la ventana

@@ -3,14 +3,12 @@
 # ============================================================================
 # ReminderPolicy
 # ============================================================================
-# - Todo staff puede ver recordatorios del tenant.
-# - Consultant ve/edita los suyos o los de sus opps; ve (solo lectura) los de opps de su red.
-# - Manager/admin gestionan todo.
+# Recordatorios solo para admin, manager y consultant (no viewer ni leads).
 # ============================================================================
 class ReminderPolicy < ApplicationPolicy
-  def index?    = staff?
-  def show?     = staff? && visible?
-  def create?   = admin? || manager? || consultant?
+  def index?    = operational_staff?
+  def show?     = operational_staff? && visible?
+  def create?   = operational_staff?
   def update?   = admin? || manager? || owner?
   def destroy?  = admin? || manager? || owner?
 
@@ -21,10 +19,10 @@ class ReminderPolicy < ApplicationPolicy
     def resolve
       return scope.none unless user
 
-      if admin? || manager? || viewer?
+      if admin? || manager?
         scope.all
       elsif consultant?
-        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user)
+        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user, ActsAsTenant.current_tenant)
         opp_ids = Opportunity.where(owner_user_id: owner_ids).select(:id)
         scope.where(user_id: user.id)
              .or(scope.where(opportunity_id: opp_ids))
@@ -36,8 +34,9 @@ class ReminderPolicy < ApplicationPolicy
 
   private
 
+  def operational_staff? = admin? || manager? || consultant?
   def owner?   = record.respond_to?(:user_id) && record.user_id == user&.id
-  def visible? = admin? || manager? || viewer? || owner? || network_reminder?
+  def visible? = admin? || manager? || owner? || network_reminder?
 
   def network_reminder?
     return false unless consultant? && record.respond_to?(:opportunity)

@@ -300,24 +300,25 @@ class WebhookProcessorJob < ApplicationJob
   end
 
   def upsert_contact(tenant, phone, profile_name: nil)
-    normalized = Phonelib.parse(phone).sanitized
-    contact = tenant.contacts.find_by(phone_normalized: normalized)
+    parsed = Phonelib.parse(phone)
+    e164 = parsed.e164
+    raise ArgumentError, "teléfono WhatsApp inválido" if e164.blank?
+
+    contact = tenant.contacts.find_by(phone_e164: e164)
     return contact if contact
 
     first_name, last_part = split_whatsapp_profile_name(profile_name)
-    last_name = last_part.presence || normalized.last(4).presence || "wa"
+    last_name = last_part.presence || parsed.sanitized.to_s.last(4).presence || "wa"
 
     tenant.contacts.create!(
-      first_name:       first_name,
-      last_name:        last_name,
-      phone_e164:       phone,
-      phone_normalized: normalized,
-      source_kind:      "whatsapp",
-      source_label:     "inbound"
+      first_name:   first_name,
+      last_name:    last_name,
+      phone_e164:   e164,
+      source_kind:  "whatsapp",
+      source_label: "inbound"
     )
   rescue ActiveRecord::RecordNotUnique
-    # Otro worker creó el contacto concurrentemente; reutilizamos el existente.
-    tenant.contacts.find_by!(phone_normalized: normalized)
+    tenant.contacts.find_by!(phone_e164: e164)
   end
 
   def split_whatsapp_profile_name(name)

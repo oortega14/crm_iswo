@@ -13,6 +13,7 @@ RSpec.describe "Api::V1::AiCapabilities", type: :request do
       expect(json.dig("data", "claude_temperature")).to include(
         "available",
         "model",
+        "auto_on_save",
         "auto_on_bant_recalc"
       )
     end

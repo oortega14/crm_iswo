@@ -14,7 +14,10 @@ module Opportunities
 
     attr_reader :last_status, :last_error
 
-    Result = Struct.new(:temperature, :reasoning, :next_action, :ai_used, :fallback_reason, keyword_init: true) do
+    Result = Struct.new(
+      :temperature, :reasoning, :next_action, :ai_used, :fallback_reason, :data_considered,
+      keyword_init: true
+    ) do
       def ai_used? = ai_used
     end
 
@@ -34,10 +37,14 @@ module Opportunities
         ENV.fetch("ANTHROPIC_MODEL", DEFAULT_MODEL).to_s.strip.presence || DEFAULT_MODEL
       end
 
-      def auto_classify_on_bant?
+      def auto_classify_enabled?
         configured? && ActiveModel::Type::Boolean.new.cast(
-          ENV.fetch("ANTHROPIC_AUTO_CLASSIFY_TEMPERATURE", "false")
+          ENV.fetch("ANTHROPIC_AUTO_CLASSIFY_TEMPERATURE", "true")
         )
+      end
+
+      def auto_classify_on_bant?
+        auto_classify_enabled?
       end
     end
 
@@ -139,7 +146,8 @@ module Opportunities
         reasoning:       parsed["reasoning"].to_s.truncate(500),
         next_action:     parsed["next_action"].to_s.truncate(300),
         ai_used:         true,
-        fallback_reason: nil
+        fallback_reason: nil,
+        data_considered: context.data_considered
       )
     rescue JSON::ParserError
       temp =
@@ -152,7 +160,8 @@ module Opportunities
         reasoning:       text.truncate(400),
         next_action:     nil,
         ai_used:         true,
-        fallback_reason: nil
+        fallback_reason: nil,
+        data_considered: context.data_considered
       )
     end
 
@@ -174,6 +183,10 @@ module Opportunities
         - "warm": interés real pero necesita nurturing o seguimiento en días.
         - "cold": bajo compromiso, sin actividad o BANT débil.
 
+        Debes basarte en TODO el dossier: contacto, oportunidad, BANT, campos personalizados del
+        vertical, formulario de landing y actividad reciente. Cita en reasoning al menos 2 datos concretos
+        del dossier (p. ej. valor, campo custom, etapa, origen).
+
         Responde ÚNICAMENTE JSON válido (sin markdown):
         {"temperature":"hot|warm|cold","reasoning":"...","next_action":"..."}
         reasoning: español, máx 100 palabras, cita datos concretos del lead.
@@ -182,42 +195,11 @@ module Opportunities
     end
 
     def user_prompt
-      bant = (@opp.bant_data || {}).with_indifferent_access
-      bant_parts = []
-      %i[budget authority need timeline].each do |dim|
-        sc = bant.dig(dim, :score).to_i
-        bant_parts << "#{dim}: #{sc}/100" if sc.positive?
-      end
+      context.prompt_text
+    end
 
-      days_since =
-        if @opp.last_activity_at
-          ((Time.current - @opp.last_activity_at) / 86_400).round
-        end
-
-      recent_logs = @opp.opportunity_logs.order(created_at: :desc).limit(5).map do |log|
-        "- #{log.action} (#{log.created_at&.strftime('%d/%m')})"
-      end
-
-      lines = []
-      lines << "Oportunidad: #{@opp.title}"
-      lines << "Contacto: #{@opp.contact&.display_name}"
-      lines << "Empresa: #{@opp.contact&.company_name}" if @opp.contact&.company_name.present?
-      if @opp.contact
-        lines << "Teléfono/email: #{[@opp.contact.phone_normalized, @opp.contact.email].compact.join(' / ')}"
-      end
-      lines << "Origen: #{@opp.lead_source&.name || 'desconocido'}"
-      lines << "Valor estimado: #{@opp.estimated_value} #{@opp.currency}"
-      lines << "Estado CRM: #{@opp.status} · Etapa: #{@opp.pipeline_stage&.name}"
-      lines << "BANT total: #{@opp.bant_score}/100#{bant_parts.any? ? " (#{bant_parts.join(', ')})" : ''}"
-      lines << "Días sin actividad: #{days_since}" if days_since
-      lines << "Temperatura actual en sistema: #{@opp.temperature}"
-      lines << "Notas: #{@opp.notes.truncate(400)}" if @opp.notes.present?
-      if recent_logs.any?
-        lines << "Actividad reciente:"
-        lines.concat(recent_logs)
-      end
-
-      lines.join("\n")
+    def context
+      @context ||= TemperatureContext.new(@opp)
     end
 
     def rule_based_result(reason)
@@ -227,7 +209,8 @@ module Opportunities
         reasoning:       calc.reasoning,
         next_action:     calc.next_action,
         ai_used:         false,
-        fallback_reason: reason
+        fallback_reason: reason,
+        data_considered: context.data_considered
       )
     end
   end

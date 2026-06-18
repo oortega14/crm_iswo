@@ -27,7 +27,7 @@ VERTICALS = [
       name:          "ISWO",
       slug:          "iswo",
       legal_name:    "ISWO SAS",
-      primary_color: "#0F172A",
+      primary_color: "#1D4ED8",
       currency:      "COP",
       locale:        "es-CO",
       timezone:      "America/Bogota",
@@ -83,7 +83,7 @@ VERTICALS = [
       name:          "Mi Casita",
       slug:          "micasita",
       legal_name:    "Mi Casita Inmobiliaria SAS",
-      primary_color: "#1D4ED8",
+      primary_color: "#B45309",
       currency:      "COP",
       locale:        "es-CO",
       timezone:      "America/Bogota",
@@ -145,7 +145,7 @@ VERTICALS = [
       name:          "Libranzas ISWO",
       slug:          "libranzas",
       legal_name:    "Libranzas ISWO SAS",
-      primary_color: "#166534",
+      primary_color: "#047857",
       currency:      "COP",
       locale:        "es-CO",
       timezone:      "America/Bogota",
@@ -364,13 +364,13 @@ VERTICALS.each do |config|
 
     seed_landing_pages(tenant)
     lp_count = LandingPage.where(tenant: tenant).count
-    puts "     #{lp_count} landing pages (módulo activo; F5 sin plantillas precargadas)"
+    puts "     #{lp_count} landing pages#{ %w[micasita iswo libranzas].include?(tenant.slug) ? ' (2 publicadas + 1 borrador)' : ' (sin plantillas F5)'}"
 
   end
 end
 
-# Quita plantillas de producto en verticales F5; no recrea landings en iswo/micasita/libranzas
-puts "\n[Landings — verticales F5 sin plantillas]"
+# Quita plantillas fuera de catálogo en verticales F5; sincroniza ISWO/Mi Casita/libranzas
+puts "\n[Landings — verticales F5]"
 ActsAsTenant.without_tenant do
   Landings::TenantSetup::VERTICAL_SEED_SLUGS.each do |slug|
     tenant = Tenant.find_by(slug: slug)

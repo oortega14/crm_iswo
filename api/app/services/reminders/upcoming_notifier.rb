@@ -12,6 +12,7 @@ module Reminders
     end
 
     def call
+      return false unless Reminders::StaffRecipient.eligible?(@reminder.user)
       return false unless @reminder.status_pending?
       return false if @reminder.remind_at.blank? || @reminder.remind_at <= Time.current
 

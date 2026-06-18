@@ -1,0 +1,11 @@
+## Summary
+- Platform super-admin tenant (slug, seeder, admin tenants API, onboarding) and commercial gating for platform operators.
+- Login resolves tenant from email so stale X-Tenant headers cannot target the wrong tenant.
+- Reminder created/upcoming in-app notifications, Sidekiq jobs, mailers, and migration for upcoming notification tracking.
+- Platform users and audit visibility; CRM pipeline, duplicates, and reminder UI fixes.
+
+## Test plan
+- [ ] Log in as platform super-admin and open tenant onboarding / admin tenants API.
+- [ ] Log in with email only (no micasita header) on multi-tenant user.
+- [ ] Create reminder and confirm created + upcoming notifications.
+- [ ] Smoke-test opportunities kanban, duplicates, and settings users/audit.

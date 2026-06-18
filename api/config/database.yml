@@ -55,12 +55,15 @@ test:
 # Read https://guides.rubyonrails.org/configuring.html#configuring-a-database
 # for a full overview on how database connection configuration can be specified.
 #
+# Fase 1 seguridad — tránsito app↔PostgreSQL (Opción 1 infra).
+# Producción: DB_SSLMODE=require (default). Dev/test: omitir o DB_SSLMODE=disable.
 production:
   primary: &primary_production
     <<: *default
     database: crm_iswo_production
     username: crm_iswo
     password: <%= ENV["CRM_ISWO_DATABASE_PASSWORD"] %>
+    sslmode: <%= ENV.fetch("DB_SSLMODE", "require") %>
   cache:
     <<: *primary_production
     database: crm_iswo_production_cache

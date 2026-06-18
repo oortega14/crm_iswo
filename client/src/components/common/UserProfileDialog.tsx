@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from '@tanstack/react-router'
+import { useRouter } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { UserRound } from 'lucide-react'
 import {
@@ -17,8 +17,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/stores/auth'
+import { logoutSession } from '@/lib/authSession'
 import api, { formatRailsError } from '@/lib/api'
-import { clearSessionQueryCache } from '@/lib/queryClient'
 import type { User } from '@/types'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -48,9 +48,8 @@ interface Props {
 }
 
 export function UserProfileDialog({ open, onOpenChange }: Props) {
-  const navigate = useNavigate()
+  const router = useRouter()
   const setUser = useAuthStore((s) => s.setUser)
-  const logout = useAuthStore((s) => s.logout)
 
   // Carga siempre datos frescos del backend al abrir
   const { data: meData, isLoading } = useQuery<MeResponse>({
@@ -116,17 +115,11 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
         },
       })
     },
-    onSuccess: async () => {
+    onSuccess: () => {
       toast.success('Contraseña actualizada. Inicia sesión de nuevo.')
-      clearSessionQueryCache()
-      logout()
       onOpenChange(false)
-      try {
-        await api.delete('/sessions')
-      } catch {
-        // La cookie de refresh ya fue revocada en el servidor.
-      }
-      navigate({ to: '/login' })
+      logoutSession()
+      void router.navigate({ to: '/login', replace: true })
     },
     onError: (err: unknown) =>
       toast.error(formatRailsError(err, 'No se pudo cambiar la contraseña')),

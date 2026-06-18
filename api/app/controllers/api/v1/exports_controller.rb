@@ -11,6 +11,7 @@ module Api
       before_action :set_export, only: %i[show download]
 
       def index
+        authorize Export, :index?
         scope = policy_scope(Export).where.not(status: "expired").order(created_at: :desc)
         render_collection(scope, with: ExportSerializer)
       end
@@ -85,7 +86,7 @@ module Api
       private
 
       def set_export
-        @export = current_tenant.exports.find(params[:id])
+        @export = policy_scope(Export).find(params[:id])
       end
 
     end

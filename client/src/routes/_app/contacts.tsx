@@ -136,8 +136,9 @@ function ContactsPage() {
   }
 
   const showOwnerFilter = userRole === 'admin' || userRole === 'manager'
-  const canCreateContact =
+  const canImportContacts =
     userRole === 'admin' || userRole === 'manager' || userRole === 'consultant'
+  const canCreateContact = canImportContacts
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(searchInput.trim()), 350)
@@ -244,6 +245,7 @@ function ContactsPage() {
 
   const canEditContact = (contact: ContactRow) => {
     if (userRole === 'viewer') return false
+    if (contact.canEdit === true) return true
     if (userRole === 'admin' || userRole === 'manager') return true
     return String(contact.ownerId ?? '') === String(currentUser?.id ?? '')
   }
@@ -332,7 +334,11 @@ function ContactsPage() {
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Contactos"
-        description="Solo datos del contacto. Pipeline, temperatura y valor en Oportunidades."
+        description={
+          userRole === 'consultant'
+            ? 'Tus contactos y los vinculados a tus oportunidades. Puedes importar desde Excel (RFC §6.7).'
+            : 'Solo datos del contacto. Pipeline, temperatura y valor en Oportunidades.'
+        }
       >
         <Button
           size="sm"
@@ -345,7 +351,7 @@ function ContactsPage() {
           <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">Actualizar</span>
         </Button>
-        {canCreateContact && (
+        {canImportContacts && (
           <>
             <Button
               size="sm"
@@ -357,10 +363,12 @@ function ContactsPage() {
               <Upload className="size-3.5" />
               <span className="hidden sm:inline">Importar</span>
             </Button>
-            <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo contacto
-            </Button>
+            {canCreateContact && (
+              <Button size="sm" className="shadow-sm" onClick={() => setIsCreateDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo contacto
+              </Button>
+            )}
           </>
         )}
       </PageHeader>

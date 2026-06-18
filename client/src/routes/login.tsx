@@ -1,17 +1,23 @@
-import { createFileRoute, redirect, useNavigate, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { redirectIfAuthenticated } from '@/lib/authGuards'
+import { waitForAuthBootstrap } from '@/lib/authSession'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useState, useMemo, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Building2 } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
+import { TenantLogoMark } from '@/components/brand/TenantLogoMark'
+import { resolveTenantBrand } from '@/lib/tenantBrand'
 import api, { formatRailsError } from '@/lib/api'
 import { clearSessionQueryCache, queryClient } from '@/lib/queryClient'
 import {
-  buildTenant,
   buildUserFromSession,
   extractBearerToken,
+  hydrateTenantBranding,
+  resolveInitialTenant,
+  resolveTenantSlug,
   type JsonApiResource,
 } from '@/lib/authSession'
 import { useAuthStore } from '@/stores/auth'
@@ -35,15 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DEFAULT_TENANT_MODULES } from '@/lib/tenantModules'
-import type { User } from '@/types'
-
-const defaultTenantSettings = {
-  modules: [...DEFAULT_TENANT_MODULES],
-  show_bant: true,
-  network_depth: 3,
-  stale_days: 7,
-}
+import type { Tenant, User } from '@/types'
 
 const loginSchema = z.object({
   email: z.string().email('Correo electrónico inválido'),
@@ -70,16 +68,6 @@ type SessionAttributes = {
   updated_at?: string
 }
 
-type TenantAttributes = {
-  name: string
-  slug: string
-  logo_url?: string | null
-  brand_color?: string
-  currency?: string
-  timezone?: string
-  created_at?: string
-}
-
 type SessionMeta = {
   tenant?: {
     id?: string | number
@@ -90,20 +78,16 @@ type SessionMeta = {
 
 export const Route = createFileRoute('/login')({
   validateSearch: loginSearchSchema,
-  beforeLoad: ({ context }) => {
-    if (context.auth.isAuthenticated) {
-      throw redirect({ to: '/' })
-    }
+  beforeLoad: async () => {
+    await waitForAuthBootstrap()
+    redirectIfAuthenticated()
   },
   component: LoginPage,
 })
 
 function LoginPage() {
-  const navigate = useNavigate()
+  const router = useRouter()
   const { tenant: tenantFromUrl } = Route.useSearch()
-  const login = useAuthStore((s) => s.login)
-  const setTenant = useAuthStore((s) => s.setTenant)
-  const setAccessToken = useAuthStore((s) => s.setAccessToken)
   const [showPassword, setShowPassword] = useState(false)
   const [ambiguousTenants, setAmbiguousTenants] = useState<TenantLoginOption[]>([])
   const [forceTenantPicker, setForceTenantPicker] = useState(false)
@@ -126,7 +110,7 @@ function LoginPage() {
       email: string
       password: string
       tenantSlug: string
-    }): Promise<{ user: User; token: string }> => {
+    }): Promise<{ user: User; token: string; tenant: Tenant | null; tenantSlug: string }> => {
       const headers: Record<string, string> = {}
       if (payload.tenantSlug) {
         headers['X-Tenant-Slug'] = payload.tenantSlug
@@ -135,7 +119,7 @@ function LoginPage() {
       const response = await api.post(
         '/sessions',
         { user: { email: payload.email, password: payload.password } },
-        { headers },
+        { headers, timeout: 15_000 },
       )
 
       const accessToken = extractBearerToken(response)
@@ -147,71 +131,31 @@ function LoginPage() {
       }
 
       const user = buildUserFromSession(sessionData)
-      setAccessToken(accessToken)
-      const tenantSlug =
-        sessionMeta.tenant?.slug?.trim().toLowerCase() ||
-        payload.tenantSlug ||
-        window.localStorage.getItem('crm-tenant-slug')?.trim().toLowerCase() ||
-        ''
+      const tenantSlug = resolveTenantSlug(payload.tenantSlug, sessionMeta.tenant)
 
       if (tenantSlug) {
         window.localStorage.setItem('crm-tenant-slug', tenantSlug)
       }
-      if (sessionMeta.tenant?.slug) {
-        setTenant({
-          id: String(sessionMeta.tenant.id ?? '0'),
-          name: sessionMeta.tenant.name ?? sessionMeta.tenant.slug,
-          subdomain: sessionMeta.tenant.slug,
-          primary_color: '#2563eb',
-          currency: 'COP',
-          timezone: 'America/Bogota',
-          settings: defaultTenantSettings,
-          created_at: new Date().toISOString(),
-        })
-      }
 
-      try {
-        const tenantResponse = await api.get('/tenant', {
-          headers: tenantSlug ? { 'X-Tenant-Slug': tenantSlug } : undefined,
-        })
-        const tenantData = tenantResponse.data?.data as JsonApiResource<TenantAttributes> | undefined
-        if (tenantData) {
-          setTenant(buildTenant(tenantData))
-        } else if (sessionMeta.tenant?.slug) {
-          setTenant({
-            id: String(sessionMeta.tenant.id || '0'),
-            name: sessionMeta.tenant.slug,
-            subdomain: sessionMeta.tenant.slug,
-            primary_color: '#2563eb',
-            currency: 'COP',
-            timezone: 'America/Bogota',
-            settings: defaultTenantSettings,
-            created_at: new Date().toISOString(),
-          })
-        }
-      } catch {
-        if (sessionMeta.tenant?.slug) {
-          setTenant({
-            id: String(sessionMeta.tenant.id || '0'),
-            name: sessionMeta.tenant.slug,
-            subdomain: sessionMeta.tenant.slug,
-            primary_color: '#2563eb',
-            currency: 'COP',
-            timezone: 'America/Bogota',
-            settings: defaultTenantSettings,
-            created_at: new Date().toISOString(),
-          })
-        }
-      }
+      const tenant = resolveInitialTenant(tenantSlug, sessionMeta.tenant)
 
-      return { user, token: accessToken }
+      return { user, token: accessToken, tenant, tenantSlug }
     },
     onSuccess: (data) => {
       clearSessionQueryCache(queryClient)
-      login(data.user, data.token)
-      const tenant = useAuthStore.getState().tenant
+      useAuthStore.getState().restoreSession({
+        user: data.user,
+        token: data.token,
+        tenant: data.tenant,
+      })
       toast.success(`Bienvenido, ${data.user.name}`)
-      navigate({ to: isPlatformTenant(tenant) ? PLATFORM_HOME : '/' })
+      void router.navigate({
+        to: isPlatformTenant(data.tenant) ? PLATFORM_HOME : '/',
+        replace: true,
+      })
+      if (data.tenantSlug) {
+        hydrateTenantBranding(data.token, data.tenantSlug)
+      }
     },
     onError: (error: unknown) => {
       const tenants = tenantsFromAmbiguousError(error)
@@ -255,19 +199,40 @@ function LoginPage() {
     ? watch('tenantSlug')?.trim().toLowerCase()
     : ''
 
+  const watchedTenantSlug = watch('tenantSlug')
+  const previewSlug = (
+    platformLoginUrl ||
+    (showTenantPicker ? watchedTenantSlug : tenantFromUrl) ||
+    'iswo'
+  )
+    ?.trim()
+    .toLowerCase()
+  const previewBrand = resolveTenantBrand(previewSlug)
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md overflow-hidden">
+        {previewBrand && (
+          <div
+            className="h-1 w-full"
+            style={{
+              backgroundImage: `linear-gradient(90deg, ${previewBrand.primary}, ${previewBrand.gradientTo})`,
+            }}
+            aria-hidden
+          />
+        )}
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Building2 className="size-6" />
+          <div className="mx-auto mb-4 flex justify-center">
+            <TenantLogoMark slug={previewSlug} size="lg" showLabel />
           </div>
           <CardTitle className="text-2xl">
-            {import.meta.env.VITE_APP_NAME || 'CRM ISWO'}
+            {previewBrand?.label ?? import.meta.env.VITE_APP_NAME ?? 'CRM ISWO'}
           </CardTitle>
           <CardDescription>
             {showTenantPicker
-              ? 'Plataforma ISWO — elige la empresa a la que ingresar'
+              ? previewBrand
+                ? `Acceso a ${previewBrand.label} — ingresa tus credenciales`
+                : 'Plataforma ISWO — elige la empresa a la que ingresar'
               : 'Ingresa con tu correo y contraseña; detectamos tu empresa automáticamente'}
           </CardDescription>
         </CardHeader>

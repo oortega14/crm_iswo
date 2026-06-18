@@ -14,6 +14,17 @@
 
 Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
 
+### Autenticación Claude Code (API key)
+
+Si aparece *«Your organization has disabled Claude subscription access»*, la org no permite `/login` con suscripción Pro/Max. Usa **API key** de [console.anthropic.com](https://console.anthropic.com):
+
+1. Pon la key en `api/.env`: `ANTHROPIC_API_KEY=sk-ant-api03-...`
+2. En WSL: `chmod +x .claude/anthropic_api_key.sh`
+3. Abre Claude Code en la raíz del repo (`.claude/settings.local.json` ya apunta `apiKeyHelper` a esa key)
+4. **No uses `/login`** con cuenta claude.ai; verifica con `/status` que auth = API key
+
+La misma key alimenta el clasificador IA del CRM (`AiClassifier`).
+
 ---
 
 ## Alcance global del CRM (todos los tenants y roles)
@@ -26,8 +37,8 @@ ni rol aislado:
 | **Multi-tenant** | `ActsAsTenant` + `current_tenant` en API; sin IDs de tenant fijos en código. Cada tenant ve solo sus datos. |
 | **Roles** | Comportamiento explícito para `admin`, `manager`, `consultant` y `viewer` donde aplique: Pundit en API, guards en SPA (`useUserRole`, `roles` en nav). |
 | **Caché SPA** | Claves de React Query con alcance `getAuthQueryScope()` (`subdomain:user:id`) al invalidar o listar datos sensibles. |
-| **Exportaciones (RFC §6.7)** | Crear/descargar masivo: admin/manager. Importar contactos: admin/manager/consultant. Historial async: cada usuario ve los suyos; admin/manager ven todos del tenant. |
-| **Consultores** | Scope propio en contactos/oportunidades/export (`Exports::ScopedCollection`, policies). Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. |
+| **Exportaciones (RFC §6.7)** | Pantalla `/exports`: solo admin/manager (export + import masivo). Consultor importa contactos desde `/contacts`; no exporta ni ve historial async. |
+| **Consultores** | Scope propio en contactos/oportunidades. Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. Sin pantalla `/exports`. |
 
 Si un feature solo funciona para un rol o tenant, es un bug salvo excepción documentada en el RFC.
 
@@ -171,11 +182,13 @@ revisión de producto si se requiere cumplimiento literal del stack tabulado.
 
 `ReminderNotificationJob` solo marca `status=sent` **después** de confirmar entrega:
 
-| Canal | Comportamiento |
-|-------|----------------|
-| **email** | `ReminderMailer#deliver_now` — si falla, `mark_failed!` |
-| **whatsapp** | `WhatsappDeliveryJob` recibe `reminder_id` y marca sent/failed según el estado del `WhatsappMessage` |
-| **in_app** | Crea `Notification` primero; si falla la creación, no marca sent |
+| Canal | Destinatario al vencer |
+|-------|------------------------|
+| **in_app** | Campana in-app del consultor asignado |
+| **email** | Correo al consultor + campana in-app |
+| **whatsapp** | WhatsApp al `User#phone` del consultor + campana in-app (nunca al lead) |
+
+Solo **admin, manager y consultant** pueden crear/recibir recordatorios (`viewer` excluido).
 
 ---
 

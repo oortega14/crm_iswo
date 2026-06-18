@@ -58,6 +58,20 @@ RSpec.describe Opportunity, type: :model do
       expect(opp.last_activity_at).to be_present
     end
 
+    it "recalcula bant_score automáticamente al crear con valor estimado" do
+      create(:bant_criterion, tenant: tenant)
+      opp = create(:opportunity, tenant: tenant, estimated_value: 5_000_000, bant_score: 0)
+      expect(opp.bant_score).to be > 0
+    end
+
+    it "recalcula bant_score al cambiar estimated_value" do
+      create(:bant_criterion, tenant: tenant)
+      opp = create(:opportunity, :skip_bant_recalc, tenant: tenant, estimated_value: 0, bant_score: 0)
+      opp.skip_bant_recalc = false
+      opp.update!(estimated_value: 15_000_000)
+      expect(opp.bant_score).to be > 0
+    end
+
     it "setea closed_at cuando transiciona a won/lost" do
       opp = create(:opportunity, tenant: tenant)
       expect(opp.closed_at).to be_nil

@@ -53,11 +53,10 @@ export const Route = createFileRoute('/_app/reminders')({
   component: RemindersPage,
 })
 
-const CHANNEL_LABEL: Record<string, string> = {
-  in_app: 'En app',
-  email: 'Email',
-  whatsapp: 'WhatsApp',
-}
+import {
+  canUseReminders,
+  reminderChannelLabel,
+} from '@/lib/reminderChannels'
 
 const groupOrder = ['Atrasados', 'Hoy', 'Manana', 'Proximos']
 
@@ -80,8 +79,10 @@ function isOverdue(remindAt: string, completed: boolean) {
 function RemindersPage() {
   const queryClient = useQueryClient()
   const tenant = useAuthStore((s) => s.tenant)
+  const user = useAuthStore((s) => s.user)
   const authScope = getAuthQueryScope()
   const hasRemindersModule = tenantHasModule(tenant, 'reminders')
+  const canAccess = hasRemindersModule && canUseReminders(user?.role)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
   const [refreshing, setRefreshing] = useState(false)
@@ -101,7 +102,7 @@ function RemindersPage() {
   } = useQuery({
     queryKey: queryKeys.reminders.list(authScope, listFilters),
     queryFn: () => fetchRemindersList(listFilters),
-    enabled: Boolean(authScope) && hasRemindersModule,
+    enabled: Boolean(authScope) && canAccess,
     staleTime: 0,
     refetchOnWindowFocus: true,
   })
@@ -109,7 +110,7 @@ function RemindersPage() {
   const { data: stats } = useQuery({
     queryKey: queryKeys.reminders.stats(authScope),
     queryFn: fetchReminderStats,
-    enabled: Boolean(authScope) && hasRemindersModule,
+    enabled: Boolean(authScope) && canAccess,
     staleTime: 0,
     refetchOnWindowFocus: true,
   })
@@ -197,6 +198,17 @@ function RemindersPage() {
         <PageHeader
           title="Recordatorios"
           description="El módulo de recordatorios no está activo en la configuración de este tenant."
+        />
+      </AppPageShell>
+    )
+  }
+
+  if (!canAccess) {
+    return (
+      <AppPageShell>
+        <PageHeader
+          title="Recordatorios"
+          description="Los recordatorios están disponibles solo para administradores, managers y consultores."
         />
       </AppPageShell>
     )
@@ -443,7 +455,7 @@ function RemindersPage() {
 
                               <div className="flex items-center gap-1 text-muted-foreground">
                                 <Filter className="h-3 w-3" />
-                                {CHANNEL_LABEL[reminder.channel] ?? reminder.channel}
+                                {reminderChannelLabel(reminder.channel)}
                               </div>
 
                               {reminder.opportunityId && (

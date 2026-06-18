@@ -26,5 +26,10 @@ FactoryBot.define do
     trait :stale do
       last_activity_at { 30.days.ago }
     end
+
+    # Evita recálculo automático post-create cuando el spec fija bant_score a mano.
+    trait :skip_bant_recalc do
+      after(:build) { |o| o.skip_bant_recalc = true }
+    end
   end
 end

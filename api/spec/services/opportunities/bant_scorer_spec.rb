@@ -100,7 +100,7 @@ RSpec.describe Opportunities::BantScorer do
     let!(:stage_ganada)     { create(:pipeline_stage, pipeline: pipeline, tenant: tenant, name: "Ganada",     position: 4, probability: 100, closed_won: true) }
 
     let(:opp) do
-      create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
+      create(:opportunity, :skip_bant_recalc, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
              bant_data: { "budget" => { "score" => 100 }, "authority" => { "score" => 100 },
                           "need" => { "score" => 100 }, "timeline" => { "score" => 100 } })
     end
@@ -146,7 +146,7 @@ RSpec.describe Opportunities::BantScorer do
     end
 
     it "NO avanza si el score no supera el umbral" do
-      low_opp = create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
+      low_opp = create(:opportunity, :skip_bant_recalc, tenant: tenant, pipeline: pipeline, pipeline_stage: stage_nueva,
                         bant_data: { "budget" => { "score" => 0 }, "authority" => { "score" => 0 },
                                      "need" => { "score" => 0 }, "timeline" => { "score" => 0 } })
       expect { described_class.new(low_opp).call_and_persist! }

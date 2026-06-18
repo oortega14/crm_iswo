@@ -10,6 +10,17 @@
 #     schedule: at 5am every day
 
 production:
+  # RFC §6.4 — recordatorios (antes solo en sidekiq.yml; prod usa Solid Queue en Puma).
+  reminder_notification_job:
+    class: ReminderNotificationJob
+    queue: critical
+    schedule: every minute
+
+  reminder_upcoming_notification_job:
+    class: ReminderUpcomingNotificationJob
+    queue: critical
+    schedule: every minute
+
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12

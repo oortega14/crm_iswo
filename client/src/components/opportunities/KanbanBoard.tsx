@@ -1,19 +1,21 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
-  pointerWithin,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
+  type DragCancelEvent,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
+  type DropAnimation,
 } from '@dnd-kit/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useState } from 'react'
 import {
   invalidateContactSegmentMetrics,
   invalidateNotificationsQueries,
@@ -22,6 +24,7 @@ import {
 import { moveOpportunityStage } from '@/lib/opportunityApi'
 import { KanbanColumn } from './KanbanColumn'
 import { OpportunityCard } from './OpportunityCard'
+import { kanbanCollisionDetection } from './kanbanCollision'
 import { useUser, useUserRole } from '@/stores/auth'
 import type { Opportunity, Pipeline, PipelineStage } from '@/types'
 
@@ -29,6 +32,27 @@ interface KanbanBoardProps {
   opportunities: Opportunity[]
   pipeline?: Pipeline
   onSelectOpportunity: (id: string) => void
+}
+
+const dropAnimation: DropAnimation = {
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: {
+      active: {
+        opacity: '0.4',
+      },
+    },
+  }),
+}
+
+function resolveTargetStageId(
+  overId: string,
+  stages: PipelineStage[],
+  opportunities: Opportunity[],
+): string | null {
+  const stageHit = stages.find((s) => s.id === overId)
+  if (stageHit) return stageHit.id
+  const overCard = opportunities.find((o) => o.id === overId)
+  return overCard?.stage_id ?? null
 }
 
 export function KanbanBoard({
@@ -40,29 +64,35 @@ export function KanbanBoard({
   const currentUser = useUser()
   const role = useUserRole()
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [overStageId, setOverStageId] = useState<string | null>(null)
 
   const canDragOpportunity = useCallback(
     (opp: Opportunity) => {
       if (role === 'viewer') return false
+      if (opp.network_read_only) return false
       if (role === 'admin' || role === 'manager') return true
       return String(opp.owner_id) === String(currentUser?.id ?? '')
     },
     [role, currentUser?.id],
   )
 
+  const isReadOnlyOpportunity = useCallback(
+    (opp: Opportunity) => opp.network_read_only === true,
+    [],
+  )
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
+      activationConstraint: { distance: 4 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 180, tolerance: 6 },
+      activationConstraint: { delay: 120, tolerance: 8 },
     }),
     useSensor(KeyboardSensor),
   )
 
   const firstStageId = pipeline?.stages?.[0]?.id
 
-  // Group opportunities by stage (si la etapa no coincide con el embudo, cae en la 1.ª columna)
   const opportunitiesByStage = useMemo(() => {
     const grouped: Record<string, Opportunity[]> = {}
     pipeline?.stages?.forEach((stage) => {
@@ -81,16 +111,20 @@ export function KanbanBoard({
     return grouped
   }, [opportunities, pipeline?.stages, firstStageId])
 
-  // Usa move_stage para que el backend actualice status (won/lost) y registre el log
   const patchOpportunityStage = (
     opp: Opportunity,
     stageId: string,
     stages: PipelineStage[] | undefined,
   ): Opportunity => {
     const stage = stages?.find((s) => s.id === stageId)
+    let status = opp.status
+    if (stage?.is_closed_won) status = 'won'
+    else if (stage?.is_closed_lost) status = 'lost'
+
     return {
       ...opp,
       stage_id: stageId,
+      status,
       stage: stage
         ? {
             id: stage.id,
@@ -127,51 +161,62 @@ export function KanbanBoard({
       )
       return { snapshots }
     },
+    onSuccess: (_data, { stage_id }) => {
+      const stageName =
+        pipeline?.stages?.find((s) => s.id === stage_id)?.name ?? 'nueva etapa'
+      toast.success(`Movida a ${stageName}`)
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void invalidateContactSegmentMetrics(queryClient)
+      void invalidateNotificationsQueries(queryClient)
+    },
     onError: (_err, _vars, context) => {
       context?.snapshots.forEach(([key, data]) => {
         queryClient.setQueryData(key, data)
       })
       toast.error('Error al mover la oportunidad')
-    },
-    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
-      void invalidateNotificationsQueries(queryClient)
     },
   })
 
-  const handleMoveStage = useCallback(
-    (opportunityId: string, stageId: string) => {
-      const opp = opportunities.find((o) => o.id === opportunityId)
-      if (!opp || !canDragOpportunity(opp)) return
-      if (stageId === opp.stage_id) return
-      updateStageMutation.mutate({ id: opportunityId, stage_id: stageId })
-    },
-    [opportunities, canDragOpportunity, updateStageMutation],
-  )
+  const clearDragState = () => {
+    setActiveId(null)
+    setOverStageId(null)
+  }
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string)
+    setOverStageId(null)
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { over } = event
+    if (!over || !pipeline?.stages?.length) {
+      setOverStageId(null)
+      return
+    }
+    setOverStageId(resolveTargetStageId(String(over.id), pipeline.stages, opportunities))
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
-    setActiveId(null)
+    const targetStageId = over
+      ? resolveTargetStageId(String(over.id), pipeline?.stages ?? [], opportunities)
+      : null
 
-    if (!over) return
+    clearDragState()
+
+    if (!over || !targetStageId) return
 
     const activeOpp = opportunities.find((o) => o.id === active.id)
     if (!activeOpp || !pipeline?.stages?.length) return
     if (!canDragOpportunity(activeOpp)) return
-
-    const overId = String(over.id)
-    const stageHit = pipeline.stages.find((s) => s.id === overId)
-    const overCard = opportunities.find((o) => o.id === overId)
-    const targetStageId = stageHit?.id ?? overCard?.stage_id
-    if (!targetStageId || targetStageId === activeOpp.stage_id) return
+    if (targetStageId === activeOpp.stage_id) return
 
     updateStageMutation.mutate({ id: activeOpp.id, stage_id: targetStageId })
+  }
+
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    clearDragState()
   }
 
   const activeOpportunity = activeId
@@ -189,11 +234,12 @@ export function KanbanBoard({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={kanbanCollisionDetection}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
-      {/* Scrollable sólo si hay overflow; columnas se reparten el espacio disponible */}
       <div className="h-full w-full overflow-x-auto">
         <div className="flex gap-2 p-2 h-full min-w-full">
           {pipeline.stages.map((stage) => (
@@ -203,15 +249,15 @@ export function KanbanBoard({
               opportunities={opportunitiesByStage[stage.id] || []}
               onSelectOpportunity={onSelectOpportunity}
               canDragOpportunity={canDragOpportunity}
-              stages={pipeline.stages}
-              onMoveStage={handleMoveStage}
-              moveStagePending={updateStageMutation.isPending}
+              isReadOnlyOpportunity={isReadOnlyOpportunity}
+              isDropTarget={overStageId === stage.id}
+              isDragging={Boolean(activeId)}
             />
           ))}
         </div>
       </div>
 
-      <DragOverlay>
+      <DragOverlay dropAnimation={dropAnimation}>
         {activeOpportunity && (
           <OpportunityCard
             opportunity={activeOpportunity}

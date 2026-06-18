@@ -34,15 +34,10 @@ module Api
 
         scope = scope.where(kind: params[:kind])               if params[:kind].present?
         scope = scope.where(owner_user_id: params[:owner_id])  if params[:owner_id].present?
-        scope = scope.where.not(phone_normalized: nil)          if params[:has_phone] == "true"
+        scope = scope.with_phone if params[:has_phone] == "true"
 
         if (q = params[:q]).present?
-          like = "%#{ActiveRecord::Base.sanitize_sql_like(q.to_s.strip)}%"
-          scope = scope.where(
-            "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR " \
-            "email ILIKE :q OR phone_normalized ILIKE :q OR document_id ILIKE :q",
-            q: like
-          )
+          scope = Contacts::EncryptedSearch.apply(scope, q)
         end
 
         render_collection(
@@ -79,9 +74,26 @@ module Api
       def update
         authorize @contact
         if @contact.update(contact_params)
-          audit_contact!("contact.update", @contact,
-                         changed_fields: @contact.previous_changes.except("updated_at").keys)
-          render_resource(@contact, with: ContactSerializer, params: { current_user: current_user })
+          changed_keys = @contact.previous_changes.except("updated_at").keys
+          audit_contact!("contact.update", @contact, changed_fields: changed_keys)
+          opp_ids = Opportunities::TemperatureAutoClassifier.enqueue_for_contact!(
+            contact:      @contact,
+            source:       "auto_contact",
+            user:         current_user,
+            changed_keys: changed_keys,
+            ip_address:   request.remote_ip,
+            user_agent:   request.user_agent
+          )
+          payload = ContactSerializer.new(
+            @contact,
+            params: { current_user: current_user }
+          ).serializable_hash
+          if opp_ids.any?
+            payload[:meta] = {
+              temperature_classification: { queued: true, auto: true, opportunity_ids: opp_ids.map(&:to_s) }
+            }
+          end
+          render json: payload, status: :ok
         else
           render_unprocessable(@contact)
         end

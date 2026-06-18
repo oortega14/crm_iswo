@@ -99,6 +99,18 @@ RSpec.describe "Api::V1::Sessions", type: :request do
       get "/api/v1/me", headers: headers
       expect(response).to have_http_status(:unauthorized)
     end
+
+    it "revoca la cookie de refresh aunque no haya JWT en el header" do
+      post "/api/v1/sessions", params: payload, headers: tenant_headers(tenant)
+      expect(response).to have_http_status(:ok)
+
+      delete "/api/v1/sessions", headers: tenant_headers(tenant).except("Authorization")
+      expect(response).to have_http_status(:no_content)
+
+      post "/api/v1/sessions/refresh", headers: tenant_headers(tenant)
+      expect(response).to have_http_status(:unauthorized)
+      expect(json["error"]).to eq("invalid_refresh_token")
+    end
   end
 
   describe "POST /api/v1/sessions/refresh" do

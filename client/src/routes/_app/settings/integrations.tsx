@@ -175,6 +175,32 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
       },
     ],
   },
+  {
+    provider: 'openwa',
+    category: 'messaging',
+    title: 'OpenWA (self-hosted)',
+    description:
+      'Servidor WhatsApp open-source auto-alojado. El Session ID debe coincidir con el sessionId que OpenWA envía en cada evento webhook. Configura la URL del webhook en el panel de OpenWA apuntando al endpoint que muestra el servidor.',
+    icon: MessageCircle,
+    accountIdentifierLabel: 'Session ID de OpenWA',
+    accountIdentifierPlaceholder: 'default',
+    accountIdentifierHint:
+      'Debe coincidir con el campo sessionId del payload de eventos de OpenWA. Cópialo desde el panel de OpenWA.',
+    credentialFields: [
+      {
+        key: 'url',
+        label: 'URL del servidor OpenWA',
+        type: 'text',
+        placeholder: 'https://openwa.miempresa.com',
+      },
+      {
+        key: 'api_key',
+        label: 'API Key de OpenWA',
+        type: 'password',
+        placeholder: 'Clave configurada en el servidor OpenWA',
+      },
+    ],
+  },
 ]
 
 const CATEGORIES: { id: CategoryId; name: string; icon: LucideIcon }[] = [
@@ -415,6 +441,7 @@ function IntegrationsSettingsPage() {
             <WebhookUrlRow label="Twilio WhatsApp (POST)" url={webhookUrls.whatsapp_twilio_post} />
             <WebhookUrlRow label="WhatsApp Cloud — verificación (GET)" url={webhookUrls.whatsapp_cloud_verify_get} />
             <WebhookUrlRow label="WhatsApp Cloud — mensajes (POST)" url={webhookUrls.whatsapp_cloud_post} />
+            <WebhookUrlRow label="OpenWA — mensajes (POST)" url={webhookUrls.whatsapp_openwa_post} />
           </dl>
         </div>
       ) : null}

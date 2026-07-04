@@ -31,14 +31,38 @@ module DatabaseTenantRls
   def installed?
     return @installed unless @installed.nil?
 
-    @installed = TENANT_TABLES.all? do |table|
-      ActiveRecord::Base.connection.select_value(<<~SQL.squish).present?
+    @installed = missing_policy_tables.empty?
+  rescue StandardError
+    @installed = false
+  end
+
+  def missing_policy_tables
+    conn = ActiveRecord::Base.connection
+    TENANT_TABLES.reject do |table|
+      next true unless conn.table_exists?(table)
+
+      conn.select_value(<<~SQL.squish).present?
         SELECT 1 FROM pg_policies
         WHERE schemaname = 'public' AND tablename = '#{table}' AND policyname = '#{POLICY_NAME}'
       SQL
     end
-  rescue StandardError
-    @installed = false
+  end
+
+  # Idempotente — útil si db:schema:load dejó schema_migrations al día sin pg_policies.
+  def install!
+    conn = ActiveRecord::Base.connection
+    policy = POLICY_NAME
+
+    TENANT_TABLES.each do |table|
+      next unless conn.table_exists?(table)
+
+      quoted = conn.quote_table_name(table)
+      conn.execute "ALTER TABLE #{quoted} ENABLE ROW LEVEL SECURITY"
+      conn.execute "DROP POLICY IF EXISTS #{policy} ON #{quoted}"
+      conn.execute policy_sql(table)
+    end
+
+    @installed = nil
   end
 
   def bypass?
@@ -96,8 +120,11 @@ module DatabaseTenantRls
   end
 
   def exec_set(raw, key, value)
-    quoted = ActiveRecord::Base.connection.quote(value)
-    raw.exec("SET #{key} = #{quoted}")
+    # Usar escape del raw PG connection — NO llamar AR.connection aquí porque
+    # exec_set se invoca desde el callback de checkout, donde el thread aún no
+    # tiene la conexión cacheada. Llamar AR.connection intentaría un segundo
+    # checkout → deadlock cuando el pool está lleno.
+    raw.exec("SET #{key} = '#{raw.escape_string(value.to_s)}'")
   end
 
   def exec_reset(raw, key)

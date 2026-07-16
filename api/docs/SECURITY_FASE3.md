@@ -10,6 +10,9 @@ Complementa `ActsAsTenant` + Pundit (defensa en profundidad).
 cd api
 bundle exec rails db:migrate   # 20260610120000_enable_tenant_row_level_security
 
+# Si security:rls dice "faltan políticas" pero migrate no corre nada (p. ej. tras db:schema:load):
+bundle exec rails security:rls:install
+
 # Dev (opcional):
 DB_RLS_ENABLED=true bundle exec rails security:rls
 

@@ -7,13 +7,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   POLICY = DatabaseTenantRls::POLICY_NAME
 
   def up
-    DatabaseTenantRls::TENANT_TABLES.each do |table|
-      next unless table_exists?(table)
-
-      execute "ALTER TABLE #{quote_table_name(table)} ENABLE ROW LEVEL SECURITY"
-      execute "DROP POLICY IF EXISTS #{POLICY} ON #{quote_table_name(table)}"
-      execute DatabaseTenantRls.policy_sql(table)
-    end
+    DatabaseTenantRls.install!
   end
 
   def down

@@ -3,9 +3,19 @@
 require "digest"
 
 # Blind Index — búsquedas exactas sobre campos cifrados (Contact PII Fase 2).
-unless ENV["BLIND_INDEX_MASTER_KEY"].present?
-  if ENV["LOCKBOX_MASTER_KEY"].present?
-    ENV["BLIND_INDEX_MASTER_KEY"] = ENV["LOCKBOX_MASTER_KEY"]
+# En dev sin BLIND_INDEX explícita usa seed propio (compat. con datos existentes).
+# En prod: define BLIND_INDEX_MASTER_KEY o LOCKBOX_MASTER_KEY explícita (64 hex).
+
+def blind_index_valid_key?(key)
+  key.to_s.strip.match?(/\A[0-9a-fA-F]{64}\z/)
+end
+
+unless blind_index_valid_key?(ENV["BLIND_INDEX_MASTER_KEY"])
+  lockbox_key = ENV["LOCKBOX_MASTER_KEY"].to_s.strip
+  use_lockbox = blind_index_valid_key?(lockbox_key) && ENV["LOCKBOX_KEY_SOURCE"] == "explicit"
+
+  if use_lockbox
+    ENV["BLIND_INDEX_MASTER_KEY"] = lockbox_key
   elsif !Rails.env.production?
     sk = Rails.application.secret_key_base.to_s
     seed = sk.present? ? "crm_iswo:blind_index:#{Rails.env}:#{sk}" : "crm_iswo:blind_index:fallback"
@@ -13,7 +23,7 @@ unless ENV["BLIND_INDEX_MASTER_KEY"].present?
   end
 end
 
-if ENV["BLIND_INDEX_MASTER_KEY"].present?
+if blind_index_valid_key?(ENV["BLIND_INDEX_MASTER_KEY"])
   BlindIndex.master_key = ENV["BLIND_INDEX_MASTER_KEY"]
 else
   Rails.logger.warn("[BlindIndex] BLIND_INDEX_MASTER_KEY ausente: búsquedas PII cifradas fallarán.")

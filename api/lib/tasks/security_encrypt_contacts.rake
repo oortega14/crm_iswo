@@ -35,11 +35,38 @@ namespace :security do
     security_sql_count("NULLIF(TRIM(phone_e164_bidx), '') IS NOT NULL")
   end
 
+  def lockbox_key_format_ok?
+    key = ENV["LOCKBOX_MASTER_KEY"].to_s.strip
+    key.match?(/\A[0-9a-fA-F]{64}\z/)
+  end
+
+  def lockbox_key_label
+    key = ENV["LOCKBOX_MASTER_KEY"].to_s.strip
+    return "derivada (secret_key_base)" if key.blank?
+    return "explícita (#{key[0, 8]}…#{key[-4, 4]})" if lockbox_key_format_ok?
+
+    "inválida (#{key.length} chars; requiere 64 hex)"
+  end
+
+  def abort_unless_lockbox_key_valid!
+    return if lockbox_key_format_ok?
+
+    abort <<~MSG.strip
+      LOCKBOX_MASTER_KEY inválida: debe ser exactamente 64 caracteres hexadecimales.
+
+      Genera una clave válida:
+        bundle exec rails runner "puts Lockbox.generate_key"
+
+      Si los 9 contactos cifrados se crearon con la clave derivada de dev, conserva la misma clave:
+        1) Comenta o borra LOCKBOX_MASTER_KEY en api/.env
+        2) bundle exec rails runner "puts ENV.fetch('LOCKBOX_MASTER_KEY')"
+        3) Pega ese valor en api/.env (no uses placeholders como <generada>)
+    MSG
+  end
+
   desc "Fase 2 — cifra document_id y phone_e164 existentes; limpia columnas legado en claro"
   task encrypt_contacts: :environment do
-    unless ENV["LOCKBOX_MASTER_KEY"].present?
-      abort "LOCKBOX_MASTER_KEY requerida. Define la misma clave que usarás en producción."
-    end
+    abort_unless_lockbox_key_valid!
 
     ActsAsTenant.without_tenant do
       total         = Contact.unscoped.count
@@ -103,8 +130,17 @@ namespace :security do
 
     puts "CRM ISWO — security:pii (Fase 2)\n"
 
-    report.call("LOCKBOX_MASTER_KEY", ENV["LOCKBOX_MASTER_KEY"].present?)
-    report.call("BLIND_INDEX_MASTER_KEY", ENV["BLIND_INDEX_MASTER_KEY"].present? || ENV["LOCKBOX_MASTER_KEY"].present?)
+    report.call("LOCKBOX_MASTER_KEY", lockbox_key_format_ok?, lockbox_key_label)
+    report.call(
+      "BLIND_INDEX_MASTER_KEY",
+      ENV["BLIND_INDEX_MASTER_KEY"].present? || lockbox_key_format_ok?,
+      ENV["BLIND_INDEX_MASTER_KEY"].present? ? "explícita" : lockbox_key_label
+    )
+
+    unless lockbox_key_format_ok?
+      puts "\nCorrige LOCKBOX_MASTER_KEY en api/.env y vuelve a ejecutar security:pii."
+      exit 1
+    end
 
     ActsAsTenant.without_tenant do
       with_legacy_doc   = legacy_document_id_count
@@ -134,12 +170,20 @@ namespace :security do
 
       with_phone_cipher = Contact.unscoped.where("COALESCE(phone_e164_ciphertext, '') <> ''")
       if with_phone_cipher.exists?
-        ok = with_phone_cipher.find { |c| c.phone_e164.present? }
-        report.call(
-          "Roundtrip phone_e164",
-          ok.present?,
-          ok ? ok.phone_e164.to_s.truncate(20) : "0 descifrables"
-        )
+        ok = nil
+        begin
+          ok = with_phone_cipher.find { |c| c.phone_e164.present? }
+        rescue Lockbox::Error => e
+          report.call("Roundtrip phone_e164", false, e.message.truncate(120))
+          ok = :failed
+        end
+        unless ok == :failed
+          report.call(
+            "Roundtrip phone_e164",
+            ok.present?,
+            ok ? ok.phone_e164.to_s.truncate(20) : "0 descifrables (clave distinta a la del cifrado)"
+          )
+        end
       end
     end
 
@@ -156,6 +200,60 @@ namespace :security do
   desc "Fase 2 — rellena phone_normalized desde teléfonos cifrados"
   task sync_phone_normalized: :environment do
     ActsAsTenant.without_tenant { sync_phone_normalized_from_ciphertext! }
+  end
+
+  desc "Fase 2 — repara blind index huérfano (bidx sin ciphertext) desde phone_normalized"
+  task repair_orphan_bidx: :environment do
+    abort_unless_lockbox_key_valid!
+
+    repaired = 0
+    cleared  = 0
+
+    ActsAsTenant.without_tenant do
+      scope = Contact.unscoped.where(<<~SQL.squish)
+        NULLIF(TRIM(phone_e164_bidx), '') IS NOT NULL
+        AND COALESCE(phone_e164_ciphertext, '') = ''
+      SQL
+
+      scope.find_each do |contact|
+        norm = contact.read_attribute(:phone_normalized)
+        if norm.blank?
+          Contact.unscoped.where(id: contact.id).update_all(
+            phone_e164_bidx: nil, updated_at: Time.current
+          )
+          cleared += 1
+          next
+        end
+
+        parsed = Phonelib.parse(norm.start_with?("+") ? norm : "+#{norm}", "CO")
+        parsed = Phonelib.parse(norm, "CO") unless parsed.valid?
+
+        unless parsed.valid?
+          Contact.unscoped.where(id: contact.id).update_all(
+            phone_e164_bidx: nil, updated_at: Time.current
+          )
+          cleared += 1
+          next
+        end
+
+        contact.phone_e164 = parsed.e164
+        contact.phone_normalized = parsed.sanitized
+        contact.save!
+        repaired += 1
+      rescue StandardError => e
+        Rails.logger.warn("[repair_orphan_bidx] contact=#{contact.id} #{e.class}: #{e.message}")
+        Contact.unscoped.where(id: contact.id).update_all(
+          phone_e164_bidx: nil, updated_at: Time.current
+        )
+        cleared += 1
+      end
+
+      BlindIndex.backfill(Contact)
+    end
+
+    puts "✅ Reparados con ciphertext: #{repaired}"
+    puts "🧹 Índices huérfanos limpiados: #{cleared}"
+    puts "Verifica: bundle exec rails security:pii"
   end
 
   def decrypted_phone_e164(contact)

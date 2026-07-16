@@ -241,8 +241,22 @@ module Api
         authorize @opportunity, :recalculate_bant?
         from_stage = @opportunity.pipeline_stage
         before_stage_id = @opportunity.pipeline_stage_id
+        before_score = @opportunity.bant_score
+        before_qualified = @opportunity.qualified
         Opportunities::BantScorer.new(@opportunity).call_and_persist! if defined?(Opportunities::BantScorer)
         @opportunity.reload
+        # BantScorer solo deja opportunity_log si además avanza de etapa
+        # (auto_advance_stage!); sin esto, un recalculo que cambia el score/
+        # qualified sin mover la etapa no quedaba auditado en absoluto.
+        if before_score != @opportunity.bant_score || before_qualified != @opportunity.qualified
+          log_action!(
+            "update",
+            {
+              bant_score: { from: before_score, to: @opportunity.bant_score },
+              qualified:  { from: before_qualified, to: @opportunity.qualified }
+            }
+          )
+        end
         if @opportunity.pipeline_stage_id != before_stage_id
           notify_stage_change!(
             from_stage: from_stage,

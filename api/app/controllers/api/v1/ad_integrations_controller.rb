@@ -74,7 +74,12 @@ module Api
       # POST /api/v1/ad_integrations/:id/disable
       def disable
         authorize @integration, :disable?
+        previous_status = @integration.status
         @integration.update!(status: "paused")
+        log_integration_audit!(
+          "integration_disable", @integration,
+          changes: { "status" => [ previous_status, @integration.status ] }
+        )
         render_no_content
       end
 

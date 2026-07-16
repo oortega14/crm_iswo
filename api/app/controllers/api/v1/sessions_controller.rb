@@ -71,18 +71,19 @@ module Api
         user  = find_user_for_refresh(token)
 
         unless user && refresh_token_matches?(token, user)
-          log_refresh_failure(token, user, "jti_or_expired")
+          log_refresh_denied!("jti_or_expired", user, token)
           return render_invalid_refresh
         end
 
         if user.tenant_id != current_tenant.id
-          log_refresh_failure(token, user, "tenant_mismatch")
+          log_refresh_denied!("tenant_mismatch", user, token)
           return render_invalid_refresh
         end
 
         ActsAsTenant.with_tenant(@current_tenant) do
           sign_in(user, store: false)
           issue_refresh_cookie(user)
+          log_session_audit("token_refresh", user)
 
           render json: user_payload(user).merge(meta: tenant_meta), status: :ok
         end
@@ -111,14 +112,35 @@ module Api
         find_user_for_refresh(token)
       end
 
-      def log_refresh_failure(token, user, reason)
-        return unless Rails.env.development?
+      def log_refresh_denied!(reason, user, token)
+        if Rails.env.development?
+          Rails.logger.info(
+            "[Sessions#refresh] denied reason=#{reason} " \
+            "user_id=#{user&.id} tenant_header=#{request.headers['X-Tenant-Slug']} " \
+            "cookie_jti=#{token&.dig('jti').present?} stored_jti=#{user&.refresh_token_jti.present?}"
+          )
+        end
 
-        Rails.logger.info(
-          "[Sessions#refresh] denied reason=#{reason} " \
-          "user_id=#{user&.id} tenant_header=#{request.headers['X-Tenant-Slug']} " \
-          "cookie_jti=#{token&.dig('jti').present?} stored_jti=#{user&.refresh_token_jti.present?}"
-        )
+        # A diferencia del log de arriba (solo dev), esto sí debe quedar en
+        # producción: un refresh denegado (JTI inválido/expirado o tenant
+        # distinto) es un evento de seguridad que ISO A.8.16 exige trazar.
+        t = current_tenant
+        return unless t
+
+        ActsAsTenant.with_tenant(t) do
+          AuditLogger.record!(
+            tenant:       t,
+            user:         user,
+            action:       "refresh_denied",
+            entity_type:  "User",
+            entity_id:    user&.id,
+            metadata:     { reason: reason },
+            ip_address:   request.remote_ip,
+            user_agent:   request.user_agent
+          )
+        end
+      rescue StandardError => e
+        Rails.logger.warn("[AuditEvent] refresh_denied: #{e.message}")
       end
 
       def render_invalid_refresh

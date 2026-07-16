@@ -6,6 +6,16 @@
 # Uso: cd api && bundle exec rails staging:preflight
 # Exit 0 si todo OK; exit 1 si hay fallos críticos.
 # ============================================================================
+
+def load_recurring_yml_for_env
+  path = Rails.root.join("config/recurring.yml")
+  raw = YAML.load_file(path, aliases: true)
+  cfg = raw.fetch(Rails.env, {})
+  cfg.is_a?(Hash) ? cfg : {}
+rescue StandardError
+  {}
+end
+
 namespace :staging do
   PRODUCT_TENANT_SLUGS = %w[iswo micasita libranzas mi_casita].freeze
 
@@ -30,7 +40,7 @@ namespace :staging do
     end
 
     puts "CRM ISWO — staging preflight (RFC §9)"
-    puts "Entorno: #{Rails.env}#{production_check ? ' (checks estrictos)' : ' (Redis/Sidekiq = advertencia)'}\n\n"
+    puts "Entorno: #{Rails.env}#{production_check ? ' (checks estrictos)' : ' (Solid Queue = advertencia si no hay worker)'}\n\n"
 
     # --- Fase 1 seguridad (Opción 1 infra) ----------------------------------
     puts "Seguridad Fase 1 (security:infra):\n"
@@ -61,21 +71,21 @@ namespace :staging do
       report.call("PostgreSQL", false, e.message)
     end
 
-    redis_url = ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
-    begin
-      redis = Redis.new(url: redis_url)
-      pong = redis.ping
-      report.call("Redis", pong == "PONG", redis_url)
-    rescue StandardError => e
-      if production_check
-        report.call("Redis", false, e.message)
-      else
-        warn_item.call("Redis", "#{e.message} — inicia con: redis-server --daemonize yes")
-      end
-    end
-
     report.call("DEVISE_JWT_SECRET_KEY", ENV["DEVISE_JWT_SECRET_KEY"].present? || Rails.application.credentials.devise_jwt_secret_key.present?)
     report.call("LOCKBOX_MASTER_KEY", ENV["LOCKBOX_MASTER_KEY"].present? || Rails.application.credentials.lockbox_master_key.present?)
+
+    solid_tables_ok = %w[solid_queue_jobs solid_cache_entries].all? do |table|
+      ActiveRecord::Base.connection.data_source_exists?(table)
+    rescue StandardError
+      false
+    end
+    if solid_tables_ok
+      report.call("Solid Queue + Solid Cache (PostgreSQL)", true)
+    elsif production_check
+      report.call("Solid Queue + Solid Cache (PostgreSQL)", false, "ejecuta: bundle exec rails solid:setup")
+    else
+      warn_item.call("Solid Queue + Solid Cache", "tablas ausentes — ejecuta: bundle exec rails solid:setup")
+    end
 
     if production_check
       if ENV["AWS_S3_BUCKET"].present?
@@ -85,37 +95,29 @@ namespace :staging do
       end
     end
 
-    # --- Sidekiq / jobs RFC §6.4, §9 ----------------------------------------
-    schedule = YAML.load_file(Rails.root.join("config/sidekiq.yml")).dig(:scheduler, :schedule) || {}
-    reminder_cron = schedule.dig("reminder_notification_job", "cron")
-    recurring = YAML.load_file(Rails.root.join("config/recurring.yml")).fetch(Rails.env, {}) rescue {}
+    # --- Solid Queue / jobs RFC §6.4, §9 ------------------------------------
+    recurring = load_recurring_yml_for_env
     solid_recurring = recurring.key?("reminder_notification_job")
-    reminder_scheduled = reminder_cron == "* * * * *" || solid_recurring
     report.call(
       "ReminderNotificationJob programado (cada minuto)",
-      reminder_scheduled,
-      if solid_recurring
-        "Solid Queue recurring (config/recurring.yml)"
-      else
-        reminder_cron || "no encontrado en sidekiq.yml ni recurring.yml"
-      end
+      solid_recurring,
+      solid_recurring ? "Solid Queue recurring (config/recurring.yml)" : "falta en recurring.yml"
     )
 
     begin
-      if defined?(Sidekiq)
-        workers = Sidekiq::ProcessSet.new.size
-        if workers.positive?
-          report.call("Sidekiq worker", true, "#{workers} proceso(s) activo(s)")
-        elsif production_check
-          report.call("Sidekiq worker", false, "ningún proceso activo")
-        else
-          warn_item.call("Sidekiq worker", "no detectado — levanta con: bundle exec sidekiq -C config/sidekiq.yml")
-        end
+      in_puma = ENV["SOLID_QUEUE_IN_PUMA"].to_s == "true"
+      workers = defined?(SolidQueue::Process) ? SolidQueue::Process.count : 0
+      if in_puma
+        report.call("Solid Queue supervisor", true, "SOLID_QUEUE_IN_PUMA=true (dentro de Puma)")
+      elsif workers.positive?
+        report.call("Solid Queue worker", true, "#{workers} proceso(s) activo(s)")
+      elsif production_check
+        report.call("Solid Queue worker", false, "levanta Puma con SOLID_QUEUE_IN_PUMA=true o bin/jobs")
       else
-        warn_item.call("Sidekiq worker", "gem Sidekiq no cargada")
+        warn_item.call("Solid Queue worker", "no detectado — SOLID_QUEUE_IN_PUMA=true bin/rails s o bin/jobs")
       end
     rescue StandardError => e
-      warn_item.call("Sidekiq worker", "no se pudo verificar (#{e.message})")
+      warn_item.call("Solid Queue worker", "no se pudo verificar (#{e.message})")
     end
 
     pending_reminders = ActsAsTenant.without_tenant { Reminder.due.count }
@@ -177,8 +179,8 @@ namespace :staging do
     # --- Criterios manuales RFC §9 ------------------------------------------
     puts "\n--- Validación manual requerida (RFC §9) ---"
     puts "• Registrar oportunidad completa en < 2 min (UX con consultor real)"
-    puts "• Lead Meta Ads → CRM en < 5 min (webhook público + Sidekiq en prod)"
-    puts "• Recordatorio entregado ±5 min del remind_at (cron + Postmark/WhatsApp)"
+    puts "• Lead Meta Ads → CRM en < 5 min (webhook público + Solid Queue en prod)"
+    puts "• Recordatorio entregado ±5 min del remind_at (recurring.yml + worker activo)"
 
     puts "\n--- Resumen ---"
     passed = results.count { |r| r[:ok] }
@@ -190,7 +192,7 @@ namespace :staging do
 
     puts "Preflight OK#{production_check ? '' : ' en desarrollo'} (revisar ⚠️  antes de go-live)."
     if !production_check
-      puts "Tip: en producción/staging Redis y Sidekiq son obligatorios (exit 1 si fallan)."
+      puts "Tip: en producción/staging Solid Queue es obligatorio (SOLID_QUEUE_IN_PUMA o bin/jobs)."
     end
   end
 end

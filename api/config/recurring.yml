@@ -1,16 +1,7 @@
-# examples:
-#   periodic_cleanup:
-#     class: CleanSoftDeletedRecordsJob
-#     queue: background
-#     args: [ 1000, { batch_size: 500 } ]
-#     schedule: every hour
-#   periodic_cleanup_with_command:
-#     command: "SoftDeletedRecord.due.delete_all"
-#     priority: 2
-#     schedule: at 5am every day
+# Solid Queue — tareas recurrentes (RFC §6.4 recordatorios, integraciones, mantenimiento).
+# Requiere tablas solid_queue_* (bundle exec rails solid:setup) y worker activo.
 
-production:
-  # RFC §6.4 — recordatorios (antes solo en sidekiq.yml; prod usa Solid Queue en Puma).
+shared: &shared
   reminder_notification_job:
     class: ReminderNotificationJob
     queue: critical
@@ -21,6 +12,31 @@ production:
     queue: critical
     schedule: every minute
 
+  ad_sync_job:
+    class: AdSyncJob
+    queue: integrations
+    schedule: every 15 minutes
+
+  cleanup_exports_job:
+    class: CleanupExportsJob
+    queue: low
+    schedule: at 3am every day
+
+  refresh_duplicate_cache_job:
+    class: RefreshDuplicateCacheJob
+    queue: low
+    schedule: at 4am every day
+
+  daily_briefing_job:
+    class: DailyBriefingJob
+    queue: low
+    schedule: at 7am every day
+
+development:
+  <<: *shared
+
+production:
+  <<: *shared
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12

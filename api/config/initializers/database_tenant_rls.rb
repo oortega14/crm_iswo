@@ -22,23 +22,40 @@ if DatabaseTenantRls.enabled?
   module ActsAsTenantRlsBridge
     def with_tenant(tenant, &block)
       super(tenant) do
-        # Actualiza RLS solo si el thread ya tiene una conexión tomada del pool.
-        # NO llama .connection porque eso bloquea esperando el pool cuando está lleno.
-        # El callback de checkout se encarga de configurar conexiones nuevas.
-        conn = ActiveRecord::Base.connection_pool.active_connection
-        DatabaseTenantRls.apply_to_connection!(conn) if conn
+        sync_rls_connection!
         block.call
       end
+    ensure
+      # Al salir, current_tenant ya fue restaurado por el `ensure` de ActsAsTenant
+      # (super). Sin esto, la conexión queda con crm.current_tenant_id apuntando
+      # al tenant que se acaba de abandonar hasta el próximo checkout/checkin,
+      # filtrando datos del tenant equivocado en queries posteriores del mismo
+      # request/job (p.ej. un with_tenant anidado dentro de un find_each).
+      sync_rls_connection!
     end
 
     def without_tenant(&block)
       DatabaseTenantRls.with_bypass do
         super do
-          conn = ActiveRecord::Base.connection_pool.active_connection
-          DatabaseTenantRls.apply_to_connection!(conn) if conn
+          sync_rls_connection!
           block.call
         end
       end
+    ensure
+      # Mismo motivo que en with_tenant: with_bypass ya restauró el flag de
+      # bypass en su propio `ensure`, pero la conexión sigue con
+      # crm.bypass_rls=on hasta que se vuelva a sincronizar explícitamente.
+      sync_rls_connection!
+    end
+
+    private
+
+    # Solo sincroniza si el thread ya tiene una conexión tomada del pool.
+    # NO llama .connection porque eso bloquea esperando el pool cuando está lleno.
+    # El callback de checkout se encarga de configurar conexiones nuevas.
+    def sync_rls_connection!
+      conn = ActiveRecord::Base.connection_pool.active_connection
+      DatabaseTenantRls.apply_to_connection!(conn) if conn
     end
   end
 

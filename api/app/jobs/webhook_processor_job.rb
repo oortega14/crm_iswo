@@ -82,7 +82,9 @@ class WebhookProcessorJob < ApplicationJob
 
     # Callback sólo estado (saliente típico: queued → sent → delivered / failed).
     if sid.present? && msg_status.present? && !inbound
-      record = WhatsappMessage.unscoped.find_by(provider: "twilio", provider_message_id: sid)
+      record = ActsAsTenant.without_tenant do
+        WhatsappMessage.unscoped.find_by(provider: "twilio", provider_message_id: sid)
+      end
       if record
         ActsAsTenant.with_tenant(record.tenant) do
           apply_twilio_delivery_status(record, msg_status.to_s, payload)
@@ -140,10 +142,11 @@ class WebhookProcessorJob < ApplicationJob
         meta_phone_id = value.dig("metadata", "phone_number_id").to_s
         next Rails.logger.warn("[WhatsApp Cloud] phone_number_id vacío") if meta_phone_id.blank?
 
-        integration = AdIntegration.unscoped.where(provider: "whatsapp_cloud")
-                                   .find_by(account_identifier: meta_phone_id)
-        tenant        = integration&.tenant
-        tenant      ||= resolve_tenant_by_setting("whatsapp.cloud_phone_id", meta_phone_id)
+        tenant = ActsAsTenant.without_tenant do
+          integration = AdIntegration.unscoped.where(provider: "whatsapp_cloud")
+                                     .find_by(account_identifier: meta_phone_id)
+          integration&.tenant || resolve_tenant_by_setting("whatsapp.cloud_phone_id", meta_phone_id)
+        end
         next Rails.logger.warn("[WhatsApp Cloud] sin tenant para phone_number_id=#{meta_phone_id}") unless tenant
 
         ActsAsTenant.with_tenant(tenant) do
@@ -210,10 +213,12 @@ class WebhookProcessorJob < ApplicationJob
     from_number = openwa_wa_id_to_e164(from_wa)
     to_number   = openwa_wa_id_to_e164(to_wa)
 
-    tenant = AdIntegration.unscoped
-                          .where(provider: "openwa", account_identifier: session_id)
-                          .first&.tenant
-    tenant ||= resolve_tenant_by_setting("whatsapp.openwa_session_id", session_id)
+    tenant = ActsAsTenant.without_tenant do
+      AdIntegration.unscoped
+                   .where(provider: "openwa", account_identifier: session_id)
+                   .first&.tenant ||
+        resolve_tenant_by_setting("whatsapp.openwa_session_id", session_id)
+    end
 
     return Rails.logger.warn("[WhatsApp OpenWA] sin tenant para sessionId=#{session_id}") unless tenant
 
@@ -260,7 +265,9 @@ class WebhookProcessorJob < ApplicationJob
   def openwa_update_status(msg_id, new_status, delivered_at: false, read_at: false)
     return if msg_id.blank?
 
-    msg = WhatsappMessage.unscoped.find_by(provider: "openwa", provider_message_id: msg_id)
+    msg = ActsAsTenant.without_tenant do
+      WhatsappMessage.unscoped.find_by(provider: "openwa", provider_message_id: msg_id)
+    end
     return unless msg
 
     attrs = { status: new_status }
@@ -272,7 +279,9 @@ class WebhookProcessorJob < ApplicationJob
   end
 
   def resolve_tenant_by_setting(path, value)
-    Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+    ActsAsTenant.without_tenant do
+      Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+    end
   end
 
   # Empareja To del webhook con account_identifier (acepta con/sin +).
@@ -280,25 +289,29 @@ class WebhookProcessorJob < ApplicationJob
     exact = to_number.to_s.strip
     return nil if exact.blank?
 
-    integ = AdIntegration.unscoped.where(provider: "twilio").find_by(account_identifier: exact)
-    return integ if integ
+    ActsAsTenant.without_tenant do
+      integ = AdIntegration.unscoped.where(provider: "twilio").find_by(account_identifier: exact)
+      next integ if integ
 
-    digits = exact.gsub(/\D/, "")
-    if digits.present?
-      integ = AdIntegration.unscoped.where(provider: "twilio").detect do |row|
-        row.account_identifier.to_s.gsub(/\D/, "") == digits
+      digits = exact.gsub(/\D/, "")
+      if digits.present?
+        integ = AdIntegration.unscoped.where(provider: "twilio").detect do |row|
+          row.account_identifier.to_s.gsub(/\D/, "") == digits
+        end
+        next integ if integ
       end
-      return integ if integ
-    end
 
-    resolve_tenant_by_setting("whatsapp.number", exact) ||
-      (digits.present? ? resolve_tenant_by_whatsapp_number_digits(digits) : nil)
+      resolve_tenant_by_setting("whatsapp.number", exact) ||
+        (digits.present? ? resolve_tenant_by_whatsapp_number_digits(digits) : nil)
+    end
   end
 
   def resolve_tenant_by_whatsapp_number_digits(digits)
-    Tenant.find_each.find do |t|
-      stored = t.settings.dig("whatsapp", "number").to_s
-      stored.gsub(/\D/, "") == digits
+    ActsAsTenant.without_tenant do
+      Tenant.find_each.find do |t|
+        stored = t.settings.dig("whatsapp", "number").to_s
+        stored.gsub(/\D/, "") == digits
+      end
     end
   end
 
@@ -441,7 +454,9 @@ class WebhookProcessorJob < ApplicationJob
     sid = st["id"].presence
     return if sid.blank?
 
-    msg = WhatsappMessage.unscoped.find_by(provider: "whatsapp_cloud", provider_message_id: sid)
+    msg = ActsAsTenant.without_tenant do
+      WhatsappMessage.unscoped.find_by(provider: "whatsapp_cloud", provider_message_id: sid)
+    end
     return unless msg
 
     key = st["status"].to_s.downcase

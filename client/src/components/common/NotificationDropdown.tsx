@@ -72,8 +72,8 @@ export function NotificationDropdown() {
     queryKey: notificationsQueryKey,
     queryFn: () => fetchUnreadNotifications(20),
     enabled: isCommercial,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: 1,
   })

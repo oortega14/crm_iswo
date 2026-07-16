@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           // Mantiene cookies de refresh entre SPA (:3001) y API (:3000)
           cookieDomainRewrite: 'localhost',
+          cookiePathRewrite: { '*': '/' },
         },
       },
     },

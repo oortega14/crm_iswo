@@ -104,7 +104,7 @@ class WebhookProcessorJob < ApplicationJob
     integration = find_twilio_integration_for_to(to_number)
     tenant      = integration.respond_to?(:tenant) ? integration.tenant : integration
     return Rails.logger.warn(
-      "[WhatsApp Twilio] no tenant para to=#{to_number} " \
+      "[WhatsApp Twilio] no tenant para to=#{mask_phone_for_log(to_number)} " \
       "(account_identifier en Integraciones debe ser ese E.164, p.ej. +14155238886)"
     ) unless tenant
 
@@ -276,6 +276,15 @@ class WebhookProcessorJob < ApplicationJob
     ActsAsTenant.with_tenant(msg.tenant) { msg.update!(attrs) }
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.warn("[WhatsApp OpenWA] no se pudo actualizar estado: #{e.message}")
+  end
+
+  # Enmascara un número en logs (ISO A.8.11) — conserva los últimos 4 dígitos,
+  # suficiente para depurar mismatches de configuración sin loguear el E.164 completo.
+  def mask_phone_for_log(number)
+    digits = number.to_s
+    return "(vacío)" if digits.blank?
+
+    "#{'*' * [ digits.length - 4, 0 ].max}#{digits.last(4)}"
   end
 
   def resolve_tenant_by_setting(path, value)

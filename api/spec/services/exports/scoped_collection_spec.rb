@@ -35,6 +35,35 @@ RSpec.describe Exports::ScopedCollection do
       expect(scope.map(&:id)).to include(person.id)
       expect(scope.where(kind: "company").count).to eq(0)
     end
+
+    it "filtra contactos por etapa del pipeline de sus oportunidades (RFC §6.7)" do
+      other_stage = pipeline.pipeline_stages.second
+      other_contact = create(:contact, tenant: tenant, first_name: "En otra etapa")
+      create(:opportunity, tenant: tenant, contact: other_contact,
+             pipeline: pipeline, pipeline_stage: other_stage, owner_user: consultant)
+
+      scope = described_class.new(
+        user: admin,
+        resource: "contacts",
+        filters: { "opportunities_pipeline_stage_id_eq" => opp.pipeline_stage_id.to_s }
+      ).resolve
+
+      expect(scope.map(&:id)).to include(contact.id)
+      expect(scope.map(&:id)).not_to include(other_contact.id)
+    end
+
+    it "no duplica un contacto con varias oportunidades en la misma etapa" do
+      create(:opportunity, tenant: tenant, contact: contact,
+             pipeline: pipeline, pipeline_stage: opp.pipeline_stage, owner_user: consultant)
+
+      scope = described_class.new(
+        user: admin,
+        resource: "contacts",
+        filters: { "opportunities_pipeline_stage_id_eq" => opp.pipeline_stage_id.to_s }
+      ).resolve
+
+      expect(scope.map(&:id).count { |id| id == contact.id }).to eq(1)
+    end
   end
 
   describe "#resolve para opportunities" do

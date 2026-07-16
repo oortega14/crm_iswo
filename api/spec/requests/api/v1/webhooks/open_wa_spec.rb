@@ -24,10 +24,10 @@ RSpec.describe "Api::V1::Webhooks::OpenWa", type: :request do
   end
 
   describe "POST /api/v1/webhooks/whatsapp/openwa" do
-    it "encola WebhookProcessorJob con 'whatsapp_openwa' (sin secret → dev)" do
+    it "procesa WebhookProcessorJob inline con 'whatsapp_openwa' (sin secret → dev)" do
       ENV.delete("OPENWA_WEBHOOK_SECRET")
 
-      expect(WebhookProcessorJob).to receive(:perform_later).with(
+      expect(WebhookProcessorJob).to receive(:perform_now).with(
         "whatsapp_openwa",
         hash_including("event" => "message.received", "received_at" => kind_of(String))
       )
@@ -57,7 +57,7 @@ RSpec.describe "Api::V1::Webhooks::OpenWa", type: :request do
       before { ENV["OPENWA_WEBHOOK_SECRET"] = secret }
 
       it "acepta con firma X-OpenWA-Signature válida" do
-        expect(WebhookProcessorJob).to receive(:perform_later)
+        expect(WebhookProcessorJob).to receive(:perform_now)
 
         post "/api/v1/webhooks/whatsapp/openwa",
              params:  raw,
@@ -67,7 +67,7 @@ RSpec.describe "Api::V1::Webhooks::OpenWa", type: :request do
       end
 
       it "rechaza con firma inválida (403)" do
-        expect(WebhookProcessorJob).not_to receive(:perform_later)
+        expect(WebhookProcessorJob).not_to receive(:perform_now)
 
         post "/api/v1/webhooks/whatsapp/openwa",
              params:  raw,
@@ -77,7 +77,7 @@ RSpec.describe "Api::V1::Webhooks::OpenWa", type: :request do
       end
 
       it "rechaza sin header de firma (403)" do
-        expect(WebhookProcessorJob).not_to receive(:perform_later)
+        expect(WebhookProcessorJob).not_to receive(:perform_now)
 
         post "/api/v1/webhooks/whatsapp/openwa",
              params:  raw,

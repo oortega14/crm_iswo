@@ -93,7 +93,13 @@ export function WhatsAppThread({
   const sendMutation = useMutation({
     mutationFn: async (body: string) => {
       const res = await api.post<{
-        data?: { attributes?: { status?: string; error_message?: string | null } }
+        data?: {
+          attributes?: {
+            status?: string
+            error_message?: string | null
+            provider_message_id?: string | null
+          }
+        }
       }>(`/opportunities/${opportunityId}/whatsapp_messages`, {
         to_number: toNumber,
         body,
@@ -110,6 +116,10 @@ export function WhatsAppThread({
             ? String(err)
             : 'El proveedor rechazó el envío. Revisa las credenciales en Ajustes → Integraciones y los logs del API.'
         )
+      } else if (attrs?.status === 'queued' && !attrs.provider_message_id) {
+        toast.message('Mensaje en cola', {
+          description: 'Aún no llegó al proveedor. Revisa Solid Queue o el estado en el hilo.',
+        })
       } else {
         toast.success('Mensaje enviado')
       }

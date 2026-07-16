@@ -99,11 +99,12 @@ class WebhookProcessorJob < ApplicationJob
 
     to_number   = payload["To"].to_s.sub(/\Awhatsapp:/, "")
     from_number = payload["From"].to_s.sub(/\Awhatsapp:/, "")
-    integration = AdIntegration.unscoped.where(provider: "twilio")
-                               .find_by(account_identifier: to_number) ||
-                  resolve_tenant_by_setting("whatsapp.number", to_number)
+    integration = find_twilio_integration_for_to(to_number)
     tenant      = integration.respond_to?(:tenant) ? integration.tenant : integration
-    return Rails.logger.warn("[WhatsApp Twilio] no tenant para to=#{to_number}") unless tenant
+    return Rails.logger.warn(
+      "[WhatsApp Twilio] no tenant para to=#{to_number} " \
+      "(account_identifier en Integraciones debe ser ese E.164, p.ej. +14155238886)"
+    ) unless tenant
 
     ActsAsTenant.with_tenant(tenant) do
       if sid.present? && tenant.whatsapp_messages.exists?(provider: "twilio", provider_message_id: sid)
@@ -272,6 +273,33 @@ class WebhookProcessorJob < ApplicationJob
 
   def resolve_tenant_by_setting(path, value)
     Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+  end
+
+  # Empareja To del webhook con account_identifier (acepta con/sin +).
+  def find_twilio_integration_for_to(to_number)
+    exact = to_number.to_s.strip
+    return nil if exact.blank?
+
+    integ = AdIntegration.unscoped.where(provider: "twilio").find_by(account_identifier: exact)
+    return integ if integ
+
+    digits = exact.gsub(/\D/, "")
+    if digits.present?
+      integ = AdIntegration.unscoped.where(provider: "twilio").detect do |row|
+        row.account_identifier.to_s.gsub(/\D/, "") == digits
+      end
+      return integ if integ
+    end
+
+    resolve_tenant_by_setting("whatsapp.number", exact) ||
+      (digits.present? ? resolve_tenant_by_whatsapp_number_digits(digits) : nil)
+  end
+
+  def resolve_tenant_by_whatsapp_number_digits(digits)
+    Tenant.find_each.find do |t|
+      stored = t.settings.dig("whatsapp", "number").to_s
+      stored.gsub(/\D/, "") == digits
+    end
   end
 
   # Encuentra la oportunidad más apropiada para enlazar un mensaje entrante.

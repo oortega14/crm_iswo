@@ -28,7 +28,8 @@ module Api
 
           enqueue_webhook_processor(
             "whatsapp_openwa",
-            payload.merge("received_at" => Time.current.iso8601)
+            payload.merge("received_at" => Time.current.iso8601),
+            inline: true
           )
           head :ok
         end

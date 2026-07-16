@@ -36,8 +36,7 @@ namespace :security do
   end
 
   def lockbox_key_format_ok?
-    key = ENV["LOCKBOX_MASTER_KEY"].to_s.strip
-    key.match?(/\A[0-9a-fA-F]{64}\z/)
+    SecurityKeyFormat.valid?(ENV["LOCKBOX_MASTER_KEY"])
   end
 
   def lockbox_key_label
@@ -120,18 +119,13 @@ namespace :security do
 
   desc "Fase 2 — verifica cifrado PII en contacts"
   task pii: :environment do
-    failures = 0
+    reporter = SecurityTaskReport.new
     legacy_pending = false
-
-    report = lambda do |name, ok, detail = nil|
-      puts "#{ok ? '✅' : '❌'} #{name}#{detail ? " — #{detail}" : ''}"
-      failures += 1 unless ok
-    end
 
     puts "CRM ISWO — security:pii (Fase 2)\n"
 
-    report.call("LOCKBOX_MASTER_KEY", lockbox_key_format_ok?, lockbox_key_label)
-    report.call(
+    reporter.report("LOCKBOX_MASTER_KEY", lockbox_key_format_ok?, lockbox_key_label)
+    reporter.report(
       "BLIND_INDEX_MASTER_KEY",
       ENV["BLIND_INDEX_MASTER_KEY"].present? || lockbox_key_format_ok?,
       ENV["BLIND_INDEX_MASTER_KEY"].present? ? "explícita" : lockbox_key_label
@@ -150,14 +144,14 @@ namespace :security do
       with_phone_bidx   = phone_bidx_count
       total             = Contact.unscoped.count
 
-      report.call("Sin document_id en claro", with_legacy_doc.zero?, "#{with_legacy_doc} pendientes")
-      report.call("Sin phone_e164 en claro", with_legacy_phone.zero?, "#{with_legacy_phone} pendientes")
-      report.call(
+      reporter.report("Sin document_id en claro", with_legacy_doc.zero?, "#{with_legacy_doc} pendientes")
+      reporter.report("Sin phone_e164 en claro", with_legacy_phone.zero?, "#{with_legacy_phone} pendientes")
+      reporter.report(
         "Contactos con ciphertext",
         with_ciphertext.positive? || total.zero?,
         "#{with_ciphertext} cifrado(s)"
       )
-      report.call(
+      reporter.report(
         "Blind index teléfono",
         with_phone_bidx.positive? || with_ciphertext.zero?,
         "#{with_phone_bidx} índice(s)"
@@ -174,11 +168,11 @@ namespace :security do
         begin
           ok = with_phone_cipher.find { |c| c.phone_e164.present? }
         rescue Lockbox::Error => e
-          report.call("Roundtrip phone_e164", false, e.message.truncate(120))
+          reporter.report("Roundtrip phone_e164", false, e.message.truncate(120))
           ok = :failed
         end
         unless ok == :failed
-          report.call(
+          reporter.report(
             "Roundtrip phone_e164",
             ok.present?,
             ok ? ok.phone_e164.to_s.truncate(20) : "0 descifrables (clave distinta a la del cifrado)"
@@ -187,7 +181,7 @@ namespace :security do
       end
     end
 
-    if failures.positive?
+    if reporter.failures.positive?
       if legacy_pending
         puts "\nEjecuta: CONTACT_PII_MIGRATING=true bundle exec rails security:encrypt_contacts"
       end

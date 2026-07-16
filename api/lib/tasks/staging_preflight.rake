@@ -21,23 +21,8 @@ namespace :staging do
 
   desc "RFC §9 — verificación pre-producción (infra, jobs, integraciones)"
   task preflight: :environment do
-    results = []
-    critical_failures = 0
+    reporter = SecurityTaskReport.new
     production_check = Rails.env.production? || Rails.env.staging?
-
-    report = lambda do |name, ok, detail = nil|
-      icon = ok ? "✅" : "❌"
-      line = "#{icon} #{name}"
-      line += " — #{detail}" if detail.present?
-      puts line
-      results << { name: name, ok: ok, detail: detail }
-      critical_failures += 1 unless ok
-    end
-
-    warn_item = lambda do |name, detail|
-      puts "⚠️  #{name} — #{detail}"
-      results << { name: name, ok: true, detail: "WARN: #{detail}" }
-    end
 
     puts "CRM ISWO — staging preflight (RFC §9)"
     puts "Entorno: #{Rails.env}#{production_check ? ' (checks estrictos)' : ' (Solid Queue = advertencia si no hay worker)'}\n\n"
@@ -48,7 +33,7 @@ namespace :staging do
       Rake::Task["security:infra"].reenable
       Rake::Task["security:infra"].invoke
     rescue SystemExit => e
-      critical_failures += 1 if e.status.to_i.nonzero?
+      reporter.fail! if e.status.to_i.nonzero?
     end
     puts ""
 
@@ -58,7 +43,7 @@ namespace :staging do
         Rake::Task["security:rls"].reenable
         Rake::Task["security:rls"].invoke
       rescue SystemExit => e
-        critical_failures += 1 if e.status.to_i.nonzero?
+        reporter.fail! if e.status.to_i.nonzero?
       end
       puts ""
     end
@@ -66,13 +51,13 @@ namespace :staging do
     # --- Infraestructura ----------------------------------------------------
     begin
       ActiveRecord::Base.connection.execute("SELECT 1")
-      report.call("PostgreSQL", true, "conectado (#{ActiveRecord::Base.connection_db_config.database})")
+      reporter.report("PostgreSQL", true, "conectado (#{ActiveRecord::Base.connection_db_config.database})")
     rescue StandardError => e
-      report.call("PostgreSQL", false, e.message)
+      reporter.report("PostgreSQL", false, e.message)
     end
 
-    report.call("DEVISE_JWT_SECRET_KEY", ENV["DEVISE_JWT_SECRET_KEY"].present? || Rails.application.credentials.devise_jwt_secret_key.present?)
-    report.call("LOCKBOX_MASTER_KEY", ENV["LOCKBOX_MASTER_KEY"].present? || Rails.application.credentials.lockbox_master_key.present?)
+    reporter.report("DEVISE_JWT_SECRET_KEY", ENV["DEVISE_JWT_SECRET_KEY"].present? || Rails.application.credentials.devise_jwt_secret_key.present?)
+    reporter.report("LOCKBOX_MASTER_KEY", ENV["LOCKBOX_MASTER_KEY"].present? || Rails.application.credentials.lockbox_master_key.present?)
 
     solid_tables_ok = %w[solid_queue_jobs solid_cache_entries].all? do |table|
       ActiveRecord::Base.connection.data_source_exists?(table)
@@ -80,25 +65,25 @@ namespace :staging do
       false
     end
     if solid_tables_ok
-      report.call("Solid Queue + Solid Cache (PostgreSQL)", true)
+      reporter.report("Solid Queue + Solid Cache (PostgreSQL)", true)
     elsif production_check
-      report.call("Solid Queue + Solid Cache (PostgreSQL)", false, "ejecuta: bundle exec rails solid:setup")
+      reporter.report("Solid Queue + Solid Cache (PostgreSQL)", false, "ejecuta: bundle exec rails solid:setup")
     else
-      warn_item.call("Solid Queue + Solid Cache", "tablas ausentes — ejecuta: bundle exec rails solid:setup")
+      reporter.warn_item("Solid Queue + Solid Cache", "tablas ausentes — ejecuta: bundle exec rails solid:setup")
     end
 
     if production_check
       if ENV["AWS_S3_BUCKET"].present?
-        report.call("AWS_S3_BUCKET (exports cifrados en S3)", true, ENV["AWS_S3_BUCKET"])
+        reporter.report("AWS_S3_BUCKET (exports cifrados en S3)", true, ENV["AWS_S3_BUCKET"])
       else
-        warn_item.call("AWS_S3_BUCKET", "vacío — exports async usan disco cifrado Lockbox (OK dev, revisar prod)")
+        reporter.warn_item("AWS_S3_BUCKET", "vacío — exports async usan disco cifrado Lockbox (OK dev, revisar prod)")
       end
     end
 
     # --- Solid Queue / jobs RFC §6.4, §9 ------------------------------------
     recurring = load_recurring_yml_for_env
     solid_recurring = recurring.key?("reminder_notification_job")
-    report.call(
+    reporter.report(
       "ReminderNotificationJob programado (cada minuto)",
       solid_recurring,
       solid_recurring ? "Solid Queue recurring (config/recurring.yml)" : "falta en recurring.yml"
@@ -108,26 +93,26 @@ namespace :staging do
       in_puma = ENV["SOLID_QUEUE_IN_PUMA"].to_s == "true"
       workers = defined?(SolidQueue::Process) ? SolidQueue::Process.count : 0
       if in_puma
-        report.call("Solid Queue supervisor", true, "SOLID_QUEUE_IN_PUMA=true (dentro de Puma)")
+        reporter.report("Solid Queue supervisor", true, "SOLID_QUEUE_IN_PUMA=true (dentro de Puma)")
       elsif workers.positive?
-        report.call("Solid Queue worker", true, "#{workers} proceso(s) activo(s)")
+        reporter.report("Solid Queue worker", true, "#{workers} proceso(s) activo(s)")
       elsif production_check
-        report.call("Solid Queue worker", false, "levanta Puma con SOLID_QUEUE_IN_PUMA=true o bin/jobs")
+        reporter.report("Solid Queue worker", false, "levanta Puma con SOLID_QUEUE_IN_PUMA=true o bin/jobs")
       else
-        warn_item.call("Solid Queue worker", "no detectado — SOLID_QUEUE_IN_PUMA=true bin/rails s o bin/jobs")
+        reporter.warn_item("Solid Queue worker", "no detectado — SOLID_QUEUE_IN_PUMA=true bin/rails s o bin/jobs")
       end
     rescue StandardError => e
-      warn_item.call("Solid Queue worker", "no se pudo verificar (#{e.message})")
+      reporter.warn_item("Solid Queue worker", "no se pudo verificar (#{e.message})")
     end
 
     pending_reminders = ActsAsTenant.without_tenant { Reminder.due.count }
-    warn_item.call("Recordatorios vencidos pendientes", "#{pending_reminders} en cola") if pending_reminders.positive?
+    reporter.warn_item("Recordatorios vencidos pendientes", "#{pending_reminders} en cola") if pending_reminders.positive?
 
     # --- Email (recordatorios) ----------------------------------------------
     if ENV["POSTMARK_API_TOKEN"].present?
-      report.call("Postmark (email recordatorios)", true)
+      reporter.report("Postmark (email recordatorios)", true)
     else
-      warn_item.call("POSTMARK_API_TOKEN", "vacío — canal email de recordatorios no enviará")
+      reporter.warn_item("POSTMARK_API_TOKEN", "vacío — canal email de recordatorios no enviará")
     end
 
     # --- Integraciones por tenant -------------------------------------------
@@ -139,7 +124,7 @@ namespace :staging do
       end
 
     if tenant_scope.none?
-      warn_item.call(
+      reporter.warn_item(
         "Tenants producto",
         "no hay slugs #{PRODUCT_TENANT_SLUGS.join(', ')} — usa PREFLIGHT_ALL_TENANTS=1"
       )
@@ -157,21 +142,21 @@ namespace :staging do
 
         puts "\nTenant «#{tenant.slug}»:"
         if meta
-          report.call("  Meta Ads configurado", meta.credentials.present?, "webhook: POST /api/v1/webhooks/meta")
+          reporter.report("  Meta Ads configurado", meta.credentials.present?, "webhook: POST /api/v1/webhooks/meta")
         else
-          warn_item.call("  Meta Ads", "sin AdIntegration activa — RFC §9 leads Meta no aplicará")
+          reporter.warn_item("  Meta Ads", "sin AdIntegration activa — RFC §9 leads Meta no aplicará")
         end
 
         if google
-          report.call("  Google Ads configurado", google.credentials.present?)
+          reporter.report("  Google Ads configurado", google.credentials.present?)
         else
-          warn_item.call("  Google Ads", "sin AdIntegration activa")
+          reporter.warn_item("  Google Ads", "sin AdIntegration activa")
         end
 
         if whatsapp.present?
-          report.call("  WhatsApp outbound", true, "provider=#{whatsapp}")
+          reporter.report("  WhatsApp outbound", true, "provider=#{whatsapp}")
         else
-          warn_item.call("  WhatsApp outbound", "sin provider en tenant.settings")
+          reporter.warn_item("  WhatsApp outbound", "sin provider en tenant.settings")
         end
       end
     end
@@ -183,10 +168,10 @@ namespace :staging do
     puts "• Recordatorio entregado ±5 min del remind_at (recurring.yml + worker activo)"
 
     puts "\n--- Resumen ---"
-    passed = results.count { |r| r[:ok] }
-    puts "#{passed}/#{results.size} checks OK"
-    if critical_failures.positive?
-      puts "#{critical_failures} fallo(s) crítico(s)."
+    passed = reporter.results.count { |r| r[:ok] }
+    puts "#{passed}/#{reporter.results.size} checks OK"
+    if reporter.failures.positive?
+      puts "#{reporter.failures} fallo(s) crítico(s)."
       exit 1
     end
 

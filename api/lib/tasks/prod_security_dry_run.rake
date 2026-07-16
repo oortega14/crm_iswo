@@ -37,24 +37,13 @@ namespace :prod do
 
   desc "RFC §7 — dry-run producción (deploy.yml + security:infra simulado)"
   task security_dry_run: :environment do
-    failures = 0
-    warnings = 0
-
-    report = lambda do |name, ok, detail = nil|
-      puts "#{ok ? '✅' : '❌'} #{name}#{detail ? " — #{detail}" : ''}"
-      failures += 1 unless ok
-    end
-
-    warn_item = lambda do |name, detail|
-      puts "⚠️  #{name} — #{detail}"
-      warnings += 1
-    end
+    reporter = SecurityTaskReport.new
 
     puts "CRM ISWO — prod:security_dry_run (RFC §7 → Kamal)\n"
 
     deploy_path = Rails.root.join("config/deploy.yml")
     unless deploy_path.exist?
-      report.call("config/deploy.yml", false, "no encontrado")
+      reporter.report("config/deploy.yml", false, "no encontrado")
       exit 1
     end
 
@@ -63,11 +52,11 @@ namespace :prod do
     secrets = Array(env_block["secret"])
     clear = env_block.fetch("clear", {})
 
-    report.call("Kamal proxy SSL", deploy.dig("proxy", "ssl") == true, deploy.dig("proxy", "host"))
-    report.call("Kamal proxy host", deploy.dig("proxy", "host").present?)
+    reporter.report("Kamal proxy SSL", deploy.dig("proxy", "ssl") == true, deploy.dig("proxy", "host"))
+    reporter.report("Kamal proxy host", deploy.dig("proxy", "host").present?)
 
     missing_secrets = REQUIRED_SECRETS - secrets
-    report.call(
+    reporter.report(
       "env.secret (Kamal)",
       missing_secrets.empty?,
       missing_secrets.empty? ? REQUIRED_SECRETS.join(", ") : "faltan: #{missing_secrets.join(', ')}"
@@ -75,40 +64,42 @@ namespace :prod do
 
     secrets_file = Rails.root.join(".kamal/secrets")
     if secrets_file.exist?
-      report.call(".kamal/secrets presente", true, "revisa que tenga valores reales (no commitear)")
+      reporter.report(".kamal/secrets presente", true, "revisa que tenga valores reales (no commitear)")
     else
-      warn_item.call(".kamal/secrets", "no existe — copia .kamal/secrets.example y completa")
+      reporter.warn_item(".kamal/secrets", "no existe — copia .kamal/secrets.example y completa")
     end
 
     REQUIRED_CLEAR.each do |key, validator|
       value = clear[key] || ENV[key]
-      report.call("env.clear #{key}", validator.call(value), value.to_s.truncate(80))
+      reporter.report("env.clear #{key}", validator.call(value), value.to_s.truncate(80))
     end
 
     RECOMMENDED_CLEAR.each do |key, reason|
       value = clear[key] || ENV[key]
       if value.present?
-        report.call("env.clear #{key}", true, value.to_s)
+        reporter.report("env.clear #{key}", true, value.to_s)
       else
-        warn_item.call(key, "no en deploy.yml — #{reason}")
+        reporter.warn_item(key, "no en deploy.yml — #{reason}")
       end
     end
 
     servers = deploy["servers"]
     web_hosts = servers.is_a?(Hash) ? servers["web"] : servers
     if web_hosts.is_a?(Array) && web_hosts.any? { |h| h.to_s.include?("192.168.0.1") }
-      warn_item.call("servers.web", "placeholder 192.168.0.1 — reemplaza IP/host real antes de kamal deploy")
+      reporter.warn_item("servers.web", "placeholder 192.168.0.1 — reemplaza IP/host real antes de kamal deploy")
     end
 
     puts "\n--- Simulación security:infra (subprocess RAILS_ENV=production) ---\n"
 
-    infra_env = clear.stringify_keys.merge(
+    # `system(env, ...)` exige valores string; env.clear puede traer booleanos
+    # YAML sin comillas (p. ej. deploy.yml: SOLID_QUEUE_IN_PUMA: true).
+    infra_env = clear.stringify_keys.transform_values(&:to_s).merge(
       "RAILS_ENV" => "production",
       "DEVISE_JWT_SECRET_KEY" => ENV["DEVISE_JWT_SECRET_KEY"].presence || "dry-run-jwt-secret-min-32-chars-long",
       "LOCKBOX_MASTER_KEY" => ENV["LOCKBOX_MASTER_KEY"].presence || ("a" * 64)
     )
     infra_ok = system(infra_env, "bundle", "exec", "rails", "security:infra", chdir: Rails.root.to_s)
-    failures += 1 unless infra_ok
+    reporter.fail! unless infra_ok
     puts "(Nota: puede fallar PostgreSQL si no existe crm_iswo_production local — normal en dry-run.)" unless infra_ok
 
     puts "\n--- Pasos manuales post-deploy ---"
@@ -119,12 +110,12 @@ namespace :prod do
     puts "• Checklist: bundle exec rails staging:preflight (en servidor o con ENV prod)"
 
     puts "\n--- Resumen dry-run ---"
-    if failures.positive?
-      puts "#{failures} fallo(s) — corrige deploy.yml / .kamal/secrets antes de kamal deploy."
+    if reporter.failures.positive?
+      puts "#{reporter.failures} fallo(s) — corrige deploy.yml / .kamal/secrets antes de kamal deploy."
       exit 1
     end
 
-    puts "Dry-run OK#{warnings.positive? ? " (#{warnings} advertencia(s))" : ''}."
+    puts "Dry-run OK#{reporter.warnings.positive? ? " (#{reporter.warnings} advertencia(s))" : ''}."
     puts "Siguiente: completar .kamal/secrets → IP real en deploy.yml → kamal setup → kamal deploy"
   end
 end

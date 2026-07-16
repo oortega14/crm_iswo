@@ -27,19 +27,15 @@ namespace :security do
 
   desc "Fase 3 — verifica Row Level Security por tenant_id"
   task rls: :environment do
-    failures = 0
-    report = lambda do |name, ok, detail = nil|
-      puts "#{ok ? '✅' : '❌'} #{name}#{detail ? " — #{detail}" : ''}"
-      failures += 1 unless ok
-    end
+    reporter = SecurityTaskReport.new
 
     puts "CRM ISWO — security:rls (Fase 3)\n"
 
-    report.call("DB_RLS_ENABLED", DatabaseTenantRls.enabled?, ENV.fetch("DB_RLS_ENABLED", "(default prod)"))
+    reporter.report("DB_RLS_ENABLED", DatabaseTenantRls.enabled?, ENV.fetch("DB_RLS_ENABLED", "(default prod)"))
 
     missing = DatabaseTenantRls.missing_policy_tables
 
-    report.call(
+    reporter.report(
       "Políticas RLS instaladas",
       missing.empty?,
       missing.empty? ? "#{DatabaseTenantRls::TENANT_TABLES.size} tablas" : "faltan: #{missing.join(', ')}"
@@ -62,7 +58,7 @@ namespace :security do
         rls_active = counts.uniq.size > 1 || (total.positive? && counts.all? { |n| n < total })
 
         if rls_active
-          report.call("Aislamiento por tenant (smoke)", true, parts)
+          reporter.report("Aislamiento por tenant (smoke)", true, parts)
         else
           puts "⚠️  Aislamiento smoke — #{parts} (total=#{total})"
           puts "    Los 3 tenants ven las mismas filas: RLS no filtra como superuser/owner."
@@ -85,11 +81,11 @@ namespace :security do
         puts "⚠️  Conexión como superuser (#{role}): RLS no aplica al owner salvo FORCE ROW LEVEL SECURITY."
         puts "    En producción usa rol dedicado (crm_iswo) sin BYPASSRLS."
       else
-        report.call("Rol aplicación (no superuser)", true, role)
+        reporter.report("Rol aplicación (no superuser)", true, role)
       end
     end
 
-    exit 1 if failures.positive?
+    exit 1 if reporter.failures.positive?
 
     puts "\nFase 3 RLS OK."
   end

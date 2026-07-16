@@ -295,9 +295,10 @@ class WebhookProcessorJob < ApplicationJob
 
       digits = exact.gsub(/\D/, "")
       if digits.present?
-        integ = AdIntegration.unscoped.where(provider: "twilio").detect do |row|
-          row.account_identifier.to_s.gsub(/\D/, "") == digits
-        end
+        # Compara dígitos en SQL en vez de cargar toda la tabla a Ruby por webhook.
+        integ = AdIntegration.unscoped.where(provider: "twilio")
+                             .where("regexp_replace(account_identifier, '\\D', '', 'g') = ?", digits)
+                             .first
         next integ if integ
       end
 
@@ -308,10 +309,10 @@ class WebhookProcessorJob < ApplicationJob
 
   def resolve_tenant_by_whatsapp_number_digits(digits)
     ActsAsTenant.without_tenant do
-      Tenant.find_each.find do |t|
-        stored = t.settings.dig("whatsapp", "number").to_s
-        stored.gsub(/\D/, "") == digits
-      end
+      # Compara dígitos en SQL en vez de cargar todos los tenants a Ruby por webhook.
+      Tenant.where(
+        "regexp_replace(settings #>> '{whatsapp,number}', '\\D', '', 'g') = ?", digits
+      ).first
     end
   end
 

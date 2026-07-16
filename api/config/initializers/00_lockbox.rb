@@ -1,19 +1,16 @@
 # frozen_string_literal: true
 
 require "digest"
+require Rails.root.join("lib/security_key_format")
 
 # ============================================================================
 # Lockbox — carga antes que blind_index.rb (prefijo 00_).
 # ============================================================================
 
-def lockbox_valid_key?(key)
-  key.to_s.strip.match?(/\A[0-9a-fA-F]{64}\z/)
-end
-
 raw_env = ENV["LOCKBOX_MASTER_KEY"].to_s.strip
-invalid_env_placeholder = raw_env.present? && !lockbox_valid_key?(raw_env)
+invalid_env_placeholder = raw_env.present? && !SecurityKeyFormat.valid?(raw_env)
 
-unless lockbox_valid_key?(raw_env)
+unless SecurityKeyFormat.valid?(raw_env)
   cred =
     begin
       Rails.application.credentials.dig(:lockbox, :master_key)
@@ -22,7 +19,7 @@ unless lockbox_valid_key?(raw_env)
     end
 
   derived =
-    if lockbox_valid_key?(cred)
+    if SecurityKeyFormat.valid?(cred)
       cred.to_s
     elsif !Rails.env.production?
       sk = Rails.application.secret_key_base.to_s
@@ -33,11 +30,11 @@ unless lockbox_valid_key?(raw_env)
       end
     end
 
-  ENV["LOCKBOX_MASTER_KEY"] = derived if lockbox_valid_key?(derived)
-  ENV["LOCKBOX_KEY_SOURCE"] = "derived" if lockbox_valid_key?(derived)
+  ENV["LOCKBOX_MASTER_KEY"] = derived if SecurityKeyFormat.valid?(derived)
+  ENV["LOCKBOX_KEY_SOURCE"] = "derived" if SecurityKeyFormat.valid?(derived)
 end
 
-if lockbox_valid_key?(raw_env)
+if SecurityKeyFormat.valid?(raw_env)
   ENV["LOCKBOX_KEY_SOURCE"] = "explicit"
 end
 
@@ -48,7 +45,7 @@ if invalid_env_placeholder
   )
 end
 
-if lockbox_valid_key?(ENV["LOCKBOX_MASTER_KEY"])
+if SecurityKeyFormat.valid?(ENV["LOCKBOX_MASTER_KEY"])
   Lockbox.master_key = ENV["LOCKBOX_MASTER_KEY"]
 else
   Rails.logger.warn(

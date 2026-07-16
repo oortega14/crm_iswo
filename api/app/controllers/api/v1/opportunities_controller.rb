@@ -119,20 +119,29 @@ module Api
         apply_stage_status!(attrs)
         @opportunity.preserve_temperature_on_bant_recalc = temperature_param_explicit?
         if @opportunity.update(attrs)
-          bant_recalc = @opportunity.saved_change_to_estimated_value? ||
-                        (@opportunity.saved_change_to_custom_fields? && bant_in)
+          # `before`/attributes finales en vez de saved_change_to_*?: el callback
+          # after_update de BANT hace su propio update!/reload anidado sobre este
+          # mismo registro, lo que resetea el dirty-tracking de ActiveRecord antes
+          # de que el controller pueda leerlo. Comparar contra el snapshot previo
+          # sí refleja el resultado real de todo el ciclo de guardado.
+          changes = diff(before, @opportunity.attributes)
+          bant_recalc = changes.key?("estimated_value") ||
+                        (changes.key?("custom_fields") && bant_in)
           auto_queued = enqueue_auto_temperature_classify!(
-            changed_keys: @opportunity.saved_changes.keys,
+            changed_keys: changes.keys,
             source:       "auto_save"
           )
           recalc_temp = !temperature_param_explicit? && !bant_recalc && !auto_queued
           @opportunity.touch_activity!(recalc_temperature: recalc_temp)
-          log_action!("update", diff(before, @opportunity.attributes))
+          log_action!("update", changes)
           if @opportunity.pipeline_stage_id != before_stage_id
             notify_stage_change!(
               from_stage: from_stage,
               to_stage:   @opportunity.pipeline_stage,
-              automatic:  bant_in && !stage_in_request
+              # Si la etapa cambió y el request no la pidió explícitamente, solo
+              # pudo moverla el auto-avance por calificación BANT (BantScorer);
+              # nada más en esta acción cambia pipeline_stage_id sin stage_in_request.
+              automatic:  !stage_in_request
             )
           end
           render_opportunity_resource(

@@ -52,8 +52,13 @@ module Reminders
         return false
       end
 
+      return mark_failed_missing_opportunity if @reminder.opportunity.nil?
+
       ReminderMailer.with(reminder: @reminder).due_notification.deliver_now
-      return mark_failed_missing_opportunity unless notify_in_app!
+      # Best-effort: la campana in-app no debe revertir un correo que ya se
+      # entregó (antes, si notify_in_app! fallaba aquí, el reminder quedaba
+      # "failed" pese al deliver_now exitoso, arriesgando un reenvío duplicado).
+      notify_in_app!
 
       @reminder.mark_sent!
       true
@@ -74,6 +79,8 @@ module Reminders
         return false
       end
 
+      return mark_failed_missing_opportunity if @reminder.opportunity.nil?
+
       tenant   = @reminder.tenant
       provider = tenant.whatsapp_outbound_provider
       from     = tenant.whatsapp_outbound_from_number_for(provider)
@@ -88,7 +95,10 @@ module Reminders
         body:        StaffWhatsappBody.for(@reminder),
         status:      "queued"
       )
-      return mark_failed_missing_opportunity unless notify_in_app!
+      # Best-effort: la campana in-app no debe bloquear el encolado real del
+      # mensaje (antes, si notify_in_app! fallaba, el mensaje quedaba
+      # "queued" para siempre porque WhatsappDeliveryJob nunca se encolaba).
+      notify_in_app!
 
       WhatsappDeliveryJob.perform_later(msg.id, @reminder.id)
       true

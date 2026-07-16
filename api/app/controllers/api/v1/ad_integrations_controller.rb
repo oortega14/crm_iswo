@@ -35,6 +35,10 @@ module Api
         parameters = merge_credentials_into(permitted)
         parameters = merge_metadata_into(parameters)
         if @integration.update(parameters)
+          log_integration_audit!(
+            "integration_update", @integration,
+            changes: @integration.previous_changes.except("updated_at").presence
+          )
           render_resource(@integration, with: AdIntegrationSerializer)
         else
           render_unprocessable(@integration)
@@ -168,19 +172,20 @@ module Api
         ENV["API_PUBLIC_ORIGIN"].presence || request.base_url
       end
 
-      def log_integration_audit!(action, integration)
-        AuditEvent.create!(
+      def log_integration_audit!(action, integration, changes: nil)
+        metadata = { provider: integration.provider }
+        metadata[:changes] = changes if changes.present?
+
+        AuditLogger.record!(
           tenant:      current_tenant,
           user:        current_user,
           action:      action,
           entity_type: "AdIntegration",
           entity_id:   integration.id,
-          metadata:    { provider: integration.provider },
+          metadata:    metadata,
           ip_address:  request.remote_ip,
-          user_agent:  request.user_agent.to_s.truncate(255)
+          user_agent:  request.user_agent
         )
-      rescue StandardError => e
-        Rails.logger.warn("[AuditEvent] #{action}: #{e.message}")
       end
     end
   end

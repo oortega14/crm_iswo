@@ -9,6 +9,9 @@ require "devise/orm/active_record"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+# Mission Control (UI /jobs) en app API-only requiere el pipeline de assets.
+require "sprockets/railtie"
+
 module CrmIswo
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
@@ -37,5 +40,11 @@ module CrmIswo
     config.middleware.insert_after ActionDispatch::RequestId, ActionDispatch::Cookies
     config.middleware.insert_after ActionDispatch::Cookies, ActionDispatch::Session::CookieStore,
                                    key: "_crm_iswo_session", same_site: :lax, secure: Rails.env.production?
+    config.middleware.use ActionDispatch::Flash
+
+    config.assets.enabled = true
+    config.assets.compile = true
+    config.mission_control.jobs.adapters = [:solid_queue]
+    config.mission_control.jobs.http_basic_auth_enabled = false if Rails.env.development?
   end
 end

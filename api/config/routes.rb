@@ -1,22 +1,8 @@
 # frozen_string_literal: true
 
-require "sidekiq/web"
-require "sidekiq-scheduler/web"
-
 Rails.application.routes.draw do
-  # ==========================================================================
-  # Sidekiq Web UI
-  # --------------------------------------------------------------------------
-  # En producción se protege con HTTP Basic (ver ApplicationController de
-  # Sidekiq Web) o detrás de VPN. En desarrollo queda abierto.
-  # ==========================================================================
-  unless Rails.env.development?
-    Sidekiq::Web.use Rack::Auth::Basic do |user, pass|
-      ActiveSupport::SecurityUtils.secure_compare(user, ENV.fetch("SIDEKIQ_WEB_USERNAME", "")) &
-        ActiveSupport::SecurityUtils.secure_compare(pass, ENV.fetch("SIDEKIQ_WEB_PASSWORD", ""))
-    end
-  end
-  mount Sidekiq::Web => "/sidekiq"
+  # Mission Control — cola de jobs (Solid Queue). http://localhost:3000/jobs
+  mount MissionControl::Jobs::Engine, at: "/jobs"
 
   # Bandeja de correos en desarrollo: http://localhost:3000/letter_opener
   mount LetterOpenerWeb::Engine, at: "/letter_opener" if Rails.env.development?

@@ -10,7 +10,17 @@
 | `/diagnostico` | Verificar que Rails, Vite, PostgreSQL, Redis y Sidekiq estén funcionando |
 | `/nuevo-tenant` | Crear y configurar un tenant nuevo con pipeline y usuarios según su vertical |
 
-**Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Sidekiq, integraciones).
+**Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Solid Queue, integraciones).
+
+**Jobs (Solid Queue):** `SOLID_QUEUE_IN_PUMA=true bin/rails s` o `bin/jobs` — sin Redis. UI: `http://localhost:3000/jobs`
+
+**Seguridad Fase 1 (Opción 1 infra):** `cd api && bundle exec rails security:infra` — HTTPS, SSL PostgreSQL, secretos, CORS. Ver `api/docs/SECURITY_FASE1.md`.
+
+**Pre-producción RFC §7:** `cd api && bundle exec rails prod:security_dry_run` — valida `deploy.yml` + simula `security:infra`. Checklist: `api/docs/PRODUCTION_CHECKLIST.md`.
+
+**Seguridad Fase 2 (Opción 2 PII):** `db:migrate` → `CONTACT_PII_MIGRATING=true security:encrypt_contacts` → `security:pii`. Ver `api/docs/SECURITY_FASE2.md`.
+
+**Seguridad Fase 3 (RLS PostgreSQL):** `db:migrate` → `DB_RLS_ENABLED=true security:rls`. Ver `api/docs/SECURITY_FASE3.md`.
 
 Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
 
@@ -166,8 +176,8 @@ RBAC Pundit y la misma sesión JWT que el resto del CRM:
 | Auditoría | `/settings/audit` |
 | Onboarding de tenants | `/settings/tenant-onboarding` |
 
-**Excepción operativa (no producto):** Sidekiq Web en `/sidekiq` — UI HTML propia
-del gem, protegida con HTTP Basic en producción.
+**Excepción operativa (no producto):** Mission Control Jobs en `/jobs` — UI de Solid Queue,
+protegida con HTTP Basic en producción.
 
 **Por qué no implementar Slim:** evita duplicar pantallas, auth y permisos;
 alinea el producto con referentes HubSpot/GoHighLevel (una sola app web); el MVP

@@ -71,57 +71,64 @@ function DashboardPage() {
   const hasReminders = tenantHasModule(tenant, 'reminders') && canUseReminders(user?.role)
   const showBant = tenantShowBant(tenant)
 
-  // staleTime: 0 → siempre refetch al montar o enfocar la ventana
-  // refetchOnWindowFocus: true → se actualiza al volver al dashboard
-  const dashboardQueryOpts = { staleTime: 0, refetchOnWindowFocus: true } as const
+  // 45s de caché: el dashboard no re-fetcha en cada navegación interna.
+  // refetchOnWindowFocus desactivado — evita 7 peticiones al hacer alt-tab.
+  const dashboardQueryOpts = { staleTime: 45_000, refetchOnWindowFocus: false } as const
+
+  const briefingEnabled = Boolean(authScope) && hasOpportunities
 
   const { data: briefing, isPending: briefingPending, isError: briefingError } = useQuery({
     queryKey: queryKeys.dashboard.briefing(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardBriefing(activePipelineId),
-    enabled: Boolean(authScope) && hasOpportunities,
+    enabled: briefingEnabled,
     ...dashboardQueryOpts,
   })
 
+  // kpisQ solo se activa cuando briefing no está habilitado: briefing ya incluye
+  // todos los KPIs como superset, llamar a ambos duplica trabajo en el servidor.
   const kpisQ = useQuery({
     queryKey: queryKeys.dashboard.kpis(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardKpis(activePipelineId),
-    enabled: Boolean(authScope) && hasOpportunities,
+    enabled: Boolean(authScope) && hasOpportunities && !briefingEnabled,
     ...dashboardQueryOpts,
   })
 
   const pipelineQ = useQuery({
-    queryKey: queryKeys.dashboard.pipeline(authScope, activePipelineId),
+    queryKey: queryKeys.dashboard.pipeline(authScope, activePipelineId ?? 'default'),
     queryFn: () => fetchDashboardPipeline(activePipelineId),
-    enabled: Boolean(authScope) && hasPipeline && Boolean(activePipelineId),
+    enabled: Boolean(authScope) && hasPipeline,
     ...dashboardQueryOpts,
   })
+
+  // Fase 2: solo se disparan cuando briefing o pipeline ya respondieron (evita saturar Puma)
+  const phase2Ready = Boolean(authScope) && (!briefingEnabled || Boolean(briefing) || Boolean(pipelineQ.data))
 
   const consultantsQ = useQuery({
     queryKey: queryKeys.dashboard.topConsultants(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardTopConsultants(activePipelineId),
-    enabled: Boolean(authScope) && isManagerOrAbove && hasOpportunities,
+    enabled: phase2Ready && isManagerOrAbove && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
   const activityQ = useQuery({
     queryKey: queryKeys.dashboard.activity(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardActivity(activePipelineId),
-    enabled: Boolean(authScope) && hasOpportunities,
-    refetchInterval: 30_000,
+    enabled: phase2Ready && hasOpportunities,
+    refetchInterval: 120_000,
     ...dashboardQueryOpts,
   })
 
   const bantQ = useQuery({
     queryKey: queryKeys.dashboard.bantDistribution(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardBantDistribution(activePipelineId),
-    enabled: Boolean(authScope) && hasOpportunities && showBant,
+    enabled: phase2Ready && hasOpportunities && showBant,
     ...dashboardQueryOpts,
   })
 
   const leadSourcesQ = useQuery({
     queryKey: queryKeys.dashboard.leadSources(authScope, pipelineFilterKey),
     queryFn: () => fetchDashboardLeadSources(activePipelineId),
-    enabled: Boolean(authScope) && hasOpportunities,
+    enabled: phase2Ready && hasOpportunities,
     ...dashboardQueryOpts,
   })
 
@@ -130,12 +137,8 @@ function DashboardPage() {
     [activityQ.data],
   )
 
-  const initialLoading =
-    pipelinesLoading ||
-    (hasOpportunities && kpisQ.isPending && !kpisQ.data) ||
-    (hasPipeline && pipelineQ.isPending && !pipelineQ.data)
-
-  if (initialLoading) return <DashboardSkeleton />
+  // Solo bloquea en pipelines (query ligera). El resto muestra loading inline.
+  if (pipelinesLoading) return <DashboardSkeleton />
 
   const pipelineOptions = pipelines.map((p) => ({
     id: p.id,

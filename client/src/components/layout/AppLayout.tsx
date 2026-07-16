@@ -18,7 +18,6 @@ import { resolveKnownBrandSlug } from '@/lib/tenantBrand'
 import { useTenant, useUser } from '@/stores/auth'
 import { useTheme } from '@/components/common/ThemeProvider'
 import {
-  DUPLICATE_FLAGS_POLL_MS,
   getAuthQueryScope,
   queryKeys,
 } from '@/lib/queryClient'
@@ -90,9 +89,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     queryKey: queryKeys.duplicateFlags.stats(authScope),
     queryFn: fetchDuplicateFlagsStats,
     enabled: Boolean(authScope) && hasOpportunities && canPollDuplicateStats,
-    refetchInterval:
-      user?.role === 'consultant' ? 60_000 : DUPLICATE_FLAGS_POLL_MS,
-    refetchIntervalInBackground: user?.role !== 'consultant',
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   })
 

@@ -72,15 +72,14 @@ class LandingSubmissionProcessor
       matches.first.contact
     else
       @tenant.contacts.create!(
-        first_name:       first_name,
-        last_name:        last_name,
-        email:            email,
-        phone_e164:       phone,
-        phone_normalized: phone.present? ? Phonelib.parse(phone).sanitized : nil,
-        company_name:     extract(COMPANY_KEYS),
-        custom_fields:    extra_fields.stringify_keys,
-        source_kind:      "web",
-        source_label:     @landing&.title.presence || @landing&.slug
+        first_name:    first_name,
+        last_name:     last_name,
+        email:         email,
+        phone_e164:    phone,
+        company_name:  extract(COMPANY_KEYS),
+        custom_fields: extra_fields.stringify_keys,
+        source_kind:   "web",
+        source_label:  @landing&.title.presence || @landing&.slug
       )
     end
   end
@@ -93,9 +92,6 @@ class LandingSubmissionProcessor
     updates[:last_name]    = last_name if last_name.present?
     updates[:email]        = email if email.present?
     updates[:phone_e164]   = phone if phone.present?
-    if phone.present?
-      updates[:phone_normalized] = Phonelib.parse(phone).sanitized
-    end
     company = extract(COMPANY_KEYS)
     updates[:company_name] = company if company.present?
 

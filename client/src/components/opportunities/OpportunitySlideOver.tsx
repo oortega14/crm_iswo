@@ -244,6 +244,22 @@ export function OpportunitySlideOver({
     }
   }
 
+  // Set único de invalidaciones para toda mutación que cambie una oportunidad.
+  // Antes cada mutation repetía este bloque con un subconjunto distinto (y
+  // aparentemente accidental) de queries, dejando vistas obsoletas según qué
+  // acción se disparara (p. ej. reasignar dueño no invalidaba notificaciones).
+  const invalidateOpportunityQueries = (oppId?: string) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+    if (oppId) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(oppId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(oppId) })
+      void queryClient.invalidateQueries({ queryKey: ['temperature_context', oppId] })
+    }
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    void invalidateContactSegmentMetrics(queryClient)
+    void invalidateNotificationsQueries(queryClient)
+  }
+
   const beginAutoClassifyPoll = () => {
     autoClassifySinceRef.current = new Date().toISOString()
     setAutoClassifying(true)
@@ -278,12 +294,7 @@ export function OpportunitySlideOver({
       data_considered: last.data_considered,
     })
     setAutoClassifying(false)
-    void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-    if (opportunity?.id) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-      invalidateTemperatureContext(opportunity.id)
-    }
+    invalidateOpportunityQueries(opportunity?.id)
     if (last.ai_used) {
       toast.success('Temperatura actualizada automáticamente con IA')
     } else {
@@ -319,15 +330,7 @@ export function OpportunitySlideOver({
       } else {
         toast.success('Oportunidad actualizada')
       }
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-        invalidateTemperatureContext(opportunity.id)
-      }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
-      void invalidateNotificationsQueries(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
@@ -340,9 +343,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Oportunidad eliminada')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       onOpenChange(false)
     },
     onError: () => {
@@ -361,14 +362,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: (ai_result) => {
       setAiResult(ai_result)
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-        invalidateTemperatureContext(opportunity.id)
-      }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       toast.success('Temperatura actualizada según BANT y actividad')
     },
     onError: (err: unknown) => {
@@ -383,12 +377,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Etapa actualizada')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
-      void invalidateNotificationsQueries(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: () => toast.error('No se pudo cambiar la etapa'),
   })
@@ -400,11 +389,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Consultor asignado')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: () => toast.error('No se pudo reasignar'),
   })
@@ -415,11 +400,7 @@ export function OpportunitySlideOver({
       return recalculateOpportunityBant(opportunity.id)
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       if (result.temperature_ai?.ai_used) {
         toast.success('BANT recalculado y temperatura actualizada con Claude')
       } else {
@@ -440,14 +421,7 @@ export function OpportunitySlideOver({
         ...ai_result,
         anthropic_error: res.meta?.anthropic_error ?? null,
       })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-        invalidateTemperatureContext(opportunity.id)
-      }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
       if (usedAi) {
         toast.success(`Clasificado con Claude (${res.meta?.model ?? aiCaps?.model ?? 'IA'})`)

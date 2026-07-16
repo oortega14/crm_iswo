@@ -15,7 +15,11 @@
 default: &default
   adapter: postgresql
   encoding: unicode
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { ENV.fetch("RAILS_ENV", "development") == "production" ? 5 : 20 } %>
+  # No producción: 3 bases (primary/queue/cache) comparten este pool por proceso.
+  # 20 dejaba hasta 60 conexiones por proceso sin tope de max_connections en Postgres
+  # (server + console + specs en paralelo agotaban el default de 100). 10 alcanza
+  # de sobra los 8 threads de Puma en dev (ver config/puma.rb) con margen para consola/rake.
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { ENV.fetch("RAILS_ENV", "development") == "production" ? 5 : 10 } %>
   host: <%= ENV.fetch("DB_HOST", "localhost") %>
   port: <%= ENV.fetch("DB_PORT", 5432) %>
   username: <%= ENV.fetch("DB_USERNAME", "postgres") %>

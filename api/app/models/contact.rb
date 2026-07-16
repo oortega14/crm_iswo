@@ -42,7 +42,9 @@ class Contact < ApplicationRecord
     kind owner_user_id source_kind updated_at
     first_name last_name email company_name phone_e164 phone_normalized
   ].freeze
-  EXPORT_RANSACKABLE_ASSOCIATIONS = [].freeze
+  # `opportunities` habilita filtrar contactos por etapa del pipeline de sus
+  # oportunidades (RFC §6.7: "Filtros disponibles: ... etapa del pipeline ...").
+  EXPORT_RANSACKABLE_ASSOCIATIONS = %w[opportunities].freeze
 
   # Compatibilidad con serializers/frontend que usan company/position.
   alias_attribute :company, :company_name

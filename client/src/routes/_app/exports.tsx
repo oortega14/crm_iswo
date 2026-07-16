@@ -161,6 +161,7 @@ function buildExportFilters(config: typeof INITIAL_CONFIG): Record<string, strin
       contactKind: config.contactKind,
       ownerId: config.ownerId,
       contactSourceKind: config.contactSourceKind,
+      stageId: config.stageId || undefined,
     })
   }
   return buildOpportunityExportFilters({
@@ -207,7 +208,9 @@ function ExportsPage() {
           const res = await api.get('/pipelines')
           return jsonApiPrimaryList(res.data).filter((r) => r.id).map(mapPipelineResource)
         },
-        enabled: isExportDialogOpen && isOpportunities,
+        // Se usa para el selector de etapa tanto en oportunidades como en contactos
+        // (filtro "etapa del pipeline" de RFC §6.7, vía opportunities_pipeline_stage_id_eq).
+        enabled: isExportDialogOpen,
         staleTime: 60_000,
       },
       {
@@ -685,6 +688,28 @@ function ExportsPage() {
                       <SelectItem value="company">Solo empresas</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Etapa del pipeline (opcional)</Label>
+                  <Select
+                    value={exportConfig.stageId || '__all__'}
+                    onValueChange={(v) => setExportConfig((c) => ({ ...c, stageId: v === '__all__' ? '' : v }))}
+                    disabled={pipelinesQ.isLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todas las etapas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Todas las etapas</SelectItem>
+                      {allStages.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Incluye contactos con al menos una oportunidad en esa etapa.
+                  </p>
                 </div>
 
                 <div className="space-y-2">

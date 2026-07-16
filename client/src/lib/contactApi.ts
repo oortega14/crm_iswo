@@ -261,6 +261,7 @@ export function buildContactExportFilters(config: {
   contactKind?: '' | 'person' | 'company'
   ownerId?: string
   contactSourceKind?: string
+  stageId?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
   const days =
@@ -273,6 +274,8 @@ export function buildContactExportFilters(config: {
   if (config.contactKind) out.kind_eq = config.contactKind
   if (config.ownerId) out.owner_user_id_eq = config.ownerId
   if (config.contactSourceKind) out.source_kind_eq = config.contactSourceKind
+  // Filtra por etapa del pipeline de las oportunidades del contacto (RFC §6.7).
+  if (config.stageId) out.opportunities_pipeline_stage_id_eq = config.stageId
   return out
 }
 

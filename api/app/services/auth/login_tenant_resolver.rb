@@ -23,6 +23,10 @@ module Auth
       explicit = @slug.presence
       explicit = nil if explicit == AUTO_SLUG
 
+      # Un slug explícito que no corresponde a ningún tenant es un error real de
+      # cliente (typo, config vieja) — no lo enmascaramos resolviendo por email.
+      return resolve_explicit(explicit) if explicit.present? && !tenant_exists?(explicit)
+
       # Prioridad al correo: evita que localStorage/subdominio stale (p. ej. micasita)
       # fuerce el tenant equivocado al entrar con admin@iswo.local.
       if @email.present?
@@ -38,6 +42,10 @@ module Auth
     end
 
     private
+
+    def tenant_exists?(slug)
+      ActsAsTenant.without_tenant { Tenant.kept.exists?(slug: slug) }
+    end
 
     def resolve_explicit(slug)
       tenant = find_active_tenant(slug)

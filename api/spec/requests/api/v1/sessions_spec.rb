@@ -132,12 +132,21 @@ RSpec.describe "Api::V1::Sessions", type: :request do
     end
 
     it "renueva sin X-Tenant-Slug usando la cookie de refresh", :without_tenant do
-      post "/api/v1/sessions", params: payload, headers: tenant_headers(tenant)
+      # :without_tenant deja ActsAsTenant.current_tenant en nil durante todo el
+      # example, así que `tenant`/`user` (lets compartidos) no sirven aquí — hay
+      # que crear el propio tenant y envolver la creación del user en with_tenant,
+      # igual que el resto de los examples :without_tenant de este archivo.
+      standalone = create(:tenant)
+      standalone_user = ActsAsTenant.with_tenant(standalone) { create(:user, tenant: standalone, password: password) }
+
+      post "/api/v1/sessions",
+           params: { user: { email: standalone_user.email, password: password } }.to_json,
+           headers: tenant_headers(standalone)
       expect(response).to have_http_status(:ok)
 
       post "/api/v1/sessions/refresh", headers: { "Content-Type" => "application/json" }
       expect(response).to have_http_status(:ok)
-      expect(json.dig("meta", "tenant", "slug")).to eq(tenant.slug)
+      expect(json.dig("meta", "tenant", "slug")).to eq(standalone.slug)
     end
 
     it "dos refresh seguidos con la misma cookie: el primero rota y el segundo usa la nueva cookie" do

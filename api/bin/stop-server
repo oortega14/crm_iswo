@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Detiene Puma/Rails y libera el puerto 3000 (WSL).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+echo "Deteniendo procesos puma/rails..."
+pkill -f "puma.*crm_iswo" 2>/dev/null || true
+pkill -f "bin/rails s" 2>/dev/null || true
+pkill -f "rails server" 2>/dev/null || true
+
+rm -f tmp/pids/server.pid
+
+if command -v fuser >/dev/null 2>&1; then
+  echo "Liberando puerto 3000..."
+  fuser -k 3000/tcp 2>/dev/null || true
+fi
+
+sleep 1
+
+if ss -ltn 2>/dev/null | grep -q ':3000 '; then
+  echo "⚠️  El puerto 3000 sigue ocupado. Procesos:"
+  ss -ltnp 2>/dev/null | grep ':3000' || true
+  echo ""
+  echo "Mata manualmente: kill -9 <PID>"
+  echo "O en Windows (PowerShell admin): netstat -ano | findstr :3000"
+  exit 1
+fi
+
+echo "✅ Puerto 3000 libre. Arranca con: SOLID_QUEUE_IN_PUMA=true bin/rails s"

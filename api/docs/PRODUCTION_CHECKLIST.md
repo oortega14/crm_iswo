@@ -1,75 +1,66 @@
-# Checklist de producción — Seguridad Fase 1 + Fase 3
+# Checklist de producción — RFC §7 + Kamal
 
-Consolidado de [SECURITY_FASE1.md](SECURITY_FASE1.md) (infra/tránsito/secretos) y
-[SECURITY_FASE3.md](SECURITY_FASE3.md) (RLS PostgreSQL) para el primer deploy.
-Fase 2 (PII) ya está activa y verificada — ver [SECURITY_FASE2.md](SECURITY_FASE2.md).
+Consolidado para el primer deploy. Ver también `SECURITY_FASE1.md`, `SECURITY_FASE2.md`, `SECURITY_FASE3.md`.
 
-Todo lo marcado `[ ]` requiere acción manual antes o durante el deploy. Lo marcado
-`[x]` ya está en el repo (Kamal `config/deploy.yml` / inicializadores).
+**Dry-run local (sin desplegar):**
 
-## 1. TLS / tránsito
+```bash
+cd api
+bundle exec rails prod:security_dry_run
+```
 
-- [x] `ASSUME_SSL=true`, `DB_SSLMODE=require` en `config/deploy.yml` (`env.clear`)
-- [ ] Descomentar y configurar el bloque `proxy:` en `config/deploy.yml`:
-  ```yaml
-  proxy:
-    ssl: true
-    host: crm.iswo.com.co
-  ```
-- [ ] Si los tenants usan subdominio propio para landings
-  (`{tenant}.crm.iswo.com.co/{slug}`, RFC §6.5), agregar también esos hosts al
-  proxy o configurar wildcard TLS (`*.crm.iswo.com.co`) en el balanceador/Cloudflare.
+## 1. Repo / Kamal (`config/deploy.yml`) — ya en código
+
+- [x] `proxy.ssl: true`, `host: crm.iswo.com.co`
+- [x] `ASSUME_SSL`, `DB_SSLMODE=require`, `APP_HOST`, `DB_RLS_ENABLED`, `SOLID_QUEUE_IN_PUMA`
+- [x] `CORS_ALLOWED_ORIGINS: https://crm.iswo.com.co`
+- [x] Secretos listados: `RAILS_MASTER_KEY`, `CRM_ISWO_DATABASE_PASSWORD`, `DEVISE_JWT_SECRET_KEY`, `LOCKBOX_MASTER_KEY`, `BLIND_INDEX_MASTER_KEY`, `POSTMARK_API_TOKEN`
+- [ ] IP/host real en `servers.web` (hoy placeholder)
+- [ ] Descomentar `AWS_S3_BUCKET`, `AWS_REGION` (+ opcional `AWS_KMS_KEY_ID`) para exports en prod
 
 ## 2. Secretos (`.kamal/secrets`)
 
-- [x] `RAILS_MASTER_KEY`, `CRM_ISWO_DATABASE_PASSWORD`, `DEVISE_JWT_SECRET_KEY`,
-      `LOCKBOX_MASTER_KEY`, `POSTMARK_API_TOKEN` ya listados en `env.secret`
-- [ ] Agregar `BLIND_INDEX_MASTER_KEY` a `env.secret` (hoy solo cae al fallback
-      derivado de `secret_key_base` si no está presente — en producción debe ser
-      explícita y estable entre deploys, igual que `LOCKBOX_MASTER_KEY`)
-- [ ] Confirmar que `.kamal/secrets` (fuera del repo) tiene valores reales para
-      todas las claves anteriores antes del primer `kamal deploy`
+```bash
+cp .kamal/secrets.example .kamal/secrets
+# Editar .kamal/secrets — nunca commitear
+```
 
-## 3. CORS
+- [ ] Todas las claves del ejemplo con valores reales
+- [ ] `LOCKBOX_MASTER_KEY` y `BLIND_INDEX_MASTER_KEY` distintas, 64 hex cada una
+- [ ] Misma `LOCKBOX_MASTER_KEY` que en dev si compartes BD (o re-cifrar PII)
 
-- [ ] Definir `CORS_ALLOWED_ORIGINS` en `config/deploy.yml` (`env.clear`),
-      ej: `https://crm.iswo.com.co,https://app.crm.iswo.com.co`
-- [x] `config/initializers/cors.rb` ahora también acepta
-      `https://{tenant}.{APP_HOST}` automáticamente (regex
-      `tenant_production_origin`, derivado de `APP_HOST` — ya requerido por
-      Fase 1). Cubre las landings públicas por subdominio (RFC §6.5) sin config
-      adicional, siempre que `APP_HOST=crm.iswo.com.co` esté seteado.
+## 3. TLS / landings (RFC §6.5)
 
-## 4. Base de datos — RLS (Fase 3)
+- [ ] DNS `crm.iswo.com.co` → servidor Kamal
+- [ ] Wildcard o hosts extra para `{tenant}.crm.iswo.com.co` (Cloudflare Full SSL o proxy Kamal)
 
-- [ ] Crear el rol de aplicación dedicado en PostgreSQL (no superuser, sin
-      `BYPASSRLS`):
-  ```sql
-  CREATE ROLE crm_iswo WITH LOGIN PASSWORD '...' NOSUPERUSER NOBYPASSRLS;
-  GRANT ALL PRIVILEGES ON DATABASE crm_iswo_production TO crm_iswo;
-  ```
-  (coincide con `username: crm_iswo` en `config/database.yml` producción)
-- [ ] Ejecutar migraciones con un usuario **owner** (puede ser superuser/owner
-      distinto de `crm_iswo`); la app en runtime usa `crm_iswo`
-- [ ] `bundle exec rails db:migrate` (incluye
-      `20260610120000_enable_tenant_row_level_security`)
-- [ ] Setear `DB_RLS_ENABLED: "true"` en `config/deploy.yml` (`env.clear`)
-- [ ] Verificar políticas: `bundle exec rails security:rls` — debe reportar las
-      19 tablas con política `crm_tenant_isolation` y, con el rol `crm_iswo`
-      (no superuser), el smoke test de aislamiento debe mostrar conteos
-      distintos por tenant (no los 238/238/238 que se ven en dev con `postgres`)
+## 4. PostgreSQL — rol app + RLS
 
-## 5. Verificación final
+- [ ] Ejecutar `docs/sql/create_crm_iswo_app_role.sql` (password → `CRM_ISWO_DATABASE_PASSWORD`)
+- [ ] `db:migrate` con usuario **owner** (no `crm_iswo`)
+- [ ] En servidor: `bundle exec rails security:rls:install` && `security:rls`
+- [ ] Smoke RLS con rol `crm_iswo` (conteos distintos por tenant, no como superuser)
 
-- [ ] `bundle exec rails staging:preflight` — corre `security:infra` +
-      `security:rls` (si `DB_RLS_ENABLED`) + checks de Postgres/Redis/Sidekiq/
-      integraciones. Debe salir con exit 0 antes de considerar el deploy listo.
+## 5. PII (Fase 2)
 
-## 6. Fuera del repo (operación)
+- [ ] Si hay contactos legados: `CONTACT_PII_MIGRATING=true bundle exec rails security:encrypt_contacts`
+- [ ] `bundle exec rails security:pii` → exit 0
 
-- [ ] Backups de PostgreSQL cifrados
-- [ ] Disco/volumen cifrado en reposo (LUKS / RDS encryption / equivalente del
-      proveedor)
-- [ ] Confirmar que `AWS_S3_BUCKET` + `AWS_REGION` (+ opcional `AWS_KMS_KEY_ID`)
-      están configurados para que `Exports::Storage` use S3+SSE en vez de
-      Lockbox local (RFC §6.7)
+## 6. Deploy y verificación
+
+```bash
+bin/kamal setup    # primera vez
+bin/kamal deploy
+bin/kamal app exec "bin/rails staging:preflight"
+bin/kamal app exec "bin/rails security:pii"
+```
+
+- [ ] `staging:preflight` exit 0 en el contenedor
+- [ ] `/up` responde 200
+- [ ] Login SPA → API con cookies refresh en HTTPS
+
+## 7. Operación (fuera del repo)
+
+- [ ] Backups PostgreSQL cifrados
+- [ ] Disco/volumen cifrado (LUKS / RDS encryption)
+- [ ] Credenciales AWS IAM mínimas para bucket S3 exports

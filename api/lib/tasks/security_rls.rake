@@ -1,6 +1,30 @@
 # frozen_string_literal: true
 
 namespace :security do
+  namespace :rls do
+    desc "Fase 3 — instala o repara políticas crm_tenant_isolation (idempotente)"
+    task install: :environment do
+      puts "CRM ISWO — security:rls:install\n"
+
+      missing_before = DatabaseTenantRls.missing_policy_tables
+      if missing_before.empty?
+        puts "✅ Políticas ya instaladas (#{DatabaseTenantRls::TENANT_TABLES.size} tablas)"
+        next
+      end
+
+      puts "Instalando RLS en #{missing_before.size} tabla(s)..."
+      DatabaseTenantRls.install!
+
+      missing_after = DatabaseTenantRls.missing_policy_tables
+      if missing_after.empty?
+        puts "✅ Políticas instaladas en #{DatabaseTenantRls::TENANT_TABLES.size} tablas"
+      else
+        puts "❌ Siguen faltando: #{missing_after.join(', ')}"
+        exit 1
+      end
+    end
+  end
+
   desc "Fase 3 — verifica Row Level Security por tenant_id"
   task rls: :environment do
     failures = 0
@@ -13,13 +37,7 @@ namespace :security do
 
     report.call("DB_RLS_ENABLED", DatabaseTenantRls.enabled?, ENV.fetch("DB_RLS_ENABLED", "(default prod)"))
 
-    missing = DatabaseTenantRls::TENANT_TABLES.reject do |table|
-      ActiveRecord::Base.connection.select_value(<<~SQL.squish).present?
-        SELECT 1 FROM pg_policies
-        WHERE schemaname = 'public' AND tablename = '#{table}'
-          AND policyname = '#{DatabaseTenantRls::POLICY_NAME}'
-      SQL
-    end
+    missing = DatabaseTenantRls.missing_policy_tables
 
     report.call(
       "Políticas RLS instaladas",
@@ -54,7 +72,8 @@ namespace :security do
         puts "⚠️  Smoke test omitido — faltan tenants (#{slugs.join(', ')})"
       end
     else
-      puts "\nEjecuta: bundle exec rails db:migrate"
+      puts "\nEjecuta: bundle exec rails security:rls:install"
+      puts "(db:migrate no re-ejecuta si la versión ya está en schema_migrations)"
     end
 
     if DatabaseTenantRls.enabled?

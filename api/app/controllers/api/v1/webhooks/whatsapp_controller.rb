@@ -31,9 +31,12 @@ module Api
         # POST /api/v1/webhooks/whatsapp/twilio
         def twilio
           payload = request.request_parameters
+          # inline: la respuesta del teléfono debe persistirse ya; outbound usa
+          # perform_now y no necesita webhook, inbound sí depende de este POST.
           enqueue_webhook_processor(
             "whatsapp_twilio",
-            payload.merge("received_at" => Time.current.iso8601)
+            payload.merge("received_at" => Time.current.iso8601),
+            inline: true
           )
           head :ok
         end
@@ -54,7 +57,8 @@ module Api
 
           enqueue_webhook_processor(
             "whatsapp_cloud",
-            payload.merge("received_at" => Time.current.iso8601)
+            payload.merge("received_at" => Time.current.iso8601),
+            inline: true
           )
           head :ok
         end
@@ -73,7 +77,14 @@ module Api
           data      = request.request_parameters.sort.join
           expected  = Base64.strict_encode64(OpenSSL::HMAC.digest("SHA1", token, url + data))
 
-          head :forbidden unless ActiveSupport::SecurityUtils.secure_compare(signature, expected)
+          return if ActiveSupport::SecurityUtils.secure_compare(signature, expected)
+
+          Rails.logger.warn(
+            "[WhatsApp Twilio] firma inválida url=#{url} " \
+            "(¿API_PUBLIC_ORIGIN/ngrok distinto al webhook de Twilio Console? " \
+            "¿TWILIO_AUTH_TOKEN coincide con el Auth Token de la cuenta?)"
+          )
+          head :forbidden
         end
 
         def verify_cloud_signature!

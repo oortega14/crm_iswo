@@ -22,9 +22,9 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
       }
     end
 
-    it "encola WebhookProcessorJob con 'whatsapp_twilio' (sin token → dev)" do
+    it "procesa WebhookProcessorJob inline con 'whatsapp_twilio' (sin token → dev)" do
       ENV.delete("TWILIO_AUTH_TOKEN")
-      expect(WebhookProcessorJob).to receive(:perform_later).with(
+      expect(WebhookProcessorJob).to receive(:perform_now).with(
         "whatsapp_twilio",
         hash_including("From" => "whatsapp:+573001234567", "received_at" => kind_of(String))
       )
@@ -46,7 +46,7 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
         url       = "http://www.example.com/api/v1/webhooks/whatsapp/twilio"
         signature = twilio_signature(url, form_payload, token)
 
-        expect(WebhookProcessorJob).to receive(:perform_later)
+        expect(WebhookProcessorJob).to receive(:perform_now)
         post "/api/v1/webhooks/whatsapp/twilio",
              params: form_payload,
              headers: { "X-Twilio-Signature" => signature }
@@ -54,7 +54,7 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
       end
 
       it "rechaza con firma inválida (403)" do
-        expect(WebhookProcessorJob).not_to receive(:perform_later)
+        expect(WebhookProcessorJob).not_to receive(:perform_now)
         post "/api/v1/webhooks/whatsapp/twilio",
              params: form_payload,
              headers: { "X-Twilio-Signature" => "INVALID" }
@@ -88,9 +88,9 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
       { object: "whatsapp_business_account", entry: [{ id: "WABA_ID", changes: [] }] }
     end
 
-    it "encola WebhookProcessorJob con 'whatsapp_cloud' sin secret (dev)" do
+    it "procesa WebhookProcessorJob inline con 'whatsapp_cloud' sin secret (dev)" do
       ENV.delete("META_APP_SECRET")
-      expect(WebhookProcessorJob).to receive(:perform_later).with(
+      expect(WebhookProcessorJob).to receive(:perform_now).with(
         "whatsapp_cloud",
         hash_including("object" => "whatsapp_business_account", "received_at" => kind_of(String))
       )
@@ -108,7 +108,7 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
       before { ENV["META_APP_SECRET"] = secret }
 
       it "acepta con firma válida" do
-        expect(WebhookProcessorJob).to receive(:perform_later)
+        expect(WebhookProcessorJob).to receive(:perform_now)
         post "/api/v1/webhooks/whatsapp/cloud",
              params: raw,
              headers: { "Content-Type" => "application/json", "X-Hub-Signature-256" => sig }
@@ -116,7 +116,7 @@ RSpec.describe "Api::V1::Webhooks::Whatsapp", type: :request do
       end
 
       it "rechaza con firma inválida (403)" do
-        expect(WebhookProcessorJob).not_to receive(:perform_later)
+        expect(WebhookProcessorJob).not_to receive(:perform_now)
         post "/api/v1/webhooks/whatsapp/cloud",
              params: raw,
              headers: { "Content-Type" => "application/json", "X-Hub-Signature-256" => "sha256=bad" }

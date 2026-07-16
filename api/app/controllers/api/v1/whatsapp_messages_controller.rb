@@ -86,7 +86,10 @@ module Api
       def dispatch_whatsapp_delivery!(msg)
         return unless defined?(WhatsappDeliveryJob)
 
-        WhatsappDeliveryJob.perform_later(msg.id)
+        # perform_now: el SPA espera el resultado del proveedor en esta misma
+        # petición (status / error_message). perform_later deja el mensaje en
+        # "queued" para siempre si Solid Queue no está levantado.
+        WhatsappDeliveryJob.perform_now(msg.id)
       end
 
       def set_opportunity

@@ -84,6 +84,32 @@ RSpec.describe WebhookProcessorJob, type: :job do
         expect(inbound.status).to eq("delivered")
         expect(inbound.direction).to eq("in")
       end
+
+      it "empareja tenant aunque account_identifier no tenga el +" do
+        t = create(:tenant)
+        ActsAsTenant.with_tenant(t) do
+          create(
+            :ad_integration,
+            :twilio,
+            tenant: t,
+            account_identifier: "15559876543"
+          )
+        end
+        payload = {
+          "From" => "whatsapp:+573001234567",
+          "To" => "whatsapp:+15559876543",
+          "Body" => "hola sin plus",
+          "MessageSid" => "SMinDigits"
+        }
+
+        described_class.new.perform("whatsapp_twilio", payload)
+
+        inbound = ActsAsTenant.with_tenant(t) do
+          WhatsappMessage.find_by(provider_message_id: "SMinDigits")
+        end
+        expect(inbound).to be_present
+        expect(inbound.body).to eq("hola sin plus")
+      end
     end
   end
 

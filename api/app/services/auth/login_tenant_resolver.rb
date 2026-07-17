@@ -32,7 +32,17 @@ module Auth
       if @email.present?
         by_email = resolve_from_email
         return by_email if %i[ok ambiguous].include?(by_email.status)
-        return by_email if by_email.status == :no_account
+
+        if by_email.status == :no_account
+          # Sin cuenta para ese correo: si hay un slug/subdominio explícito
+          # (ya validado que existe), úsalo en vez de tapar el intento con
+          # :no_account — típico del selector de tenant del super-admin,
+          # donde el tenant se elige antes de escribir las credenciales.
+          return resolve_explicit(explicit) if explicit.present?
+          return resolve_explicit(@subdomain_slug) if @subdomain_slug.present?
+
+          return by_email
+        end
       end
 
       return resolve_explicit(explicit) if explicit.present?

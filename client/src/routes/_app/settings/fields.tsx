@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireSettingsRole } from '@/lib/authGuards'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -23,6 +24,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { TenantFieldDefinition, FieldType, FieldEntity } from '@/types'
 
 export const Route = createFileRoute('/_app/settings/fields')({
+  beforeLoad: () => requireSettingsRole('admin'),
   component: FieldsSettingsPage,
 })
 

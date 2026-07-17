@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { requireRole } from '@/lib/authGuards'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -50,6 +51,7 @@ import { useAuthStore } from '@/stores/auth'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/_app/reminders')({
+  beforeLoad: () => requireRole('admin', 'manager', 'consultant'),
   component: RemindersPage,
 })
 

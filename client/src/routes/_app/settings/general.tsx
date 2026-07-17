@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireSettingsRole } from '@/lib/authGuards'
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -12,6 +13,7 @@ import api, { formatRailsError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/settings/general')({
+  beforeLoad: () => requireSettingsRole('admin'),
   component: GeneralSettingsPage,
 })
 

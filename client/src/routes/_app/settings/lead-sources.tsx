@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireSettingsRole } from '@/lib/authGuards'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Edit, Globe, MessageCircle, BarChart2, Search, Hand, Users } from 'lucide-react'
@@ -43,6 +44,7 @@ import { queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 
 export const Route = createFileRoute('/_app/settings/lead-sources')({
+  beforeLoad: () => requireSettingsRole('admin', 'manager'),
   component: LeadSourcesSettingsPage,
 })
 

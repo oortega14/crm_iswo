@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireRole } from '@/lib/authGuards'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -67,6 +68,7 @@ import { AppPageShell } from '@/components/layout/AppPageShell'
 import { PageHeader } from '@/components/layout/PageHeader'
 
 export const Route = createFileRoute('/_app/network')({
+  beforeLoad: () => requireRole('admin', 'manager', 'consultant'),
   component: NetworkPage,
 })
 

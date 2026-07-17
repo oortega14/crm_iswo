@@ -23,12 +23,26 @@ module Auth
       explicit = @slug.presence
       explicit = nil if explicit == AUTO_SLUG
 
+      # Un slug explícito que no corresponde a ningún tenant es un error real de
+      # cliente (typo, config vieja) — no lo enmascaramos resolviendo por email.
+      return resolve_explicit(explicit) if explicit.present? && !tenant_exists?(explicit)
+
       # Prioridad al correo: evita que localStorage/subdominio stale (p. ej. micasita)
       # fuerce el tenant equivocado al entrar con admin@iswo.local.
       if @email.present?
         by_email = resolve_from_email
         return by_email if %i[ok ambiguous].include?(by_email.status)
-        return by_email if by_email.status == :no_account
+
+        if by_email.status == :no_account
+          # Sin cuenta para ese correo: si hay un slug/subdominio explícito
+          # (ya validado que existe), úsalo en vez de tapar el intento con
+          # :no_account — típico del selector de tenant del super-admin,
+          # donde el tenant se elige antes de escribir las credenciales.
+          return resolve_explicit(explicit) if explicit.present?
+          return resolve_explicit(@subdomain_slug) if @subdomain_slug.present?
+
+          return by_email
+        end
       end
 
       return resolve_explicit(explicit) if explicit.present?
@@ -38,6 +52,10 @@ module Auth
     end
 
     private
+
+    def tenant_exists?(slug)
+      ActsAsTenant.without_tenant { Tenant.kept.exists?(slug: slug) }
+    end
 
     def resolve_explicit(slug)
       tenant = find_active_tenant(slug)

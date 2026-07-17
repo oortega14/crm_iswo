@@ -33,11 +33,12 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
 
   const authScope = getAuthQueryScope()
 
-  const { data: landingData, isLoading } = useQuery({
+  const { data: landingData, isLoading, isFetched } = useQuery({
     queryKey: queryKeys.landingPages.detail(landingId),
     queryFn: () => fetchLandingPageDetail(landingId),
     enabled: open && Boolean(authScope) && !!landingId,
-    staleTime: 0,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   })
 
   const saveMutation = useMutation({
@@ -82,7 +83,7 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-hidden">
-          {isLoading ? (
+          {isLoading && !isFetched ? (
             <div className="p-6 space-y-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -97,6 +98,7 @@ export function LandingVisualEditorModal({ open, onOpenChange, landingId, landin
               }
             >
               <GrapeJsEditor
+                key={landingId}
                 ref={editorRef}
                 initialProjectData={initialProjectData}
               />

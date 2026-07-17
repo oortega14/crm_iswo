@@ -299,6 +299,7 @@ export function mapOpportunityResource(resource: JsonApiResource, included: Json
       ? (a.custom_fields as Record<string, unknown>)
       : undefined,
     from_network: a.from_network === true,
+    network_read_only: a.network_read_only === true,
     created_at: String(a.created_at ?? ''),
     updated_at: String(a.updated_at ?? ''),
   }

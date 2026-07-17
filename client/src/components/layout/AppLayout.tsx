@@ -13,20 +13,20 @@ import {
   Building2,
   MoreHorizontal,
 } from 'lucide-react'
-import { useAuthStore, useTenant, useUser } from '@/stores/auth'
+import { TenantLogoMark } from '@/components/brand/TenantLogoMark'
+import { resolveKnownBrandSlug } from '@/lib/tenantBrand'
+import { useTenant, useUser } from '@/stores/auth'
 import { useTheme } from '@/components/common/ThemeProvider'
 import {
-  DUPLICATE_FLAGS_POLL_MS,
-  clearSessionQueryCache,
   getAuthQueryScope,
-  queryClient,
   queryKeys,
 } from '@/lib/queryClient'
+import { logoutSession } from '@/lib/authSession'
 import { fetchDuplicateFlagsStats } from '@/lib/duplicateFlagsApi'
 import { fetchReminderStats } from '@/lib/reminderApi'
 import { tenantHasModule } from '@/lib/tenantModules'
+import { canUseReminders } from '@/lib/reminderChannels'
 import { filterMainNav, getSidebarSections, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
-import api from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -53,42 +53,33 @@ export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [logoBroken, setLogoBroken] = useState(false)
   const location = useLocation()
   const { setTheme, resolvedTheme } = useTheme()
   const user = useUser()
   const tenant = useTenant()
-  const logoutStore = useAuthStore((s) => s.logout)
-  const accessToken = useAuthStore((s) => s.accessToken)
-  const logoutTenant = useTenant()
   const router = useRouter()
 
-  const logout = async () => {
-    try {
-      if (accessToken) {
-        await api.delete('/sessions', {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'X-Tenant-Slug': logoutTenant?.subdomain ?? '',
-          },
-        })
-      }
-    } catch {
-      // Si el server falla igualmente limpiamos el estado local
-    } finally {
-      clearSessionQueryCache(queryClient)
-      logoutStore()
-      void router.navigate({ to: '/login' })
-    }
+  useEffect(() => {
+    setLogoBroken(false)
+  }, [tenant?.logo_url, tenant?.subdomain])
+
+  const logout = () => {
+    logoutSession()
+    void router.navigate({ to: '/login', replace: true })
   }
 
   const authScope = getAuthQueryScope()
   const hasRemindersModule = tenantHasModule(tenant, 'reminders')
+  const canUseRemindersModule = hasRemindersModule && canUseReminders(user?.role)
   const hasOpportunities = tenantHasModule(tenant, 'opportunities')
+  const canPollDuplicateStats =
+    user?.role === 'admin' || user?.role === 'manager' || user?.role === 'consultant'
 
   const { data: reminderStats } = useQuery({
     queryKey: queryKeys.reminders.stats(authScope),
     queryFn: fetchReminderStats,
-    enabled: Boolean(authScope) && hasRemindersModule,
+    enabled: Boolean(authScope) && canUseRemindersModule,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   })
@@ -97,12 +88,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: duplicateStats } = useQuery({
     queryKey: queryKeys.duplicateFlags.stats(authScope),
     queryFn: fetchDuplicateFlagsStats,
-    enabled:
-      Boolean(authScope) &&
-      hasOpportunities &&
-      (user?.role === 'admin' || user?.role === 'manager'),
-    refetchInterval: DUPLICATE_FLAGS_POLL_MS,
-    refetchIntervalInBackground: true,
+    enabled: Boolean(authScope) && hasOpportunities && canPollDuplicateStats,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   })
 
@@ -212,8 +200,17 @@ export function AppLayout({ children }: AppLayoutProps) {
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none ring-sidebar-ring focus-visible:ring-2"
             onClick={() => setSidebarOpen(false)}
           >
-          {tenant?.logo_url ? (
-            <img src={tenant.logo_url} alt={tenant.name} className="h-8 w-auto object-contain" />
+          {tenant?.logo_url && !logoBroken ? (
+            <img
+              src={tenant.logo_url}
+              alt={tenant.name}
+              className="h-8 w-auto max-w-[120px] object-contain"
+              loading="eager"
+              decoding="async"
+              onError={() => setLogoBroken(true)}
+            />
+          ) : resolveKnownBrandSlug(tenant) ? (
+            <TenantLogoMark tenant={tenant} size="sm" />
           ) : (
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Building2 className="size-4" />

@@ -12,28 +12,37 @@ module RefreshTokenCookies
     jti = SecureRandom.uuid
     user.update_column(:refresh_token_jti, jti)
 
-    cookies.encrypted[:refresh_token] = {
+    cookies.encrypted[:refresh_token] = refresh_cookie_options.merge(
       value: {
         user_id:    user.id,
         jti:        jti,
         issued_at:  Time.current.to_i,
         expires_at: 7.days.from_now.to_i
       },
-      expires:   7.days.from_now,
+      expires: 7.days.from_now
+    )
+  end
+
+  def revoke_refresh_session!(user)
+    if user
+      ActsAsTenant.without_tenant do
+        user.update_column(:refresh_token_jti, nil)
+      end
+    end
+    clear_refresh_cookie
+  end
+
+  def clear_refresh_cookie
+    cookies.delete(:refresh_token, refresh_cookie_options)
+  end
+
+  def refresh_cookie_options
+    {
       httponly:  true,
       secure:    Rails.env.production?,
       same_site: :lax,
       path:      "/"
     }
-  end
-
-  def revoke_refresh_session!(user)
-    user.update_column(:refresh_token_jti, nil)
-    cookies.delete(:refresh_token)
-  end
-
-  def clear_refresh_cookie
-    cookies.delete(:refresh_token)
   end
 
   def token_valid?(token)

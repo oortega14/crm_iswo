@@ -1,4 +1,5 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+import { currentAuth, requireAdmin } from '@/lib/authGuards'
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy, MoreHorizontal, Shield, Mail, Search, UserPlus, RefreshCw } from 'lucide-react'
@@ -82,10 +83,8 @@ function copyText(label: string, value: string) {
 }
 
 export const Route = createFileRoute('/_app/settings/users')({
-  beforeLoad: ({ context }) => {
-    if (context.auth.user?.role !== 'admin') {
-      throw redirect({ to: '/settings' })
-    }
+  beforeLoad: () => {
+    requireAdmin()
   },
   component: UsersSettingsPage,
 })
@@ -524,7 +523,7 @@ function UsersSettingsPage() {
               <div className="rounded-lg border p-3">
                 <div className="mb-2">{getRoleBadge('consultant')}</div>
                 <p className="text-muted-foreground">
-                  Trabaja sus oportunidades y contactos asignados.
+                  Trabaja sus oportunidades y contactos asignados; importa contactos desde Excel.
                 </p>
               </div>
               <div className="rounded-lg border p-3">

@@ -47,7 +47,7 @@ module Opportunities
     # Conveniencia: persiste el score en la opp y devuelve el número.
     # Si la oportunidad recién supera el umbral, la avanza automáticamente
     # a la etapa "Calificada" del pipeline (RFC §6.1 ciclo de vida).
-    def call_and_persist!
+    def call_and_persist!(sync_temperature: true)
       result    = call
       threshold = @criteria.threshold_qualified.to_i
       newly_qualified = !@opportunity.qualified && result[:score] >= threshold
@@ -59,7 +59,7 @@ module Opportunities
       )
 
       auto_advance_stage! if newly_qualified
-      sync_temperature!
+      sync_temperature! if sync_temperature
 
       result[:score]
     end

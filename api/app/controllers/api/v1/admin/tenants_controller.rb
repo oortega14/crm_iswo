@@ -6,11 +6,7 @@ module Api
       # ========================================================================
       # Admin::TenantsController — onboarding de tenants (JWT admin super-admin)
       # ========================================================================
-      class TenantsController < ApplicationController
-        include Devise::Controllers::Helpers
-        include PlatformTenantAuthorizable
-
-        before_action :authenticate_platform_tenant_admin!
+      class TenantsController < BaseController
         before_action :set_managed_tenant, only: [:update]
 
         # GET /api/v1/admin/tenants — listado para onboarding (super-admin)
@@ -105,7 +101,7 @@ module Api
             slug:       tenant.slug,
             name:       tenant.name,
             active:     tenant.active,
-            created_at: tenant.created_at
+            created_at: tenant.created_at&.iso8601
           }
         end
 

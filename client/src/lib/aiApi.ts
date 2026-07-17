@@ -1,18 +1,19 @@
 import api from '@/lib/api'
+import type { TemperatureAiResult, TemperatureSignal } from '@/lib/temperatureContext'
+
+export type { TemperatureAiResult } from '@/lib/temperatureContext'
 
 export interface ClaudeTemperatureCapabilities {
   available: boolean
   model: string
+  /** Clasifica automáticamente al guardar dossier del lead */
+  auto_on_save: boolean
   auto_on_bant_recalc: boolean
   key_hint?: string | null
 }
 
-export interface ClassifyTemperatureResult {
+export interface ClassifyTemperatureResult extends TemperatureAiResult {
   temperature: string
-  reasoning: string
-  next_action: string
-  ai_used: boolean
-  fallback_reason?: string | null
 }
 
 export interface ClassifyTemperatureResponse {
@@ -34,15 +35,32 @@ const FALLBACK_MESSAGES: Record<string, string> = {
   unexpected_error: 'Error interno al llamar a Claude.',
 }
 
+function humanizeAnthropicError(raw: string): string {
+  const lower = raw.toLowerCase()
+  if (lower.includes('credit balance') || lower.includes('too low')) {
+    return (
+      'Sin créditos en Anthropic (console.anthropic.com → Plans & Billing). ' +
+      'Se aplicó temperatura por reglas locales.'
+    )
+  }
+  if (lower.includes('invalid') && lower.includes('api') && lower.includes('key')) {
+    return 'API key de Anthropic inválida. Se aplicó temperatura por reglas locales.'
+  }
+  if (lower.includes('authentication') || lower.includes('unauthorized')) {
+    return 'Anthropic rechazó la API key. Se aplicó temperatura por reglas locales.'
+  }
+  return raw.trim()
+}
+
 export function describeClassifyFallback(
   fallbackReason?: string | null,
   anthropicError?: string | null,
 ): string {
-  if (anthropicError?.trim()) return anthropicError.trim()
+  if (anthropicError?.trim()) return humanizeAnthropicError(anthropicError)
   if (fallbackReason && FALLBACK_MESSAGES[fallbackReason]) {
-    return FALLBACK_MESSAGES[fallbackReason]
+    return `${FALLBACK_MESSAGES[fallbackReason]} Se aplicó temperatura por reglas locales.`
   }
-  return 'Se usaron reglas locales.'
+  return 'Se aplicó temperatura por reglas locales.'
 }
 
 export async function fetchAiCapabilities(): Promise<ClaudeTemperatureCapabilities> {

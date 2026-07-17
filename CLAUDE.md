@@ -10,9 +10,30 @@
 | `/diagnostico` | Verificar que Rails, Vite, PostgreSQL, Redis y Sidekiq estén funcionando |
 | `/nuevo-tenant` | Crear y configurar un tenant nuevo con pipeline y usuarios según su vertical |
 
-**Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Sidekiq, integraciones).
+**Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Solid Queue, integraciones).
+
+**Jobs (Solid Queue):** `SOLID_QUEUE_IN_PUMA=true bin/rails s` o `bin/jobs` — sin Redis. UI: `http://localhost:3000/jobs`
+
+**Seguridad Fase 1 (Opción 1 infra):** `cd api && bundle exec rails security:infra` — HTTPS, SSL PostgreSQL, secretos, CORS. Ver `api/docs/SECURITY_FASE1.md`.
+
+**Pre-producción RFC §7:** `cd api && bundle exec rails prod:security_dry_run` — valida `deploy.yml` + simula `security:infra`. Checklist: `api/docs/PRODUCTION_CHECKLIST.md`.
+
+**Seguridad Fase 2 (Opción 2 PII):** `db:migrate` → `CONTACT_PII_MIGRATING=true security:encrypt_contacts` → `security:pii`. Ver `api/docs/SECURITY_FASE2.md`.
+
+**Seguridad Fase 3 (RLS PostgreSQL):** `db:migrate` → `DB_RLS_ENABLED=true security:rls`. Ver `api/docs/SECURITY_FASE3.md`.
 
 Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
+
+### Autenticación Claude Code (API key)
+
+Si aparece *«Your organization has disabled Claude subscription access»*, la org no permite `/login` con suscripción Pro/Max. Usa **API key** de [console.anthropic.com](https://console.anthropic.com):
+
+1. Pon la key en `api/.env`: `ANTHROPIC_API_KEY=sk-ant-api03-...`
+2. En WSL: `chmod +x .claude/anthropic_api_key.sh`
+3. Abre Claude Code en la raíz del repo (`.claude/settings.local.json` ya apunta `apiKeyHelper` a esa key)
+4. **No uses `/login`** con cuenta claude.ai; verifica con `/status` que auth = API key
+
+La misma key alimenta el clasificador IA del CRM (`AiClassifier`).
 
 ---
 
@@ -26,8 +47,8 @@ ni rol aislado:
 | **Multi-tenant** | `ActsAsTenant` + `current_tenant` en API; sin IDs de tenant fijos en código. Cada tenant ve solo sus datos. |
 | **Roles** | Comportamiento explícito para `admin`, `manager`, `consultant` y `viewer` donde aplique: Pundit en API, guards en SPA (`useUserRole`, `roles` en nav). |
 | **Caché SPA** | Claves de React Query con alcance `getAuthQueryScope()` (`subdomain:user:id`) al invalidar o listar datos sensibles. |
-| **Exportaciones (RFC §6.7)** | Crear/descargar masivo: admin/manager. Importar contactos: admin/manager/consultant. Historial async: cada usuario ve los suyos; admin/manager ven todos del tenant. |
-| **Consultores** | Scope propio en contactos/oportunidades/export (`Exports::ScopedCollection`, policies). Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. |
+| **Exportaciones (RFC §6.7)** | Pantalla `/exports`: solo admin/manager (export + import masivo). Consultor importa contactos desde `/contacts`; no exporta ni ve historial async. |
+| **Consultores** | Scope propio en contactos/oportunidades. Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. Sin pantalla `/exports`. |
 
 Si un feature solo funciona para un rol o tenant, es un bug salvo excepción documentada en el RFC.
 
@@ -155,8 +176,8 @@ RBAC Pundit y la misma sesión JWT que el resto del CRM:
 | Auditoría | `/settings/audit` |
 | Onboarding de tenants | `/settings/tenant-onboarding` |
 
-**Excepción operativa (no producto):** Sidekiq Web en `/sidekiq` — UI HTML propia
-del gem, protegida con HTTP Basic en producción.
+**Excepción operativa (no producto):** Mission Control Jobs en `/jobs` — UI de Solid Queue,
+protegida con HTTP Basic en producción.
 
 **Por qué no implementar Slim:** evita duplicar pantallas, auth y permisos;
 alinea el producto con referentes HubSpot/GoHighLevel (una sola app web); el MVP
@@ -171,11 +192,13 @@ revisión de producto si se requiere cumplimiento literal del stack tabulado.
 
 `ReminderNotificationJob` solo marca `status=sent` **después** de confirmar entrega:
 
-| Canal | Comportamiento |
-|-------|----------------|
-| **email** | `ReminderMailer#deliver_now` — si falla, `mark_failed!` |
-| **whatsapp** | `WhatsappDeliveryJob` recibe `reminder_id` y marca sent/failed según el estado del `WhatsappMessage` |
-| **in_app** | Crea `Notification` primero; si falla la creación, no marca sent |
+| Canal | Destinatario al vencer |
+|-------|------------------------|
+| **in_app** | Campana in-app del consultor asignado |
+| **email** | Correo al consultor + campana in-app |
+| **whatsapp** | WhatsApp al `User#phone` del consultor + campana in-app (nunca al lead) |
+
+Solo **admin, manager y consultant** pueden crear/recibir recordatorios (`viewer` excluido).
 
 ---
 

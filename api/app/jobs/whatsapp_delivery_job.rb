@@ -5,7 +5,7 @@
 # ============================================================================
 # Wrapper sobre WhatsApp::MessageSender. Se encola desde:
 #   - WhatsappMessagesController#create
-#   - ReminderNotificationJob (cuando channel="whatsapp")
+#   - ReminderNotificationJob (WhatsApp al teléfono del consultor asignado)
 #
 # Usa cola "integrations" para no saturar la default.
 # Reintenta hasta 5 veces con backoff polinomial; al fallar definitivamente

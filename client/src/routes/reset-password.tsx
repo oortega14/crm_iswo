@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useForm } from 'react-hook-form'
@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
+import { redirectIfAuthenticated } from '@/lib/authGuards'
+import { waitForAuthBootstrap } from '@/lib/authSession'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -32,10 +34,9 @@ const resetSearchSchema = z.object({
 
 export const Route = createFileRoute('/reset-password')({
   validateSearch: resetSearchSchema,
-  beforeLoad: ({ context }) => {
-    if (context.auth.isAuthenticated) {
-      throw redirect({ to: '/' })
-    }
+  beforeLoad: async () => {
+    await waitForAuthBootstrap()
+    redirectIfAuthenticated()
   },
   component: ResetPasswordPage,
 })

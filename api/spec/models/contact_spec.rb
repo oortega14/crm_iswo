@@ -48,11 +48,29 @@ RSpec.describe Contact, type: :model do
       expect(contact.email).to eq("oscar@iswo.co")
     end
 
-    it "normaliza phone_e164 y llena phone_normalized" do
+    it "normaliza phone_e164 y phone_normalized para búsqueda legado" do
       contact = build(:contact, tenant: tenant, phone_e164: "+573001234567", country: "CO")
       contact.valid?
       expect(contact.phone_e164).to eq("+573001234567")
       expect(contact.phone_normalized).to eq("573001234567")
+    end
+  end
+
+  describe "cifrado PII (Fase 2)" do
+    it "persiste document_id cifrado con blind index" do
+      contact = create(:contact, tenant: tenant, document_id: "1234567890")
+      expect(contact.document_id_ciphertext).to be_present
+      expect(contact.document_id_bidx).to be_present
+      expect(contact.document_id).to eq("1234567890")
+      expect(Contact.find_by(document_id: "1234567890")).to eq(contact)
+    end
+
+    it "persiste phone_e164 cifrado y permite búsqueda exacta" do
+      contact = create(:contact, tenant: tenant, phone_e164: "+573001234567", country: "CO")
+      expect(contact.phone_e164_ciphertext).to be_present
+      expect(contact.phone_e164).to eq("+573001234567")
+      expect(contact.phone_normalized).to eq("573001234567")
+      expect(Contact.find_by(phone_e164: "+573001234567")).to eq(contact)
     end
   end
 

@@ -30,12 +30,12 @@ gem "devise-jwt", "~> 0.12"
 gem "pundit", "~> 2.4"
 
 # ============================================================================
-# Background jobs (Sidekiq, NO SolidQueue)
+# Background jobs + caché (Solid Queue / Solid Cache — PostgreSQL, sin Redis)
 # ============================================================================
-gem "sidekiq", "~> 7.3"
-gem "sidekiq-scheduler", "~> 5.0"   # Cron-like scheduling
-gem "sidekiq-unique-jobs", "~> 8.0" # Deduplicación de jobs
-gem "redis", "~> 5.3"
+gem "solid_queue"
+gem "solid_cache"
+gem "mission_control-jobs"
+gem "sprockets-rails"  # mission_control-jobs 1.x llama config.assets en API-only app
 
 # ============================================================================
 # CORS (SPA React en otro origen)

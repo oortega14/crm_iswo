@@ -30,14 +30,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { OpportunityLeadRow } from '@/components/opportunities/OpportunityLeadRow'
+import { OpportunityOwnershipBadge } from '@/components/opportunities/OpportunityOwnershipBadge'
 import { formatStageTimePain, getStageEmoji } from '@/lib/opportunityVisuals'
 import type { Opportunity } from '@/types'
-import { ContactActionButtons } from '@/components/opportunities/ContactActionButtons'
 import { TemperatureBadge } from '@/components/opportunities/TemperatureBadge'
 const COLUMN_LABELS: Record<string, string> = {
   contact_name:    'Contacto',
   temperature:     'Temperatura',
-  contact_actions: 'Acciones',
+  ownership:       'Origen',
   estimated_value: 'Valor',
   stage:           'Etapa',
   bant_score:      'BANT',
@@ -118,21 +118,10 @@ export function OpportunitiesTable({
         ),
       }),
       columnHelper.display({
-        id: 'contact_actions',
-        header: 'Acciones',
+        id: 'ownership',
+        header: 'Origen',
         cell: ({ row }) => (
-          <div
-            className="min-w-[9rem]"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-            role="presentation"
-          >
-            <ContactActionButtons
-              compact
-              phone={row.original.contact_phone}
-              email={row.original.contact_email}
-            />
-          </div>
+          <OpportunityOwnershipBadge opportunity={row.original} showLabel />
         ),
       }),
       columnHelper.accessor('estimated_value', {

@@ -467,8 +467,8 @@ function NetworkPage() {
                 <p className="text-sm font-medium">Profundidad del árbol (RFC F2)</p>
                 <p className="text-xs text-muted-foreground">
                   {isConsultant
-                    ? 'En Oportunidades solo ves tus leads. Aquí el árbol muestra hasta '
-                    : 'Los consultores solo ven sus oportunidades en el pipeline. El árbol muestra hasta '}
+                    ? 'En Oportunidades ves tus leads y los de tu red (solo lectura). Aquí el árbol muestra hasta '
+                    : 'Los consultores ven sus oportunidades y las de su red (solo lectura) en el pipeline. El árbol muestra hasta '}
                   <strong>
                     {networkDepth} {networkDepth === 1 ? 'nivel' : 'niveles'}
                   </strong>{' '}

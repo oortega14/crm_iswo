@@ -11,11 +11,23 @@ namespace :demo do
   desc "Purga datos demo. Por defecto vacía leads en iswo+micasita; WIPE=none solo patrones; WIPE=iswo,micasita,libranzas"
   task purge: :environment do
     wipe = demo_parse_wipe_slugs(ENV["WIPE"])
-    puts "\n=== Purga de datos demo ==="
-    puts "Vacío operativo (todos los contactos/opps): #{wipe.presence || '(ninguno)'}"
-    puts "Landings: borra envíos demo y extras (F5 iswo/micasita/libranzas quedan sin plantillas)\n"
-    puts "Patrones demo en otros tenants: sí\n"
-    Maintenance::DemoDataPurger.run!(wipe_tenant_slugs: wipe)
-    puts "Listo.\n"
+    demo_run_purge!(wipe_tenant_slugs: wipe, wipe_label: wipe.presence || "(ninguno)")
   end
+
+  desc "Vacía contactos/oportunidades en TODOS los tenants (conserva tenants, usuarios, pipelines, landings plantilla)"
+  task purge_all: :environment do
+    slugs = ActsAsTenant.without_tenant { Tenant.order(:slug).pluck(:slug) }
+    abort "No hay tenants en la BD." if slugs.empty?
+
+    demo_run_purge!(wipe_tenant_slugs: slugs, wipe_label: slugs.join(", "))
+  end
+end
+
+def demo_run_purge!(wipe_tenant_slugs:, wipe_label:)
+  puts "\n=== Purga de datos demo ==="
+  puts "Vacío operativo (todos los contactos/opps): #{wipe_label}"
+  puts "Conserva: tenants, usuarios, pipelines, BANT, lead sources, red de referidos"
+  puts "Landings: borra envíos y extras; restaura plantillas por vertical\n"
+  Maintenance::DemoDataPurger.run!(wipe_tenant_slugs: wipe_tenant_slugs)
+  puts "Listo.\n"
 end

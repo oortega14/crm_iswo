@@ -82,7 +82,9 @@ class WebhookProcessorJob < ApplicationJob
 
     # Callback sólo estado (saliente típico: queued → sent → delivered / failed).
     if sid.present? && msg_status.present? && !inbound
-      record = WhatsappMessage.unscoped.find_by(provider: "twilio", provider_message_id: sid)
+      record = ActsAsTenant.without_tenant do
+        WhatsappMessage.unscoped.find_by(provider: "twilio", provider_message_id: sid)
+      end
       if record
         ActsAsTenant.with_tenant(record.tenant) do
           apply_twilio_delivery_status(record, msg_status.to_s, payload)
@@ -99,11 +101,12 @@ class WebhookProcessorJob < ApplicationJob
 
     to_number   = payload["To"].to_s.sub(/\Awhatsapp:/, "")
     from_number = payload["From"].to_s.sub(/\Awhatsapp:/, "")
-    integration = AdIntegration.unscoped.where(provider: "twilio")
-                               .find_by(account_identifier: to_number) ||
-                  resolve_tenant_by_setting("whatsapp.number", to_number)
+    integration = find_twilio_integration_for_to(to_number)
     tenant      = integration.respond_to?(:tenant) ? integration.tenant : integration
-    return Rails.logger.warn("[WhatsApp Twilio] no tenant para to=#{to_number}") unless tenant
+    return Rails.logger.warn(
+      "[WhatsApp Twilio] no tenant para to=#{mask_phone_for_log(to_number)} " \
+      "(account_identifier en Integraciones debe ser ese E.164, p.ej. +14155238886)"
+    ) unless tenant
 
     ActsAsTenant.with_tenant(tenant) do
       if sid.present? && tenant.whatsapp_messages.exists?(provider: "twilio", provider_message_id: sid)
@@ -139,10 +142,11 @@ class WebhookProcessorJob < ApplicationJob
         meta_phone_id = value.dig("metadata", "phone_number_id").to_s
         next Rails.logger.warn("[WhatsApp Cloud] phone_number_id vacío") if meta_phone_id.blank?
 
-        integration = AdIntegration.unscoped.where(provider: "whatsapp_cloud")
-                                   .find_by(account_identifier: meta_phone_id)
-        tenant        = integration&.tenant
-        tenant      ||= resolve_tenant_by_setting("whatsapp.cloud_phone_id", meta_phone_id)
+        tenant = ActsAsTenant.without_tenant do
+          integration = AdIntegration.unscoped.where(provider: "whatsapp_cloud")
+                                     .find_by(account_identifier: meta_phone_id)
+          integration&.tenant || resolve_tenant_by_setting("whatsapp.cloud_phone_id", meta_phone_id)
+        end
         next Rails.logger.warn("[WhatsApp Cloud] sin tenant para phone_number_id=#{meta_phone_id}") unless tenant
 
         ActsAsTenant.with_tenant(tenant) do
@@ -209,10 +213,12 @@ class WebhookProcessorJob < ApplicationJob
     from_number = openwa_wa_id_to_e164(from_wa)
     to_number   = openwa_wa_id_to_e164(to_wa)
 
-    tenant = AdIntegration.unscoped
-                          .where(provider: "openwa", account_identifier: session_id)
-                          .first&.tenant
-    tenant ||= resolve_tenant_by_setting("whatsapp.openwa_session_id", session_id)
+    tenant = ActsAsTenant.without_tenant do
+      AdIntegration.unscoped
+                   .where(provider: "openwa", account_identifier: session_id)
+                   .first&.tenant ||
+        resolve_tenant_by_setting("whatsapp.openwa_session_id", session_id)
+    end
 
     return Rails.logger.warn("[WhatsApp OpenWA] sin tenant para sessionId=#{session_id}") unless tenant
 
@@ -259,7 +265,9 @@ class WebhookProcessorJob < ApplicationJob
   def openwa_update_status(msg_id, new_status, delivered_at: false, read_at: false)
     return if msg_id.blank?
 
-    msg = WhatsappMessage.unscoped.find_by(provider: "openwa", provider_message_id: msg_id)
+    msg = ActsAsTenant.without_tenant do
+      WhatsappMessage.unscoped.find_by(provider: "openwa", provider_message_id: msg_id)
+    end
     return unless msg
 
     attrs = { status: new_status }
@@ -270,8 +278,51 @@ class WebhookProcessorJob < ApplicationJob
     Rails.logger.warn("[WhatsApp OpenWA] no se pudo actualizar estado: #{e.message}")
   end
 
+  # Enmascara un número en logs (ISO A.8.11) — conserva los últimos 4 dígitos,
+  # suficiente para depurar mismatches de configuración sin loguear el E.164 completo.
+  def mask_phone_for_log(number)
+    digits = number.to_s
+    return "(vacío)" if digits.blank?
+
+    "#{'*' * [ digits.length - 4, 0 ].max}#{digits.last(4)}"
+  end
+
   def resolve_tenant_by_setting(path, value)
-    Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+    ActsAsTenant.without_tenant do
+      Tenant.where("settings #>> ? = ?", "{#{path.split('.').join(',')}}", value.to_s).first
+    end
+  end
+
+  # Empareja To del webhook con account_identifier (acepta con/sin +).
+  def find_twilio_integration_for_to(to_number)
+    exact = to_number.to_s.strip
+    return nil if exact.blank?
+
+    ActsAsTenant.without_tenant do
+      integ = AdIntegration.unscoped.where(provider: "twilio").find_by(account_identifier: exact)
+      next integ if integ
+
+      digits = exact.gsub(/\D/, "")
+      if digits.present?
+        # Compara dígitos en SQL en vez de cargar toda la tabla a Ruby por webhook.
+        integ = AdIntegration.unscoped.where(provider: "twilio")
+                             .where("regexp_replace(account_identifier, '\\D', '', 'g') = ?", digits)
+                             .first
+        next integ if integ
+      end
+
+      resolve_tenant_by_setting("whatsapp.number", exact) ||
+        (digits.present? ? resolve_tenant_by_whatsapp_number_digits(digits) : nil)
+    end
+  end
+
+  def resolve_tenant_by_whatsapp_number_digits(digits)
+    ActsAsTenant.without_tenant do
+      # Compara dígitos en SQL en vez de cargar todos los tenants a Ruby por webhook.
+      Tenant.where(
+        "regexp_replace(settings #>> '{whatsapp,number}', '\\D', '', 'g') = ?", digits
+      ).first
+    end
   end
 
   # Encuentra la oportunidad más apropiada para enlazar un mensaje entrante.
@@ -300,24 +351,25 @@ class WebhookProcessorJob < ApplicationJob
   end
 
   def upsert_contact(tenant, phone, profile_name: nil)
-    normalized = Phonelib.parse(phone).sanitized
-    contact = tenant.contacts.find_by(phone_normalized: normalized)
+    parsed = Phonelib.parse(phone)
+    e164 = parsed.e164
+    raise ArgumentError, "teléfono WhatsApp inválido" if e164.blank?
+
+    contact = tenant.contacts.find_by(phone_e164: e164)
     return contact if contact
 
     first_name, last_part = split_whatsapp_profile_name(profile_name)
-    last_name = last_part.presence || normalized.last(4).presence || "wa"
+    last_name = last_part.presence || parsed.sanitized.to_s.last(4).presence || "wa"
 
     tenant.contacts.create!(
-      first_name:       first_name,
-      last_name:        last_name,
-      phone_e164:       phone,
-      phone_normalized: normalized,
-      source_kind:      "whatsapp",
-      source_label:     "inbound"
+      first_name:   first_name,
+      last_name:    last_name,
+      phone_e164:   e164,
+      source_kind:  "whatsapp",
+      source_label: "inbound"
     )
   rescue ActiveRecord::RecordNotUnique
-    # Otro worker creó el contacto concurrentemente; reutilizamos el existente.
-    tenant.contacts.find_by!(phone_normalized: normalized)
+    tenant.contacts.find_by!(phone_e164: e164)
   end
 
   def split_whatsapp_profile_name(name)
@@ -412,7 +464,9 @@ class WebhookProcessorJob < ApplicationJob
     sid = st["id"].presence
     return if sid.blank?
 
-    msg = WhatsappMessage.unscoped.find_by(provider: "whatsapp_cloud", provider_message_id: sid)
+    msg = ActsAsTenant.without_tenant do
+      WhatsappMessage.unscoped.find_by(provider: "whatsapp_cloud", provider_message_id: sid)
+    end
     return unless msg
 
     key = st["status"].to_s.downcase

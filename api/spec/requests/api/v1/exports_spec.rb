@@ -47,5 +47,11 @@ RSpec.describe "Api::V1::Exports", type: :request do
       ids = json["data"].map { |d| d["id"].to_i }
       expect(ids).to include(failed_export.id)
     end
+
+    it "consultant no puede listar exportaciones (403)" do
+      consultant = create(:user, :consultant, tenant: tenant)
+      get "/api/v1/exports", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
   end
 end

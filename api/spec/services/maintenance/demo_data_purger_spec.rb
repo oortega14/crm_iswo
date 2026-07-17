@@ -80,8 +80,8 @@ RSpec.describe Maintenance::DemoDataPurger do
 
     expect { described_class.run!(wipe_tenant_slugs: []) }
       .to change(Contact, :count).by(-1)
-      .and not_change(Tenant, :count)
-      .and not_change(User, :count)
+      .and change(Tenant, :count).by(0)
+      .and change(User, :count).by(0)
 
     expect(User.exists?(admin.id)).to be(true)
     expect(User.exists?(owner.id)).to be(true)

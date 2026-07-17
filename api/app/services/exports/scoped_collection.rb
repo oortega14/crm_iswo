@@ -15,7 +15,11 @@ module Exports
       scope = base_scope
       return scope unless scope.respond_to?(:ransack) && @filters.present?
 
-      scope.ransack(@filters).result
+      result = scope.ransack(@filters).result
+      # Filtros como opportunities_pipeline_stage_id_eq unen por has_many; sin
+      # distinct, un contacto con más de una oportunidad que matchee el filtro
+      # saldría duplicado en el archivo exportado.
+      result.joins_values.present? ? result.distinct : result
     end
 
     private

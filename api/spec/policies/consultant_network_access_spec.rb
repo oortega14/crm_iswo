@@ -35,25 +35,49 @@ RSpec.describe ConsultantNetworkAccess do
   end
 
   describe ".can_view_opportunity?" do
-    it "solo permite ver oportunidades propias" do
+    it "permite ver propias y las de referidos directos" do
       own = create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
                    owner_user: referrer, contact: network_opp.contact)
       expect(described_class.can_view_opportunity?(referrer, own)).to be(true)
-      expect(described_class.can_view_opportunity?(referrer, network_opp)).to be(false)
+      expect(described_class.can_view_opportunity?(referrer, network_opp)).to be(true)
       expect(described_class.can_view_opportunity?(referrer, stranger_opp)).to be(false)
     end
   end
 
+  describe ".can_edit_opportunity?" do
+    it "solo permite editar las propias" do
+      own = create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
+                   owner_user: referrer, contact: network_opp.contact)
+      expect(described_class.can_edit_opportunity?(referrer, own)).to be(true)
+      expect(described_class.can_edit_opportunity?(referrer, network_opp)).to be(false)
+    end
+  end
+
   describe ".can_view_contact?" do
-    it "no permite ver contactos solo por opp de otro consultor" do
-      expect(described_class.can_view_contact?(referrer, network_opp.contact)).to be(false)
+    it "permite ver contacto si tiene opp de un referido en la red" do
+      expect(described_class.can_view_contact?(referrer, network_opp.contact)).to be(true)
+    end
+
+    it "no permite ver contactos fuera de la red" do
+      expect(described_class.can_view_contact?(referrer, stranger_opp.contact)).to be(false)
     end
   end
 
   describe ".visible_owner_ids" do
-    it "siempre es solo el consultor (aunque haya red de referidos)" do
-      expect(described_class.visible_owner_ids(referrer)).to eq([referrer.id])
-      expect(described_class.visible_owner_ids(referrer)).not_to include(referred.id)
+    it "incluye al consultor y a sus referidos hasta network_depth" do
+      expect(described_class.visible_owner_ids(referrer)).to match_array([referrer.id, referred.id])
+    end
+  end
+
+  describe ".from_network? / .network_read_only?" do
+    it "marca opp de referido como red y solo lectura para el referrer" do
+      expect(described_class.from_network?(referrer, network_opp, tenant)).to be(true)
+      expect(described_class.network_read_only?(referrer, network_opp, tenant)).to be(true)
+
+      own = create(:opportunity, tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
+                   owner_user: referrer, contact: network_opp.contact)
+      expect(described_class.from_network?(referrer, own, tenant)).to be(false)
+      expect(described_class.network_read_only?(referrer, own, tenant)).to be(false)
     end
   end
 

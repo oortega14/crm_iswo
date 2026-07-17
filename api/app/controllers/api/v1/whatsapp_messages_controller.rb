@@ -33,7 +33,9 @@ module Api
       # DELETE /api/v1/opportunities/:opportunity_id/whatsapp_messages
       def destroy_all
         authorize @opportunity, :update?
+        count = @opportunity.whatsapp_messages.count
         @opportunity.whatsapp_messages.destroy_all
+        log_whatsapp_audit!("whatsapp_messages_cleared", metadata: { count: count })
         head :no_content
       end
 
@@ -75,6 +77,7 @@ module Api
           dispatch_whatsapp_delivery!(msg)
           msg.reload
           @opportunity.touch_activity!
+          log_whatsapp_audit!("whatsapp_message_sent", message: msg)
           render json: WhatsappMessageSerializer.new(msg).serializable_hash, status: :accepted
         else
           render_unprocessable(msg)
@@ -83,10 +86,33 @@ module Api
 
       private
 
+      def log_whatsapp_audit!(action, message: nil, metadata: {})
+        meta = metadata.merge(opportunity_id: @opportunity.id)
+        if message
+          meta[:message_id] = message.id
+          meta[:provider]    = message.provider
+          meta[:status]      = message.status
+        end
+
+        AuditLogger.record!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      action,
+          entity_type: "WhatsappMessage",
+          entity_id:   message&.id,
+          metadata:    meta,
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent
+        )
+      end
+
       def dispatch_whatsapp_delivery!(msg)
         return unless defined?(WhatsappDeliveryJob)
 
-        WhatsappDeliveryJob.perform_later(msg.id)
+        # perform_now: el SPA espera el resultado del proveedor en esta misma
+        # petición (status / error_message). perform_later deja el mensaje en
+        # "queued" para siempre si Solid Queue no está levantado.
+        WhatsappDeliveryJob.perform_now(msg.id)
       end
 
       def set_opportunity

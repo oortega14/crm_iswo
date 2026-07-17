@@ -3,18 +3,11 @@
 # ============================================================================
 # LandingSubmissionProcessor — procesa un LandingFormSubmission público.
 # ============================================================================
-# Flujo:
-#   1. Extrae nombre/email/teléfono del payload (heurística por keys comunes).
-#   2. Normaliza teléfono a E.164 (Phonelib).
-#   3. Busca duplicados con DuplicateDetector; si hay match >= 0.85 reusa
-#      el contacto y encola DuplicateResolutionJob; si no, crea uno nuevo.
-#   4. Crea Opportunity en el pipeline default del tenant, stage inicial.
-#   5. Asigna owner por round-robin (o según la landing.default_owner_id).
-#   6. Marca submission.processed_at y submission.contact/opportunity.
-#
-# Se llama desde el controller público o vía job (#call_later).
+# Crea/reutiliza Contact + Opportunity, notifica al equipo y marca processed_at.
 # ============================================================================
 class LandingSubmissionProcessor
+  class ProcessingError < StandardError; end
+
   NAME_KEYS    = %w[full_name name nombre nombre_completo].freeze
   EMAIL_KEYS   = %w[email correo e_mail].freeze
   PHONE_KEYS   = %w[phone telefono celular whatsapp mobile].freeze
@@ -42,25 +35,31 @@ class LandingSubmissionProcessor
         @submission.update!(
           contact:      contact,
           opportunity:  opportunity,
-          processed_at: Time.current
+          processed_at: Time.current,
+          process_error: nil
         )
-        # lead_count ya se incrementa en Public::LandingFormSubmissionsController#create
       end
     end
+
     true
+  rescue ProcessingError, ActiveRecord::RecordInvalid => e
+    record_failure(e.message)
+    false
   rescue StandardError => e
     Rails.logger.error("[LandingSubmissionProcessor] submission=#{@submission.id} #{e.class}: #{e.message}")
-    @submission.update(process_error: e.message.truncate(500)) if @submission.respond_to?(:process_error)
+    record_failure(e.message)
     false
   end
 
-  # ===========================================================================
-
   private
+
+  def record_failure(message)
+    @submission.update(process_error: message.to_s.truncate(500)) if @submission.persisted?
+  end
 
   def find_or_create_contact!
     phone = normalized_phone
-    email = extract(EMAIL_KEYS)&.downcase
+    email = extracted_email
 
     matches = Opportunities::DuplicateDetector.new(
       phone:     phone,
@@ -73,30 +72,26 @@ class LandingSubmissionProcessor
       matches.first.contact
     else
       @tenant.contacts.create!(
-        first_name:       first_name,
-        last_name:        last_name,
-        email:            email,
-        phone_e164:       phone,
-        phone_normalized: normalized_phone.present? ? Phonelib.parse(phone).sanitized : nil,
-        company_name:     extract(COMPANY_KEYS),
-        custom_fields:    extra_fields.stringify_keys,
-        source_kind:      "web",
-        source_label:     @landing&.slug
+        first_name:    first_name,
+        last_name:     last_name,
+        email:         email,
+        phone_e164:    phone,
+        company_name:  extract(COMPANY_KEYS),
+        custom_fields: extra_fields.stringify_keys,
+        source_kind:   "web",
+        source_label:  @landing&.title.presence || @landing&.slug
       )
     end
   end
 
-  # Actualiza contacto existente o recién creado con lo enviado en el formulario.
   def apply_payload_to_contact!(contact)
     phone = normalized_phone
+    email = extracted_email
     updates = {}
     updates[:first_name]   = first_name if first_name.present?
     updates[:last_name]    = last_name if last_name.present?
     updates[:email]        = email if email.present?
     updates[:phone_e164]   = phone if phone.present?
-    if phone.present?
-      updates[:phone_normalized] = Phonelib.parse(phone).sanitized
-    end
     company = extract(COMPANY_KEYS)
     updates[:company_name] = company if company.present?
 
@@ -110,18 +105,19 @@ class LandingSubmissionProcessor
   end
 
   def create_opportunity!(contact)
-    pipeline = @tenant.pipelines.find_by(is_default: true) || @tenant.pipelines.first
-    stage    = pipeline&.pipeline_stages&.order(:position)&.first
-    source   = @tenant.lead_sources.find_by(kind: "web") || @tenant.lead_sources.first
-    owner    = next_round_robin_owner
+    ctx = commercial_setup!
+    owner = ctx[:owner]
+
+    contact.update!(owner_user: owner) if contact.owner_user_id.blank?
 
     opp = @tenant.opportunities.create!(
       contact:          contact,
-      pipeline:         pipeline,
-      pipeline_stage:   stage,
+      pipeline:         ctx[:pipeline],
+      pipeline_stage:   ctx[:stage],
       owner_user:       owner,
-      lead_source:      source,
+      lead_source:      ctx[:source],
       status:           "new_lead",
+      currency:         @tenant.currency.presence || "COP",
       title:            "Lead landing: #{@landing&.title || 'Formulario público'}",
       custom_fields:    opportunity_custom_fields,
       notes:            opportunity_notes_from_payload,
@@ -144,15 +140,38 @@ class LandingSubmissionProcessor
       source_kind:  "web",
       source_label: @landing&.title.presence || @landing&.slug
     )
+    Notifications::LandingLeadStaffNotifier.call(
+      opportunity: opp,
+      landing:     @landing
+    )
 
     opp
   end
 
-  # --- Extracción del payload --------------------------------------------
+  def commercial_setup!
+    pipeline = @tenant.pipelines.kept.find_by(is_default: true) ||
+               @tenant.pipelines.kept.order(:created_at).first
+    raise ProcessingError, "missing_pipeline" if pipeline.nil?
+
+    stage = pipeline.pipeline_stages.order(:position).first
+    raise ProcessingError, "missing_pipeline_stage" if stage.nil?
+
+    owner = next_round_robin_owner
+    raise ProcessingError, "missing_owner" if owner.nil?
+
+    source = @tenant.lead_sources.find_by(kind: "web", active: true) ||
+             @tenant.lead_sources.where(active: true).order(:id).first
+
+    { pipeline: pipeline, stage: stage, owner: owner, source: source }
+  end
 
   def extract(keys)
     keys.each { |k| v = @payload[k]; return v if v.present? }
     nil
+  end
+
+  def extracted_email
+    extract(EMAIL_KEYS)&.downcase
   end
 
   def full_name
@@ -163,7 +182,7 @@ class LandingSubmissionProcessor
     if @payload[:first_name].present?
       @payload[:first_name]
     else
-      full_name.to_s.split.first
+      full_name.to_s.split.first.presence || "Lead"
     end
   end
 

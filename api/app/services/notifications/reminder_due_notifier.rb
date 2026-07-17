@@ -3,12 +3,6 @@
 module Notifications
   # Crea notificación in-app cuando un recordatorio vence (campana del SPA).
   class ReminderDueNotifier
-    CHANNEL_LABELS = {
-      "email"    => "correo",
-      "whatsapp" => "WhatsApp",
-      "in_app"   => "app"
-    }.freeze
-
     def self.call(reminder:)
       new(reminder: reminder).call
     end
@@ -42,14 +36,7 @@ module Notifications
     private
 
     def build_body(opportunity)
-      label   = opportunity.contact&.display_name.presence || opportunity.title
-      channel = CHANNEL_LABELS[@reminder.channel] || @reminder.channel
-      detail  = @reminder.message.presence
-
-      parts = ["Recordatorio de «#{label}»"]
-      parts << "(también enviado por #{channel})" unless @reminder.channel_in_app?
-      parts << "— #{detail}" if detail
-      parts.join(" ")
+      Reminders::MessageComposer.for(@reminder).due_in_app(channel: @reminder.channel)
     end
   end
 end

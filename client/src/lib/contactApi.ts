@@ -42,6 +42,7 @@ export interface ContactSummary {
   documentId?: string
   ownerName?: string
   ownerId?: string
+  canEdit?: boolean
   sourceLabel?: string
   lastContactedAt?: string
   customFields?: Record<string, unknown>
@@ -64,6 +65,7 @@ type ContactAttributes = {
   document_id?: string
   owner_name?: string
   owner_user_id?: string
+  can_edit?: boolean
   opportunities_count?: number
   source_label?: string
   last_contacted_at?: string
@@ -115,6 +117,7 @@ export function mapContactResource(resource: JsonApiResource): ContactSummary {
         : attrs.owner_user_id != null
           ? String(attrs.owner_user_id)
           : undefined,
+    canEdit: attrs.can_edit === true,
     sourceLabel: attrs.source_label?.trim() || undefined,
     lastContactedAt: attrs.last_contacted_at,
     customFields:
@@ -258,6 +261,7 @@ export function buildContactExportFilters(config: {
   contactKind?: '' | 'person' | 'company'
   ownerId?: string
   contactSourceKind?: string
+  stageId?: string
 }): Record<string, string> {
   const out: Record<string, string> = {}
   const days =
@@ -270,6 +274,8 @@ export function buildContactExportFilters(config: {
   if (config.contactKind) out.kind_eq = config.contactKind
   if (config.ownerId) out.owner_user_id_eq = config.ownerId
   if (config.contactSourceKind) out.source_kind_eq = config.contactSourceKind
+  // Filtra por etapa del pipeline de las oportunidades del contacto (RFC §6.7).
+  if (config.stageId) out.opportunities_pipeline_stage_id_eq = config.stageId
   return out
 }
 

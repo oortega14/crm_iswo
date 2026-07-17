@@ -16,10 +16,8 @@ module Api
         q = params[:q].to_s.strip
         return render json: { data: [] }, status: :ok if q.length < 2
 
-        like = "%#{ActiveRecord::Base.sanitize_sql_like(q)}%"
-
-        contact_rows     = contact_hits(like)
-        opportunity_rows = opportunity_hits(like)
+        contact_rows     = contact_hits(q)
+        opportunity_rows = opportunity_hits(q)
 
         data = (contact_rows + opportunity_rows)
                  .sort_by { |r| -r[:_sort].to_f }
@@ -30,12 +28,9 @@ module Api
 
       private
 
-      def contact_hits(like)
+      def contact_hits(query)
         scope = policy_scope(Contact).kept
-        scope = scope.where(
-          "first_name ILIKE :q OR last_name ILIKE :q OR company_name ILIKE :q OR email ILIKE :q OR phone_normalized ILIKE :q",
-          q: like
-        )
+        scope = Contacts::EncryptedSearch.apply(scope, query)
         scope = scope.order(updated_at: :desc).limit(MAX_PER_TYPE)
 
         scope.map do |c|
@@ -50,7 +45,8 @@ module Api
         end
       end
 
-      def opportunity_hits(like)
+      def opportunity_hits(query)
+        like = "%#{ActiveRecord::Base.sanitize_sql_like(query)}%"
         scope = policy_scope(Opportunity).kept
         scope = scope.left_joins(:contact)
         scope = scope.where(

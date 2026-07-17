@@ -9,9 +9,9 @@
 # ============================================================================
 class ContactPolicy < ApplicationPolicy
   def index?            = staff?
-  def show?             = staff? && (manager_or_admin? || viewer? || owner_or_assigned?)
+  def show?             = staff? && (manager_or_admin? || viewer? || contact_owner?)
   def create?           = admin? || manager? || consultant?
-  def update?           = admin? || manager? || owner_or_assigned?
+  def update?           = admin? || manager? || contact_owner?
   def destroy?          = admin?
   def bulk_destroy?     = admin?
   def check_duplicates? = admin? || manager? || consultant?
@@ -24,8 +24,7 @@ class ContactPolicy < ApplicationPolicy
       if admin? || manager? || viewer?
         scope.all
       elsif consultant?
-        owner_ids = ConsultantNetworkAccess.visible_owner_ids(user)
-        opp_contact_ids = Opportunity.where(owner_user_id: owner_ids).where.not(contact_id: nil).select(:contact_id).distinct
+        opp_contact_ids = Opportunity.where(owner_user_id: user.id).where.not(contact_id: nil).select(:contact_id).distinct
         scope.where(owner_user_id: user.id).or(scope.where(id: opp_contact_ids))
       else
         scope.none
@@ -35,11 +34,8 @@ class ContactPolicy < ApplicationPolicy
 
   private
 
-  def owner_or_assigned?
-    return false unless record.respond_to?(:owner_user_id)
-
+  def contact_owner?
     record.owner_user_id == user&.id ||
       record.opportunities.where(owner_user_id: user&.id).exists?
   end
-
 end

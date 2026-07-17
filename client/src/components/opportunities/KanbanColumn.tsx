@@ -10,9 +10,9 @@ interface KanbanColumnProps {
   opportunities: Opportunity[]
   onSelectOpportunity: (id: string) => void
   canDragOpportunity?: (opportunity: Opportunity) => boolean
-  stages?: PipelineStage[]
-  onMoveStage?: (opportunityId: string, stageId: string) => void
-  moveStagePending?: boolean
+  isReadOnlyOpportunity?: (opportunity: Opportunity) => boolean
+  isDropTarget?: boolean
+  isDragging?: boolean
 }
 
 export function KanbanColumn({
@@ -20,13 +20,15 @@ export function KanbanColumn({
   opportunities,
   onSelectOpportunity,
   canDragOpportunity,
-  stages,
-  onMoveStage,
-  moveStagePending,
+  isReadOnlyOpportunity,
+  isDropTarget = false,
+  isDragging = false,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: stage.id,
   })
+
+  const highlight = isOver || isDropTarget
 
   const stageEmoji = getStageEmoji(stage.name)
   const totalValue = opportunities.reduce(
@@ -37,12 +39,19 @@ export function KanbanColumn({
 
   return (
     <div
+      ref={setNodeRef}
       className={cn(
-        'flex flex-1 min-w-[160px] flex-col rounded-lg bg-muted/50 transition-colors',
-        isOver && 'bg-primary/5 ring-2 ring-primary/30',
+        'flex flex-1 min-w-[160px] flex-col rounded-lg bg-muted/50 transition-colors duration-150',
+        highlight && 'bg-primary/5 ring-2 ring-primary/40 shadow-sm',
+        isDragging && !highlight && 'ring-1 ring-border/40',
       )}
     >
-      <div className="space-y-1.5 border-b border-border/50 px-2 py-2">
+      <div
+        className={cn(
+          'space-y-1.5 border-b border-border/50 px-2 py-2 transition-colors',
+          highlight && 'bg-primary/5',
+        )}
+      >
         <div className="flex items-start justify-between gap-1.5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1 min-w-0" title={stage.name}>
@@ -81,26 +90,26 @@ export function KanbanColumn({
             {opportunities.length}
           </Badge>
         </div>
+        {highlight && (
+          <p className="text-[10px] font-medium text-primary animate-in fade-in duration-150">
+            Soltar aquí
+          </p>
+        )}
       </div>
 
-      <div ref={setNodeRef} className="flex-1 overflow-y-auto p-1.5 min-h-[200px]">
+      <div className="flex-1 overflow-y-auto p-1.5 min-h-[200px]">
         <div className="flex flex-col gap-1.5">
           {opportunities.map((opportunity) => {
             const dragDisabled = canDragOpportunity
               ? !canDragOpportunity(opportunity)
               : false
+            const readOnly = isReadOnlyOpportunity?.(opportunity) ?? false
             return (
               <OpportunityCard
                 key={opportunity.id}
                 opportunity={opportunity}
                 dragDisabled={dragDisabled}
-                stages={stages}
-                onMoveStage={
-                  onMoveStage
-                    ? (stageId) => onMoveStage(opportunity.id, stageId)
-                    : undefined
-                }
-                moveStagePending={moveStagePending}
+                readOnly={readOnly}
                 onClick={() => onSelectOpportunity(opportunity.id)}
               />
             )
@@ -109,11 +118,11 @@ export function KanbanColumn({
           {opportunities.length === 0 && (
             <div
               className={cn(
-                'flex items-center justify-center h-24 rounded-md border border-dashed border-border/60 text-xs text-muted-foreground',
-                isOver && 'border-primary/50 bg-primary/5 text-primary',
+                'flex items-center justify-center h-24 rounded-md border border-dashed border-border/60 text-xs text-muted-foreground transition-colors',
+                highlight && 'border-primary/50 bg-primary/5 text-primary font-medium',
               )}
             >
-              {isOver ? 'Soltar aquí' : 'Sin oportunidades'}
+              {highlight ? 'Soltar aquí' : 'Sin oportunidades'}
             </div>
           )}
         </div>

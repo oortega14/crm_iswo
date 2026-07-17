@@ -44,7 +44,7 @@ class DuplicateFlagSerializer < ApplicationSerializer
       id:        contact.id,
       full_name: contact.display_name,
       email:     contact.email,
-      phone:     contact.phone_e164
+      phone:     contact.phone_e164_safe
     }
   end
 

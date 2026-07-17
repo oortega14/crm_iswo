@@ -92,6 +92,7 @@ RSpec.describe "Api::V1::Reminders", type: :request do
       expect(response).to have_http_status(:created)
       expect(json.dig("data", "attributes", "subject")).to eq("Llamar")
       expect(ReminderCreatedNotificationJob).to have_been_enqueued
+      expect(ReminderDueDispatchJob).to have_been_enqueued
     end
   end
 

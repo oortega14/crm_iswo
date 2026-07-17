@@ -273,7 +273,11 @@ function DuplicatesPage() {
     <AppPageShell contentClassName="gap-8">
       <PageHeader
         title="Duplicados"
-        description="Colisiones entre oportunidades (RFC §6.2). Admin y manager ven nuevos registros de consultores en esta lista cada pocos segundos."
+        description={
+          canResolve
+            ? 'Colisiones entre oportunidades (RFC §6.2). Admin y manager ven nuevos registros de consultores en esta lista cada pocos segundos.'
+            : 'Colisiones donde participas: registraste la oportunidad o eres responsable de alguna de las dos (RFC §6.2). Un manager resolverá la duplicidad.'
+        }
       >
         <Select
           value={resolutionFilter}
@@ -316,7 +320,9 @@ function DuplicatesPage() {
               </div>
               <div>
                 <p className="text-2xl font-semibold">{pendingTotal}</p>
-                <p className="text-xs text-muted-foreground">Pendientes (tenant)</p>
+                <p className="text-xs text-muted-foreground">
+                  {canResolve ? 'Pendientes (tenant)' : 'Pendientes (tuyos)'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -388,7 +394,9 @@ function DuplicatesPage() {
               <h3 className="mt-4 text-lg font-medium">Sin resultados</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 {resolutionFilter === 'pending'
-                  ? 'No hay colisiones pendientes. Usa "Escanear duplicados" para detectar pares sin flag.'
+                  ? canResolve
+                    ? 'No hay colisiones pendientes. Usa "Escanear duplicados" para detectar pares sin flag.'
+                    : 'No tienes colisiones pendientes. Si registras un lead duplicado, aparecerá aquí y un manager lo resolverá.'
                   : 'No hay registros con el filtro actual.'}
               </p>
             </div>

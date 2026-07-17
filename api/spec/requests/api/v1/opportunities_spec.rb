@@ -15,12 +15,12 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
   let(:foreign_contact) { create(:contact, tenant: tenant) }
 
   let!(:own_opp) do
-    create(:opportunity,
+    create(:opportunity, :skip_bant_recalc,
            tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
            contact: contact, owner_user: consultant, title: "Propia")
   end
   let!(:foreign_opp) do
-    create(:opportunity,
+    create(:opportunity, :skip_bant_recalc,
            tenant: tenant, pipeline: pipeline, pipeline_stage: stage,
            contact: foreign_contact, owner_user: other_consultant, title: "Ajena")
   end
@@ -101,6 +101,7 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       created = Opportunity.order(:created_at).last
       expect(created.owner_user_id).to eq(consultant.id)
       expect(created.opportunity_logs.last.action).to eq("create")
+      expect(created.bant_score).to be > 0
     end
 
     it "201 sin título genera uno automático desde el contacto" do
@@ -174,7 +175,8 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
                contact_id: contact.id,
                pipeline_stage_id: stage.id,
                title: "Lead caliente manual",
-               temperature: "hot"
+               temperature: "hot",
+               estimated_value: 1_000_000
              }
            }.to_json,
            headers: auth_headers(consultant)
@@ -183,6 +185,18 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
       expect(json.dig("data", "attributes", "temperature")).to eq("hot")
       created = tenant.opportunities.order(:id).last
       expect(created.temperature).to eq("hot")
+      expect(created.bant_score).to be > 0
+    end
+
+    it "recalcula BANT al cambiar estimated_value" do
+      own_opp.update_columns(bant_score: 0, estimated_value: 0)
+
+      patch "/api/v1/opportunities/#{own_opp.id}",
+            params: { opportunity: { estimated_value: 15_000_000 } }.to_json,
+            headers: auth_headers(consultant)
+
+      expect(response).to have_http_status(:ok)
+      expect(own_opp.reload.bant_score).to be > 0
     end
   end
 
@@ -287,20 +301,40 @@ RSpec.describe "Api::V1::Opportunities", type: :request do
              title: "Red referido")
     end
 
-    it "consultant solo ve sus opps en index y kanban (no las del referido)" do
+    it "consultant ve propias y las de referidos en index" do
       get "/api/v1/opportunities", headers: auth_headers(consultant)
       ids = json["data"].map { |d| d["id"].to_i }
-      expect(ids).to eq([own_opp.id])
-
-      get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(consultant)
-      opp_ids = json["data"].flat_map { |col| Array(col["opportunities"]).map { |o| o["id"].to_i } }
-      expect(opp_ids).to include(own_opp.id)
-      expect(opp_ids).not_to include(network_opp.id)
+      expect(ids).to match_array([own_opp.id, network_opp.id])
     end
 
-    it "consultant no puede abrir detalle de opp de otro consultor (404)" do
+    it "serializa from_network y network_read_only en show de opp de referido" do
       get "/api/v1/opportunities/#{network_opp.id}", headers: auth_headers(consultant)
-      expect(response).to have_http_status(:not_found)
+      expect(response).to have_http_status(:ok)
+      attrs = json.dig("data", "attributes") || {}
+      expect(attrs["from_network"]).to be(true)
+      expect(attrs["network_read_only"]).to be(true)
+    end
+
+    it "consultant no puede mover etapa en opp de referido (403)" do
+      target = pipeline.pipeline_stages.second || stage
+      post "/api/v1/opportunities/#{network_opp.id}/move_stage",
+           params: { pipeline_stage_id: target.id }.to_json,
+           headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "consultant no puede actualizar opp de referido (403)" do
+      patch "/api/v1/opportunities/#{network_opp.id}",
+            params: { opportunity: { title: "Hack" } }.to_json,
+            headers: auth_headers(consultant)
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "consultant ve propias y referidos en kanban" do
+      get "/api/v1/opportunities/kanban?pipeline_id=#{pipeline.id}", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:ok)
+      opp_ids = json["data"].flat_map { |col| Array(col["opportunities"]).map { |o| o["id"].to_i } }
+      expect(opp_ids).to include(own_opp.id, network_opp.id)
     end
 
     it "consultant sigue sin ver opps fuera de su red (404)" do

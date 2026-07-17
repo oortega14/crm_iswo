@@ -10,14 +10,14 @@ import {
   History,
   Pencil,
   Trash2,
-  Sparkles,
   Loader2,
-  Gauge,
   RefreshCw,
   UserRound,
 } from 'lucide-react'
-import api from '@/lib/api'
-import { useUser, useUserRole } from '@/stores/auth'
+import api, { formatRailsError } from '@/lib/api'
+import { useUser, useUserRole, useAuthStore } from '@/stores/auth'
+import { canUseReminders } from '@/lib/reminderChannels'
+import { tenantHasModule } from '@/lib/tenantModules'
 import {
   assignOpportunityOwner,
   fetchOpportunityDetail,
@@ -61,12 +61,14 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { BantSliders } from './BantSliders'
-import { TemperatureSelector } from './TemperatureSelector'
 import { TemperatureBadge } from './TemperatureBadge'
+import { OpportunityTemperaturePanel } from './OpportunityTemperaturePanel'
+import { fetchTemperatureContext, type TemperatureAiResult } from '@/lib/temperatureContext'
 import { ActivityLog } from './ActivityLog'
 import { RemindersTab } from './RemindersTab'
 import { WhatsAppThread, type ThreadMessage } from './WhatsAppThread'
 import { OpportunityLeadSummary } from './OpportunityLeadSummary'
+import { OpportunityOwnershipBadge } from './OpportunityOwnershipBadge'
 import {
   ContactEditDialog,
   contactEditInitialFromSummary,
@@ -94,20 +96,17 @@ export function OpportunitySlideOver({
   const [editContactOpen, setEditContactOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
-  const [aiResult, setAiResult] = useState<{
-    temperature?: string
-    reasoning: string
-    next_action: string
-    ai_used: boolean
-    fallback_reason?: string | null
-    anthropic_error?: string | null
-  } | null>(null)
+  const [aiResult, setAiResult] = useState<TemperatureAiResult | null>(null)
+  const [autoClassifying, setAutoClassifying] = useState(false)
+  const autoClassifySinceRef = useRef<string | null>(null)
   const [notesValue, setNotesValue] = useState('')
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const [editingValue, setEditingValue] = useState(false)
   const [valueInput, setValueInput] = useState('')
   const role = useUserRole()
   const currentUser = useUser()
+  const tenant = useAuthStore((s) => s.tenant)
+  const showRemindersTab = tenantHasModule(tenant, 'reminders') && canUseReminders(role)
 
   const { data: opportunityDetail, isLoading: detailLoading } = useQuery({
     queryKey: queryKeys.opportunities.detail(opportunityId || ''),
@@ -120,6 +119,7 @@ export function OpportunitySlideOver({
 
   const canEditBusiness = useMemo(() => {
     if (!opportunity || role === 'viewer') return false
+    if (opportunity.network_read_only) return false
     if (role === 'admin' || role === 'manager') return true
     const ownerId = opportunity.owner_id || opportunity.owner?.id
     return String(ownerId ?? '') === String(currentUser?.id ?? '')
@@ -158,6 +158,8 @@ export function OpportunitySlideOver({
     setNotesValue(opportunity?.notes ?? '')
     setValueInput(String(opportunity?.estimated_value ?? 0))
     setAiResult(null)
+    setAutoClassifying(false)
+    autoClassifySinceRef.current = null
     if (open) setActiveTab('overview')
   }, [opportunity?.id, opportunity?.notes, opportunity?.estimated_value, open])
 
@@ -188,7 +190,7 @@ export function OpportunitySlideOver({
   const { data: reminders, isLoading: remindersLoading } = useQuery({
     queryKey: queryKeys.reminders.byOpportunity(opportunity?.id || ''),
     queryFn: () => fetchOpportunityReminders(opportunity!.id),
-    enabled: !!opportunity?.id && activeTab === 'reminders',
+    enabled: !!opportunity?.id && showRemindersTab && activeTab === 'reminders',
   })
 
   // Fetch WhatsApp messages (JSON:API)
@@ -236,6 +238,70 @@ export function OpportunitySlideOver({
     },
   })
 
+  const invalidateTemperatureContext = (oppId?: string) => {
+    if (oppId) {
+      void queryClient.invalidateQueries({ queryKey: ['temperature_context', oppId] })
+    }
+  }
+
+  // Set único de invalidaciones para toda mutación que cambie una oportunidad.
+  // Antes cada mutation repetía este bloque con un subconjunto distinto (y
+  // aparentemente accidental) de queries, dejando vistas obsoletas según qué
+  // acción se disparara (p. ej. reasignar dueño no invalidaba notificaciones).
+  const invalidateOpportunityQueries = (oppId?: string) => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
+    if (oppId) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(oppId) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(oppId) })
+      void queryClient.invalidateQueries({ queryKey: ['temperature_context', oppId] })
+    }
+    void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    void invalidateContactSegmentMetrics(queryClient)
+    void invalidateNotificationsQueries(queryClient)
+  }
+
+  const beginAutoClassifyPoll = () => {
+    autoClassifySinceRef.current = new Date().toISOString()
+    setAutoClassifying(true)
+  }
+
+  const { data: autoClassifyContext } = useQuery({
+    queryKey: ['temperature_context', opportunity?.id, 'auto_poll'],
+    queryFn: () => fetchTemperatureContext(opportunity!.id),
+    enabled: autoClassifying && Boolean(opportunity?.id),
+    refetchInterval: autoClassifying ? 2000 : false,
+  })
+
+  useEffect(() => {
+    if (!autoClassifying) return
+    const timeout = window.setTimeout(() => setAutoClassifying(false), 35_000)
+    return () => window.clearTimeout(timeout)
+  }, [autoClassifying])
+
+  useEffect(() => {
+    if (!autoClassifying || !autoClassifyContext?.last_classification) return
+    const last = autoClassifyContext.last_classification
+    const since = autoClassifySinceRef.current
+    if (!since || !last.classified_at) return
+    if (new Date(last.classified_at) < new Date(since)) return
+
+    setAiResult({
+      temperature: last.temperature,
+      reasoning: last.reasoning,
+      next_action: last.next_action,
+      ai_used: last.ai_used,
+      fallback_reason: last.fallback_reason,
+      data_considered: last.data_considered,
+    })
+    setAutoClassifying(false)
+    invalidateOpportunityQueries(opportunity?.id)
+    if (last.ai_used) {
+      toast.success('Temperatura actualizada automáticamente con IA')
+    } else {
+      toast.info('Temperatura recalculada automáticamente (reglas locales)')
+    }
+  }, [autoClassifying, autoClassifyContext?.last_classification, opportunity?.id, queryClient])
+
   // Update opportunity mutation
   const updateMutation = useMutation({
     mutationFn: async (
@@ -257,15 +323,14 @@ export function OpportunitySlideOver({
         const updated = mapOpportunityResource(row)
         upsertOpportunityInQueryCache(queryClient, updated)
       }
-      toast.success('Oportunidad actualizada')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
+      const meta = (body as { meta?: { temperature_classification?: { queued?: boolean } } })?.meta
+      const caps = queryClient.getQueryData<{ auto_on_save?: boolean }>(queryKeys.ai.capabilities)
+      if (meta?.temperature_classification?.queued && caps?.auto_on_save) {
+        beginAutoClassifyPoll()
+      } else {
+        toast.success('Oportunidad actualizada')
       }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
-      void invalidateNotificationsQueries(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Error al actualizar')
@@ -278,9 +343,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Oportunidad eliminada')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       onOpenChange(false)
     },
     onError: () => {
@@ -289,7 +352,7 @@ export function OpportunitySlideOver({
   })
 
   const parseClassifyResponse = (data: {
-    ai_result: { temperature: string; reasoning: string; next_action: string; ai_used: boolean }
+    ai_result: TemperatureAiResult
   }) => data.ai_result
 
   const syncTemperatureMutation = useMutation({
@@ -299,17 +362,11 @@ export function OpportunitySlideOver({
     },
     onSuccess: (ai_result) => {
       setAiResult(ai_result)
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-      }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       toast.success('Temperatura actualizada según BANT y actividad')
     },
-    onError: () => {
-      toast.error('No se pudo recalcular la temperatura')
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo recalcular la temperatura'))
     },
   })
 
@@ -320,12 +377,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Etapa actualizada')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
-      void invalidateNotificationsQueries(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: () => toast.error('No se pudo cambiar la etapa'),
   })
@@ -337,11 +389,7 @@ export function OpportunitySlideOver({
     },
     onSuccess: () => {
       toast.success('Consultor asignado')
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
     },
     onError: () => toast.error('No se pudo reasignar'),
   })
@@ -352,11 +400,7 @@ export function OpportunitySlideOver({
       return recalculateOpportunityBant(opportunity.id)
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity!.id) })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       if (result.temperature_ai?.ai_used) {
         toast.success('BANT recalculado y temperatura actualizada con Claude')
       } else {
@@ -377,13 +421,7 @@ export function OpportunitySlideOver({
         ...ai_result,
         anthropic_error: res.meta?.anthropic_error ?? null,
       })
-      queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.all })
-      if (opportunity?.id) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.detail(opportunity.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.logs(opportunity.id) })
-      }
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      void invalidateContactSegmentMetrics(queryClient)
+      invalidateOpportunityQueries(opportunity?.id)
       const usedAi = ai_result.ai_used === true || (res.meta?.ai_used as boolean) === true
       if (usedAi) {
         toast.success(`Clasificado con Claude (${res.meta?.model ?? aiCaps?.model ?? 'IA'})`)
@@ -394,8 +432,8 @@ export function OpportunitySlideOver({
         )
       }
     },
-    onError: () => {
-      toast.error('No se pudo clasificar con Claude')
+    onError: (err: unknown) => {
+      toast.error(formatRailsError(err, 'No se pudo clasificar con Claude'))
     },
   })
 
@@ -470,6 +508,9 @@ export function OpportunitySlideOver({
                 {opportunity.title && opportunity.title !== opportunity.contact_name && (
                   <p className="text-sm text-muted-foreground mt-1 truncate">{opportunity.title}</p>
                 )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <OpportunityOwnershipBadge opportunity={opportunity} />
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {opportunity.owner?.name && (
@@ -519,6 +560,13 @@ export function OpportunitySlideOver({
               </div>
             </div>
 
+            {opportunity.network_read_only ? (
+              <div className="border-b border-indigo-500/25 bg-indigo-500/10 px-4 py-2.5 text-xs text-indigo-900 dark:text-indigo-100">
+                Vista de solo lectura: esta oportunidad pertenece a un consultor de tu red. Usa la
+                pestaña WhatsApp para ver el hilo; no puedes editar etapa, BANT ni notas.
+              </div>
+            ) : null}
+
             {/* Tabs */}
             <Tabs
               value={activeTab}
@@ -534,10 +582,12 @@ export function OpportunitySlideOver({
                   <History className="size-3.5" />
                   Actividad
                 </TabsTrigger>
-                <TabsTrigger value="reminders" className="gap-1.5">
-                  <Bell className="size-3.5" />
-                  Recordatorios
-                </TabsTrigger>
+                {showRemindersTab && (
+                  <TabsTrigger value="reminders" className="gap-1.5">
+                    <Bell className="size-3.5" />
+                    Recordatorios
+                  </TabsTrigger>
+                )}
                 <TabsTrigger value="whatsapp" className="gap-1.5">
                   <MessageSquare className="size-3.5" />
                   WhatsApp
@@ -553,7 +603,6 @@ export function OpportunitySlideOver({
                       contactDetail={contactForLead}
                       canEditLead={canEditLead}
                       onEditLead={() => setEditContactOpen(true)}
-                      onOpenWhatsApp={() => setActiveTab('whatsapp')}
                     />
 
                     <Separator />
@@ -561,7 +610,7 @@ export function OpportunitySlideOver({
                     <div>
                       <h3 className="text-sm font-semibold text-foreground mb-1">Negocio</h3>
                       <p className="text-xs text-muted-foreground">
-                        Etapa, temperatura, BANT, valor y notas de la oportunidad.
+                        Etapa, BANT, valor, campos del negocio y notas. La temperatura con IA va al final.
                       </p>
                     </div>
 
@@ -660,108 +709,6 @@ export function OpportunitySlideOver({
                         </p>
                       )}
                     </div>
-
-                    <Separator />
-
-                    {/* Temperatura */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                          Temperatura del lead
-                        </label>
-                        {canEditBusiness && (
-                          <div className="flex flex-wrap items-center justify-end gap-1.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 gap-1 px-2 text-xs"
-                              onClick={() => { setAiResult(null); syncTemperatureMutation.mutate() }}
-                              disabled={syncTemperatureMutation.isPending || classifyMutation.isPending}
-                              title="Reglas BANT + actividad (sin Claude)"
-                            >
-                              {syncTemperatureMutation.isPending ? (
-                                <Loader2 className="size-3 animate-spin" />
-                              ) : (
-                                <Gauge className="size-3" />
-                              )}
-                              Reglas
-                            </Button>
-                            {claudeAvailable && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="default"
-                                className="h-7 gap-1 px-2.5 text-xs bg-violet-600 text-white hover:bg-violet-700"
-                                onClick={() => { setAiResult(null); classifyMutation.mutate() }}
-                                disabled={classifyMutation.isPending || syncTemperatureMutation.isPending}
-                                title={`Clasificar con Claude (${aiCaps?.model})`}
-                              >
-                                {classifyMutation.isPending ? (
-                                  <Loader2 className="size-3 animate-spin" />
-                                ) : (
-                                  <Sparkles className="size-3" />
-                                )}
-                                Clasificar con Claude AI
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <TemperatureSelector
-                        value={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
-                        disabled={
-                          !canEditBusiness ||
-                          updateMutation.isPending ||
-                          classifyMutation.isPending ||
-                          syncTemperatureMutation.isPending
-                        }
-                        onChange={(temp) => { setAiResult(null); updateMutation.mutate({ temperature: temp }) }}
-                      />
-                      <p className="mt-2 text-[11px] text-muted-foreground leading-snug">
-                        {claudeAvailable ? (
-                          <>
-                            <strong className="text-foreground">Claude AI</strong> analiza BANT, etapa,
-                            origen y actividad. «Reglas» usa solo umbrales locales.
-                            {aiCaps?.auto_on_bant_recalc ? ' Auto-clasifica al recalcular BANT.' : ''}
-                          </>
-                        ) : (
-                          <>
-                            «Reglas» calcula la temperatura según BANT y días de actividad.
-                          </>
-                        )}
-                      </p>
-                      {aiResult && (
-                        <div
-                          className={cn(
-                            'mt-2 rounded-lg border p-2.5 text-xs space-y-1.5',
-                            aiResult.ai_used
-                              ? 'border-violet-300 bg-violet-50/80 dark:bg-violet-950/30 dark:border-violet-700'
-                              : 'border-border bg-muted/40',
-                          )}
-                        >
-                          {aiResult.ai_used && (
-                            <Badge className="bg-violet-600 text-white text-[10px]">Claude</Badge>
-                          )}
-                          <p className="text-foreground/80 leading-relaxed">{aiResult.reasoning}</p>
-                          {aiResult.next_action && (
-                            <p className="font-medium text-violet-700 dark:text-violet-400">
-                              → {aiResult.next_action}
-                            </p>
-                          )}
-                          {!aiResult.ai_used && (
-                            <p className="text-muted-foreground italic text-[10px]">
-                              {describeClassifyFallback(
-                                aiResult.fallback_reason,
-                                aiResult.anthropic_error,
-                              )}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <Separator />
 
                     {/* BANT Sliders */}
                     <div>
@@ -903,6 +850,33 @@ export function OpportunitySlideOver({
                         </p>
                       )}
                     </div>
+
+                    <Separator />
+
+                    <OpportunityTemperaturePanel
+                      opportunityId={opportunity.id}
+                      temperature={(opportunity.temperature ?? 'cold') as OpportunityTemperature}
+                      canEdit={canEditBusiness}
+                      claudeAvailable={claudeAvailable}
+                      aiCaps={aiCaps}
+                      aiResult={aiResult}
+                      autoClassifying={autoClassifying}
+                      classifyPending={classifyMutation.isPending}
+                      syncPending={syncTemperatureMutation.isPending}
+                      updatePending={updateMutation.isPending}
+                      onTemperatureChange={(temp) => {
+                        setAiResult(null)
+                        updateMutation.mutate({ temperature: temp })
+                      }}
+                      onClassify={() => {
+                        setAiResult(null)
+                        classifyMutation.mutate()
+                      }}
+                      onSyncRules={() => {
+                        setAiResult(null)
+                        syncTemperatureMutation.mutate()
+                      }}
+                    />
                   </div>
                 </ScrollArea>
               </TabsContent>
@@ -939,20 +913,22 @@ export function OpportunitySlideOver({
               </TabsContent>
 
               {/* Reminders tab */}
-              <TabsContent value="reminders" className="flex-1 overflow-hidden mt-0">
-                {remindersLoading ? (
-                  <div className="p-4 flex flex-col gap-3">
-                    {[1, 2, 3].map((i) => (
-                      <Skeleton key={i} className="h-20 w-full" />
-                    ))}
-                  </div>
-                ) : (
-                  <RemindersTab
-                    reminders={reminders || []}
-                    opportunityId={opportunity.id}
-                  />
-                )}
-              </TabsContent>
+              {showRemindersTab && (
+                <TabsContent value="reminders" className="flex-1 overflow-hidden mt-0">
+                  {remindersLoading ? (
+                    <div className="p-4 flex flex-col gap-3">
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-20 w-full" />
+                      ))}
+                    </div>
+                  ) : (
+                    <RemindersTab
+                      reminders={reminders || []}
+                      opportunityId={opportunity.id}
+                    />
+                  )}
+                </TabsContent>
+              )}
 
               {/* WhatsApp tab */}
               <TabsContent
@@ -998,7 +974,18 @@ export function OpportunitySlideOver({
             : undefined
       }
       open={editContactOpen}
-      onOpenChange={setEditContactOpen}
+      onSaved={() => {
+        if (opportunity?.id) {
+          invalidateTemperatureContext(opportunity.id)
+          if (aiCaps?.auto_on_save) beginAutoClassifyPoll()
+        }
+      }}
+      onOpenChange={(next) => {
+        setEditContactOpen(next)
+        if (!next && opportunity?.id) {
+          invalidateTemperatureContext(opportunity.id)
+        }
+      }}
     />
     </>
   )

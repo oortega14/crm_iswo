@@ -133,12 +133,12 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
     category: 'messaging',
     title: 'Twilio (WhatsApp)',
     description:
-      'El Account SID debe empezar por «AC» (Twilio Console → Account). No uses el API Key SID (empieza por «SK») en el campo Account SID. Auth Token = «Primary» de esa misma cuenta. Las credenciales guardadas en esta integración son las que usa el CRM (ver mensajes de error para «Origen de credenciales: integración Twilio en CRM (id …)»). Si editas el SID, vuelve a pegar el token. «Probar conexión» valida el par. La URL del webhook debe coincidir con el «To» que Twilio envía.',
+      'Salientes: Account SID (AC…) + Auth Token + número E.164 de tu línea Twilio. Entrantes: en Twilio Console → Messaging → WhatsApp sandbox (o tu número) configura «When a message comes in» = URL pública POST …/api/v1/webhooks/whatsapp/twilio (ngrok + API_PUBLIC_ORIGIN en local). Sin ese webhook el CRM no recibe respuestas del teléfono.',
     icon: Phone,
-    accountIdentifierLabel: 'Número WhatsApp destino (E.164)',
-    accountIdentifierPlaceholder: 'E.164 sin prefijo whatsapp:',
+    accountIdentifierLabel: 'Número WhatsApp de Twilio (remitente, E.164)',
+    accountIdentifierPlaceholder: '+14155238886 (sandbox) o tu número WABA',
     accountIdentifierHint:
-      'Mismo formato que Twilio envía en To al CRM (sin prefijo whatsapp:).',
+      'Tu línea Twilio (From al enviar). En sandbox suele ser +14155238886. Sin prefijo whatsapp:. También debe coincidir con el To que Twilio envía en webhooks entrantes.',
     credentialFields: [
       {
         key: 'account_sid',
@@ -178,29 +178,26 @@ const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: 'openwa',
     category: 'messaging',
-    title: 'OpenWA (auto-hospedado)',
+    title: 'OpenWA (self-hosted)',
     description:
-      'Pasarela WhatsApp auto-hospedada basada en whatsapp-web.js. No requiere cuenta Business de Meta. ' +
-      'Levanta el servicio OpenWA, escanea el QR con tu teléfono y pega aquí la URL, API key y session ID. ' +
-      'Aviso: usar whatsapp-web.js viola los Términos de Servicio de WhatsApp; el número puede ser baneado.',
+      'Servidor WhatsApp open-source auto-alojado. El Session ID debe coincidir con el sessionId que OpenWA envía en cada evento webhook. Configura la URL del webhook en el panel de OpenWA apuntando al endpoint que muestra el servidor.',
     icon: MessageCircle,
     accountIdentifierLabel: 'Session ID de OpenWA',
-    accountIdentifierPlaceholder: 'default (o el nombre de tu sesión)',
+    accountIdentifierPlaceholder: 'default',
     accountIdentifierHint:
-      'El mismo session_id que usaste al crear la sesión en OpenWA (/api/sessions). ' +
-      'Se usa para enlazar los webhooks entrantes al tenant correcto.',
+      'Debe coincidir con el campo sessionId del payload de eventos de OpenWA. Cópialo desde el panel de OpenWA.',
     credentialFields: [
       {
         key: 'url',
         label: 'URL del servidor OpenWA',
         type: 'text',
-        placeholder: 'http://localhost:3000',
+        placeholder: 'https://openwa.miempresa.com',
       },
       {
         key: 'api_key',
         label: 'API Key de OpenWA',
         type: 'password',
-        placeholder: 'Clave generada en el panel de OpenWA',
+        placeholder: 'Clave configurada en el servidor OpenWA',
       },
     ],
   },
@@ -433,9 +430,12 @@ function IntegrationsSettingsPage() {
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
           <p className="mb-2 font-medium">URLs de webhook (desde el API — sin datos inventados)</p>
           <p className="mb-3 text-xs text-muted-foreground">
-            Configura estas URLs en Meta, Google y Twilio. Si el API está detrás de un dominio público,
-            define <code className="rounded bg-muted px-1">API_PUBLIC_ORIGIN</code> en el servidor para
-            que coincidan con lo que ven los proveedores.
+            Configura estas URLs en Meta, Google y Twilio. Para <strong>respuestas WhatsApp del
+            teléfono</strong>, en Twilio Console (Sandbox → When a message comes in) usa exactamente{' '}
+            <code className="rounded bg-muted px-1">Twilio WhatsApp (POST)</code> de abajo — no basta
+            con StatusCallback del envío saliente. En local necesitas ngrok y{' '}
+            <code className="rounded bg-muted px-1">API_PUBLIC_ORIGIN</code> en el API apuntando a esa
+            URL pública.
           </p>
           <dl className="grid gap-2 text-xs">
             <WebhookUrlRow label="Meta — verificación (GET)" url={webhookUrls.meta_verify_get} />
@@ -444,9 +444,7 @@ function IntegrationsSettingsPage() {
             <WebhookUrlRow label="Twilio WhatsApp (POST)" url={webhookUrls.whatsapp_twilio_post} />
             <WebhookUrlRow label="WhatsApp Cloud — verificación (GET)" url={webhookUrls.whatsapp_cloud_verify_get} />
             <WebhookUrlRow label="WhatsApp Cloud — mensajes (POST)" url={webhookUrls.whatsapp_cloud_post} />
-            {webhookUrls.whatsapp_openwa_post ? (
-              <WebhookUrlRow label="OpenWA — eventos (POST)" url={webhookUrls.whatsapp_openwa_post} />
-            ) : null}
+            <WebhookUrlRow label="OpenWA — mensajes (POST)" url={webhookUrls.whatsapp_openwa_post} />
           </dl>
         </div>
       ) : null}

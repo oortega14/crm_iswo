@@ -76,12 +76,21 @@ RSpec.describe "Api::V1::Passwords", :without_tenant, type: :request do
       expect(ActionMailer::Base.deliveries.size).to eq(0)
     end
 
-    it "400 si falta el tenant (header)" do
+    it "resuelve el tenant por email sin X-Tenant-Slug (igual que login)" do
+      # LoginTenantResolvable ya no exige el header en forgot — resuelve por
+      # email igual que en login (commit aee5fb4: "sin stale X-Tenant headers").
       post "/api/v1/password/forgot",
            params: { email: admin.email },
            as: :json
 
+      expect(response).to have_http_status(:accepted)
+    end
+
+    it "400 si falta el tenant (sin email ni header)" do
+      post "/api/v1/password/forgot", params: {}, as: :json
+
       expect(response).to have_http_status(:bad_request)
+      expect(json["error"]).to eq("tenant_missing")
     end
   end
 

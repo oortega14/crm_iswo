@@ -55,6 +55,7 @@ module Api
         if reminder.save
           @reminder = reminder
           ReminderCreatedNotificationJob.perform_later(reminder.id)
+          Reminders::DueSchedule.enqueue!(reminder)
           render_created(reminder, with: ReminderSerializer)
         else
           render_unprocessable(reminder)
@@ -64,6 +65,7 @@ module Api
       def update
         authorize @reminder
         if @reminder.update(reminder_params)
+          Reminders::DueSchedule.enqueue!(@reminder) if @reminder.status_pending?
           render_resource(@reminder, with: ReminderSerializer)
         else
           render_unprocessable(@reminder)
@@ -93,6 +95,7 @@ module Api
                         status: :unprocessable_entity
         end
         @reminder.update!(remind_at: Time.current + minutes.minutes)
+        Reminders::DueSchedule.enqueue!(@reminder)
         render_no_content
       end
 

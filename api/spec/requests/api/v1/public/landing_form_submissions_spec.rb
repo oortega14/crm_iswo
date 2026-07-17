@@ -19,6 +19,10 @@ RSpec.describe "Api::V1::Public::LandingFormSubmissions", type: :request do
     it "201 sin autenticación; crea submission, oportunidad y devuelve ids" do
       pipeline = create(:pipeline_with_stages, tenant: tenant, is_default: true)
       create(:lead_source, tenant: tenant, kind: "web", name: "Web")
+      # Leads::RoundRobinOwner exige al menos un consultor/manager/admin activo
+      # para asignar el lead; sin uno, LandingSubmissionProcessor aborta con
+      # ProcessingError("missing_owner") y el request queda en 422.
+      create(:user, :consultant, tenant: tenant)
 
       expect {
         post "/api/v1/public/landings/#{landing.slug}/submit",
@@ -38,6 +42,10 @@ RSpec.describe "Api::V1::Public::LandingFormSubmissions", type: :request do
     end
 
     it "incrementa lead_count de la landing" do
+      create(:pipeline_with_stages, tenant: tenant, is_default: true)
+      create(:lead_source, tenant: tenant, kind: "web", name: "Web")
+      create(:user, :consultant, tenant: tenant)
+
       expect {
         post "/api/v1/public/landings/#{landing.slug}/submit",
              params: body,

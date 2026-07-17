@@ -17,10 +17,19 @@ Devise.setup do |config|
   config.maximum_attempts = 5
 
   config.jwt do |jwt|
-    jwt.secret =
+    secret =
       ENV["DEVISE_JWT_SECRET_KEY"].presence ||
       Rails.application.credentials.devise_jwt_secret_key.presence ||
       (Rails.env.production? ? nil : Rails.application.secret_key_base)
+
+    # En producción no se debe firmar con secreto ausente: fallar al arrancar
+    # es preferible a emitir/validar JWT con clave nil (SECRET_KEY_BASE_DUMMY
+    # excluye el paso de build de imagen).
+    if secret.blank? && Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank?
+      raise "[DeviseJWT] Falta DEVISE_JWT_SECRET_KEY en producción: los JWT no se pueden firmar."
+    end
+
+    jwt.secret = secret
 
     jwt.dispatch_requests = [
       ["POST", %r{^/api/v1/sessions$}],

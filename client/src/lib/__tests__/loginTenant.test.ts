@@ -1,72 +1,54 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   canPickLoginTenant,
-  inferTenantFromEmail,
+  isTenantAmbiguousError,
   normalizeLoginTenantSlug,
-  resolveLoginTenant,
+  resolveLoginTenantFromUrl,
   resolveSubmitTenantSlug,
+  tenantsFromAmbiguousError,
 } from '@/lib/loginTenant'
 import { PLATFORM_TENANT_SLUG } from '@/lib/platformTenant'
 
-vi.mock('@/lib/landingUrls', () => ({
-  getTenantFromHostname: vi.fn(() => ''),
-}))
-
 describe('loginTenant', () => {
-  beforeEach(() => {
-    localStorage.clear()
-  })
-
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
   it('normaliza alias de Mi Casita', () => {
     expect(normalizeLoginTenantSlug('casita')).toBe('micasita')
     expect(normalizeLoginTenantSlug('mi-casita')).toBe('micasita')
+    expect(normalizeLoginTenantSlug('mi casita')).toBe('micasita')
   })
 
-  it('infiere tenant desde email de seeds', () => {
-    expect(inferTenantFromEmail('admin@micasita.local')).toBe('micasita')
-    expect(inferTenantFromEmail('admin@iswo.local')).toBe('iswo')
-  })
-
-  it('prioriza email cuando ENV fijó otro tenant', () => {
-    const slug = resolveSubmitTenantSlug({
-      showTenantPicker: false,
-      lockedTenant: 'iswo',
-      email: 'admin@micasita.local',
-    })
-    expect(slug).toBe('micasita')
-  })
-
-  it('usa locked tenant cuando coincide con el email', () => {
-    const slug = resolveSubmitTenantSlug({
-      showTenantPicker: false,
-      lockedTenant: 'micasita',
-      email: 'admin@micasita.local',
-    })
-    expect(slug).toBe('micasita')
+  it('deja pasar slugs sin alias y normaliza a minúsculas', () => {
+    expect(normalizeLoginTenantSlug('Libranzas')).toBe('libranzas')
+    expect(normalizeLoginTenantSlug('  ')).toBe('')
   })
 
   it('solo super-admin puede elegir empresa en login', () => {
     expect(canPickLoginTenant(PLATFORM_TENANT_SLUG)).toBe(true)
     expect(canPickLoginTenant('micasita')).toBe(false)
+    expect(canPickLoginTenant(undefined)).toBe(false)
   })
 
-  it('resuelve tenant desde URL', () => {
-    expect(resolveLoginTenant('casita')).toBe('micasita')
-    expect(resolveLoginTenant('micasita')).toBe('micasita')
+  it('resuelve tenant desde la URL (con alias)', () => {
+    expect(resolveLoginTenantFromUrl('casita')).toBe('micasita')
+    expect(resolveLoginTenantFromUrl('micasita')).toBe('micasita')
+    expect(resolveLoginTenantFromUrl()).toBe('')
   })
 
-  it('usa localStorage incluyendo super-admin', () => {
-    localStorage.setItem('crm-tenant-slug', PLATFORM_TENANT_SLUG)
-    expect(resolveLoginTenant()).toBe(PLATFORM_TENANT_SLUG)
-    expect(canPickLoginTenant(PLATFORM_TENANT_SLUG)).toBe(true)
+  it('resuelve el slug a enviar según el picker', () => {
+    // Con picker: usa el del formulario (normalizado) o cae al tenant plataforma.
+    expect(resolveSubmitTenantSlug({ showTenantPicker: true, formTenant: 'casita' })).toBe('micasita')
+    expect(resolveSubmitTenantSlug({ showTenantPicker: true, formTenant: '' })).toBe(PLATFORM_TENANT_SLUG)
+    // Sin picker: vacío → el API resuelve la empresa por correo.
+    expect(resolveSubmitTenantSlug({ showTenantPicker: false })).toBe('')
   })
 
-  it('usa localStorage comercial cuando no hay URL ni subdominio', () => {
-    localStorage.setItem('crm-tenant-slug', 'libranzas')
-    expect(resolveLoginTenant()).toBe('libranzas')
+  it('detecta y extrae tenants de un error tenant_ambiguous', () => {
+    const tenants = [{ slug: 'micasita', name: 'Mi Casita' }]
+    const error = { response: { data: { error: 'tenant_ambiguous', tenants } } }
+    expect(isTenantAmbiguousError(error)).toBe(true)
+    expect(tenantsFromAmbiguousError(error)).toEqual(tenants)
+
+    const other = { response: { data: { error: 'invalid_credentials' } } }
+    expect(isTenantAmbiguousError(other)).toBe(false)
+    expect(tenantsFromAmbiguousError(other)).toEqual([])
   })
 })

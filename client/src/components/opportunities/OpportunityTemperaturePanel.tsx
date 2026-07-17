@@ -10,7 +10,6 @@ import {
   fetchTemperatureContext,
   groupTemperatureSignals,
   type TemperatureAiResult,
-  type TemperatureSignal,
 } from '@/lib/temperatureContext'
 import { describeClassifyFallback } from '@/lib/aiApi'
 import type { ClaudeTemperatureCapabilities } from '@/lib/aiApi'

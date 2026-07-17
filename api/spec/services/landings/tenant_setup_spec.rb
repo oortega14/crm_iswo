@@ -10,7 +10,13 @@ RSpec.describe Landings::TenantSetup do
 
     it "crea 3 landings ISO para ISWO (2 publicadas, 1 borrador)" do
       iswo = create(:tenant, :iswo)
-      create(:landing_page, tenant: iswo, slug: "landing-vieja", title: "Vieja extra")
+      # acts_as_tenant sobreescribe tenant_id con ActsAsTenant.current_tenant en el
+      # before_validation de create (no respeta un `tenant:` explícito distinto al
+      # actual) — hay que envolver la creación en with_tenant(iswo) para que quede
+      # bien asociada.
+      ActsAsTenant.with_tenant(iswo) do
+        create(:landing_page, tenant: iswo, slug: "landing-vieja", title: "Vieja extra")
+      end
 
       expect { described_class.apply!(iswo) }
         .to change { iswo.landing_pages.count }.from(1).to(3)
@@ -27,7 +33,9 @@ RSpec.describe Landings::TenantSetup do
 
     it "crea 3 landings para Libranzas (2 publicadas, 1 borrador)" do
       libranzas = create(:tenant, slug: "libranzas", name: "Libranzas ISWO")
-      create(:landing_page, tenant: libranzas, slug: "campana-extra", title: "Extra")
+      ActsAsTenant.with_tenant(libranzas) do
+        create(:landing_page, tenant: libranzas, slug: "campana-extra", title: "Extra")
+      end
 
       expect { described_class.apply!(libranzas) }
         .to change { libranzas.landing_pages.count }.from(1).to(3)

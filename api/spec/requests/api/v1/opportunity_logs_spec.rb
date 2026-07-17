@@ -29,9 +29,14 @@ RSpec.describe "Api::V1::OpportunityLogs", type: :request do
     end
 
     it "consultant ajeno no puede ver el historial" do
+      # set_opportunity resuelve con policy_scope(Opportunity) antes de authorize:
+      # una oportunidad fuera del scope del consultor (dueño ajeno, sin red) da 404,
+      # no 403 — mismo patrón que el resto del CRM (evita confirmar que el
+      # registro existe a alguien sin acceso; ver "consultant sigue sin ver
+      # opps fuera de su red (404)" en opportunities_spec.rb).
       other = create(:user, :consultant, tenant: tenant)
       get "/api/v1/opportunities/#{opp.id}/logs", headers: auth_headers(other)
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:not_found)
     end
   end
 

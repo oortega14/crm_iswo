@@ -58,6 +58,11 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
         create(:reminder, :whatsapp, tenant: tenant, opportunity: opp)
       end
 
+      # El flujo real (Reminders::DueDispatcher) reclama el reminder antes de
+      # encolar el job, dejándolo en "processing". Reproducimos ese estado en
+      # vez de "pending" para no enmascarar el bug de re-despacho.
+      before { reminder.claim_for_dispatch! }
+
       it "marca el reminder como sent cuando el mensaje se entrega" do
         sender = instance_double(WhatsApp::MessageSender)
         allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
@@ -81,6 +86,29 @@ RSpec.describe WhatsappDeliveryJob, type: :job do
         described_class.new.perform(message.id, reminder.id)
         expect(reminder.reload.status).to eq("failed")
         expect(reminder.last_error).to include("provider down")
+      end
+
+      it "también finaliza un reminder aún en 'pending' (invocación sin claim previo)" do
+        pending_reminder = create(:reminder, :whatsapp, tenant: tenant,
+                                                        opportunity: create(:opportunity, tenant: tenant))
+        sender = instance_double(WhatsApp::MessageSender)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+        allow(sender).to receive(:deliver) do
+          message.update!(status: "sent", sent_at: Time.current)
+          true
+        end
+
+        described_class.new.perform(message.id, pending_reminder.id)
+        expect(pending_reminder.reload.status).to eq("sent")
+      end
+
+      it "no re-marca un reminder ya en estado terminal" do
+        reminder.mark_sent!
+        sender = instance_double(WhatsApp::MessageSender, deliver: true)
+        allow(WhatsApp::MessageSender).to receive(:new).with(message).and_return(sender)
+
+        expect { described_class.new.perform(message.id, reminder.id) }
+          .not_to(change { reminder.reload.sent_at })
       end
     end
   end

@@ -37,7 +37,10 @@ class WhatsappDeliveryJob < ApplicationJob
 
   def finalize_reminder!(reminder_id, msg)
     reminder = ActsAsTenant.without_tenant { Reminder.find_by(id: reminder_id) }
-    return unless reminder&.status_pending?
+    # El flujo real reclama el reminder (status "processing") antes de encolar
+    # este job; también toleramos "pending" por si se invoca sin claim previo.
+    # Cualquier otro estado (sent/failed/done) ya es terminal: no re-marcar.
+    return unless reminder && (reminder.status_processing? || reminder.status_pending?)
 
     if msg.status.in?(%w[sent delivered read])
       reminder.mark_sent!

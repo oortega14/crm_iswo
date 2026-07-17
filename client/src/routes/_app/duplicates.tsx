@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { requireRole } from '@/lib/authGuards'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -66,6 +67,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 const PAGE_SIZE = 25
 
 export const Route = createFileRoute('/_app/duplicates')({
+  beforeLoad: () => requireRole('admin', 'manager', 'consultant'),
   component: DuplicatesPage,
 })
 

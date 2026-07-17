@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireSettingsRole } from '@/lib/authGuards'
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -53,6 +54,7 @@ import {
 } from '@/lib/adIntegrationsApi'
 
 export const Route = createFileRoute('/_app/settings/integrations')({
+  beforeLoad: () => requireSettingsRole('admin', 'manager'),
   component: IntegrationsSettingsPage,
 })
 

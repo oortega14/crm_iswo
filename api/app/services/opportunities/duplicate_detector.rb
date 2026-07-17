@@ -15,6 +15,8 @@ module Opportunities
   # ==========================================================================
   class DuplicateDetector
     DEFAULT_THRESHOLD = 0.75
+    # El match por nombre pondera la similitud trigram por este factor.
+    NAME_MATCH_WEIGHT = 0.9
 
     Match = Struct.new(:contact, :score, :matched_on, keyword_init: true) do
       def as_json(*)
@@ -79,11 +81,15 @@ module Opportunities
 
     def trigram_name_matches
       quoted = ActiveRecord::Base.connection.quote(@full_name)
+      # El score final es sim * NAME_MATCH_WEIGHT y luego se filtra por @threshold,
+      # así que el prefiltro SQL debe exigir sim >= @threshold / NAME_MATCH_WEIGHT
+      # (no > @threshold): de lo contrario traería filas que igual se descartan.
+      min_similarity = @threshold / NAME_MATCH_WEIGHT
       base_scope
-        .where("similarity(first_name || ' ' || COALESCE(last_name, ''), ?) > ?", @full_name, @threshold)
+        .where("similarity(first_name || ' ' || COALESCE(last_name, ''), ?) >= ?", @full_name, min_similarity)
         .select("contacts.*, similarity(first_name || ' ' || COALESCE(last_name, ''), #{quoted}) AS sim")
         .limit(10)
-        .map { |c| Match.new(contact: c, score: c[:sim].to_f * 0.9, matched_on: "name_trigram") }
+        .map { |c| Match.new(contact: c, score: c[:sim].to_f * NAME_MATCH_WEIGHT, matched_on: "name_trigram") }
     end
 
     # Deja un solo match por contacto, con la mejor score.

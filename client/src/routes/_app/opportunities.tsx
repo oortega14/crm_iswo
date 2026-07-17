@@ -5,7 +5,6 @@ import { LayoutGrid, Table as TableIcon, Plus, Search, RefreshCw, Trash2 } from 
 import { z } from 'zod'
 import {
   invalidateContactSegmentMetrics,
-  invalidateNotificationsQueries,
   queryKeys,
 } from '@/lib/queryClient'
 import { Button } from '@/components/ui/button'

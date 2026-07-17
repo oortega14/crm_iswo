@@ -58,7 +58,8 @@ class WebhookProcessorJob < ApplicationJob
   private
 
   def audit_received(kind, payload)
-    AuditEvent.create!(
+    # Vía AuditLogger (regla del proyecto): sanitiza metadata y falla en silencio.
+    AuditLogger.record!(
       tenant:      nil, # se resuelve adentro del processor
       user:        nil,
       action:      "webhook_received",
@@ -68,8 +69,6 @@ class WebhookProcessorJob < ApplicationJob
       ip_address:  payload["remote_ip"],
       user_agent:  payload["user_agent"]
     )
-  rescue StandardError => e
-    Rails.logger.warn("[WebhookProcessorJob] no se pudo auditar: #{e.message}")
   end
 
   # --- WhatsApp inbound (Twilio) -----------------------------------------

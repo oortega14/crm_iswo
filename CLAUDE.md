@@ -1,14 +1,10 @@
 # CRM ISWO — Guía de desarrollo
 
-## Comandos interactivos (Claude Code)
+## Comandos operativos (rake)
 
-| Comando | Qué hace |
-|---|---|
-| `/analizar-pipeline` | Análisis profundo del pipeline con BANT, temperaturas, cuellos de botella y recomendaciones |
-| `/agregar-lead` | Agregar un lead conversacionalmente — describe al prospecto y se crea contacto + oportunidad |
-| `/resumen-diario` | Briefing ejecutivo del día: recordatorios vencidos, leads calientes, movimiento de hoy |
-| `/diagnostico` | Verificar que Rails, Vite, PostgreSQL, Redis y Sidekiq estén funcionando |
-| `/nuevo-tenant` | Crear y configurar un tenant nuevo con pipeline y usuarios según su vertical |
+> Los antiguos comandos slash `/analizar-pipeline`, `/agregar-lead`, etc. y la carpeta
+> `.claude/` fueron eliminados del repo. La API de Claude sigue usándose solo vía
+> `ANTHROPIC_API_KEY` (en `api/.env`), que alimenta el clasificador IA del CRM (`AiClassifier`).
 
 **Staging (RFC §9):** `cd api && bundle exec rails staging:preflight` — checklist pre-producción (infra, Solid Queue, integraciones).
 
@@ -22,18 +18,7 @@
 
 **Seguridad Fase 3 (RLS PostgreSQL):** `db:migrate` → `DB_RLS_ENABLED=true security:rls`. Ver `api/docs/SECURITY_FASE3.md`.
 
-Todos los comandos requieren que el servidor Rails esté corriendo en `localhost:3000`.
-
-### Autenticación Claude Code (API key)
-
-Si aparece *«Your organization has disabled Claude subscription access»*, la org no permite `/login` con suscripción Pro/Max. Usa **API key** de [console.anthropic.com](https://console.anthropic.com):
-
-1. Pon la key en `api/.env`: `ANTHROPIC_API_KEY=sk-ant-api03-...`
-2. En WSL: `chmod +x .claude/anthropic_api_key.sh`
-3. Abre Claude Code en la raíz del repo (`.claude/settings.local.json` ya apunta `apiKeyHelper` a esa key)
-4. **No uses `/login`** con cuenta claude.ai; verifica con `/status` que auth = API key
-
-La misma key alimenta el clasificador IA del CRM (`AiClassifier`).
+Los comandos rake requieren la base configurada; el servidor Rails corre en `localhost:3000`.
 
 ---
 
@@ -45,7 +30,7 @@ ni rol aislado:
 | Capa | Regla |
 |------|--------|
 | **Multi-tenant** | `ActsAsTenant` + `current_tenant` en API; sin IDs de tenant fijos en código. Cada tenant ve solo sus datos. |
-| **Roles** | Comportamiento explícito para `admin`, `manager`, `consultant` y `viewer` donde aplique: Pundit en API, guards en SPA (`useUserRole`, `roles` en nav). |
+| **Roles** | Comportamiento explícito para `admin`, `manager`, `consultant` y `viewer` donde aplique: Pundit en API; en la SPA filtro de nav (`roles` en `settingsNav`) **y** guard de ruta en `beforeLoad` (`requireRole` / `requireSettingsRole`) — ambos deben espejar el mismo rol. |
 | **Caché SPA** | Claves de React Query con alcance `getAuthQueryScope()` (`subdomain:user:id`) al invalidar o listar datos sensibles. |
 | **Exportaciones (RFC §6.7)** | Pantalla `/exports`: solo admin/manager (export + import masivo). Consultor importa contactos desde `/contacts`; no exporta ni ve historial async. |
 | **Consultores** | Scope propio en contactos/oportunidades. Red F2 solo en `/network` (`network_depth` = árbol); pipeline no comparte opps entre referidos. Sin pantalla `/exports`. |
@@ -65,10 +50,15 @@ sugerencia de siguiente acción.
 **El RFC §3.2 pone "IA predictiva para scoring automático de leads" fuera del MVP.**
 Esta feature **no viola** esa restricción porque:
 
-- Es **manual**: el consultor activa explícitamente `POST /api/v1/opportunities/:id/classify`.
-- No sustituye el scoring BANT (que es el único scoring automático del sistema).
-- Clasifica temperatura, no calificación BANT — son dos dimensiones distintas.
+- **No sustituye el scoring BANT** (que es el único scoring de *calificación* automático del sistema).
+- Clasifica **temperatura**, no calificación BANT — son dos dimensiones distintas.
 - Si `ANTHROPIC_API_KEY` no está configurada, cae a reglas deterministas sin IA.
+
+**Modos de disparo:** existe el endpoint manual `POST /api/v1/opportunities/:id/classify`,
+pero además hay **auto-clasificación de temperatura activada por defecto** al guardar/editar
+el dossier del lead (controlada por `ANTHROPIC_AUTO_CLASSIFY_TEMPERATURE`, que cae a `true`
+si no se define; ver `AiClassifier.auto_classify_enabled?`). Sigue sin ser scoring de
+calificación, así que el matiz temperatura ≠ BANT se mantiene.
 
 En el historial de actividad el log queda con `action: "classify"`, distinguible
 de los cambios de etapa o de score BANT.
@@ -164,6 +154,7 @@ RBAC Pundit y la misma sesión JWT que el resto del CRM:
 
 | Módulo admin RFC | Ruta SPA |
 |------------------|----------|
+| General (días sin actividad, profundidad de red) | `/settings/general` |
 | Pipelines / etapas | `/settings/pipelines` |
 | BANT / stale days | `/settings/bant` |
 | Campos por tenant | `/settings/fields` |
@@ -205,8 +196,8 @@ Solo **admin, manager y consultant** pueden crear/recibir recordatorios (`viewer
 ### Notificaciones in-app (RFC §6.4)
 
 El RFC menciona push in-app; la implementación MVP usa **polling** en
-`NotificationDropdown` (15s + `refetchOnWindowFocus`). No hay WebSocket/ActionCable
-aún — desviación aceptada para MVP; latencia máxima ~15s visible para el usuario.
+`NotificationDropdown` (`refetchInterval` 60s + `refetchOnWindowFocus`). No hay
+WebSocket/ActionCable aún — desviación aceptada para MVP; latencia máxima ~60s.
 
 ---
 

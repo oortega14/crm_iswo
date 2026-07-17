@@ -11,22 +11,22 @@ CRM white-label, multi-tenant y configurable para ISWO y sus verticales (Mi Casi
 | Runtime               | Ruby 4.0.0                         | MRI                                                          |
 | Framework             | Rails 8.1.3 (`--api`)              | Sin asset pipeline, sin views                                |
 | Base de datos         | PostgreSQL ≥ 15                    | Extensiones `pg_trgm`, `pgcrypto`, `btree_gist`              |
-| Cache                 | Redis 7+                           | Compartido con Sidekiq                                       |
-| Background jobs       | **Sidekiq 7 + Redis**              | Se descartó SolidQueue por ahora                             |
+| Cache                 | **Solid Cache** (sobre PostgreSQL) | Sin Redis; base `cache` en `config/cache.yml`               |
+| Background jobs       | **Solid Queue + Mission Control**  | Sin Redis; dashboard en `/jobs`. Scheduler en `config/recurring.yml` |
 | Multi-tenancy         | `acts_as_tenant`                   | Scope transparente por `tenant_id`                           |
 | Autenticación         | Devise + `devise-jwt`              | JWT 15 min + refresh token 7 días (httpOnly cookie)          |
 | Autorización          | Pundit                             | Policies por modelo, scopes por rol                          |
-| Audit log             | `audited` + tablas propias         | `opportunity_logs` + `audit_events` globales                 |
+| Audit log             | Tablas propias (`AuditLogger`)     | `opportunity_logs` + `audit_events`; sin gema `audited`      |
 | Cifrado               | `lockbox` + `blind_index`          | Tokens de integraciones (Meta, Google, Twilio)               |
 | Soft-delete           | `discard`                          | Columna `discarded_at` en modelos core                       |
 | Serialización API     | `jsonapi-serializer`               | Salida JSON:API para el SPA                                  |
 | Paginación            | `pagy`                             | Ligero, headers estándar                                     |
 | Búsqueda / filtros    | `ransack`                          | Query strings seguros en endpoints de listados               |
-| Exportación           | `caxlsx_rails` + CSV nativo        | Generación en job de Sidekiq, link firmado                   |
+| Exportación           | `caxlsx_rails` + CSV nativo        | Generación en job de Solid Queue, link firmado               |
 | HTTP client           | `faraday` + `faraday-retry`        | Integraciones Meta/Google/Twilio                             |
 | Teléfonos             | `phonelib`                         | Normalización E.164 para detección de duplicados             |
 | CORS                  | `rack-cors`                        | Whitelist dinámica por tenant                                |
-| Testing               | RSpec + FactoryBot + Faker         | Shoulda matchers, WebMock, VCR                               |
+| Testing               | RSpec + FactoryBot + Faker         | Shoulda matchers, WebMock, SimpleCov                         |
 
 Frontend (repo separado): React 19 + Vite + TanStack Query + TanStack Router + TanStack Table + shadcn/ui. Consume los endpoints bajo `/api/v1`.
 
@@ -36,8 +36,8 @@ Frontend (repo separado): React 19 + Vite + TanStack Query + TanStack Router + T
 
 - Ruby 4.0.0 (gestionar con `rbenv` o `mise`)
 - PostgreSQL 15+ con `pg_trgm`, `pgcrypto`, `btree_gist`
-- Redis 7+
-- Node 20+ (solo si se compila algún asset puntual; en API-only normalmente no hace falta)
+- **Sin Redis**: jobs y caché corren sobre PostgreSQL (Solid Queue + Solid Cache)
+- Node 20+ (solo para el SPA en `client/`; la API es API-only)
 
 ---
 
@@ -55,26 +55,25 @@ cp .env.example .env
 # 3. Preparar la base
 bin/rails db:create db:migrate db:seed
 
-# 4. Levantar Redis (si no está como servicio)
-redis-server
-
-# 5. Levantar Sidekiq en otra terminal
-bundle exec sidekiq -C config/sidekiq.yml
-
-# 6. Levantar Rails
-bin/rails s -p 3001
+# 4. Levantar Rails con los workers de Solid Queue en el mismo proceso (sin Redis)
+SOLID_QUEUE_IN_PUMA=true bin/rails s
+#   …o, para correr los jobs en un proceso aparte:
+#   bin/jobs            # en otra terminal
+#   bin/rails s
 ```
 
-El API queda escuchando en `http://localhost:3001/api/v1`. El dashboard de Sidekiq (montado en desarrollo) en `http://localhost:3001/sidekiq`.
+El API queda escuchando en `http://localhost:3000/api/v1`. El dashboard de jobs (Mission Control, Solid Queue) en `http://localhost:3000/jobs`.
 
 ### Variables de entorno clave (`.env.example`)
 
 ```
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/crm_iswo_development
-REDIS_URL=redis://localhost:6379/0
+# Sin Redis: Solid Queue/Solid Cache usan la misma PostgreSQL
 
 DEVISE_JWT_SECRET_KEY=<generar con `bin/rails secret`>
+# Obligatorias en producción (el arranque falla si faltan):
 LOCKBOX_MASTER_KEY=<generar con `Lockbox.generate_key`>
+BLIND_INDEX_MASTER_KEY=<generar con `SecureRandom.hex(32)`>   # o reutiliza LOCKBOX_MASTER_KEY explícita
 
 CORS_ALLOWED_ORIGINS=http://localhost:3000
 
@@ -110,7 +109,7 @@ crm_iswo/
 │   │   ├── controllers/
 │   │   │   └── api/v1/…                  # Controladores RESTful JSON
 │   │   │       └── webhooks/             # Meta Ads, Google Ads, WhatsApp
-│   │   ├── models/                       # 17 modelos AR (ver §7)
+│   │   ├── models/                       # 21 modelos AR (ver §7)
 │   │   ├── policies/                     # Pundit policies por modelo
 │   │   ├── serializers/                  # JSON:API serializers
 │   │   ├── services/                     # Lógica de dominio reutilizable
@@ -121,23 +120,24 @@ crm_iswo/
 │   │   │   └── ads/
 │   │   │       ├── meta_lead_processor.rb
 │   │   │       └── google_lead_processor.rb
-│   │   ├── jobs/
+│   │   ├── jobs/                         # 15 jobs (recordatorios, webhooks, ads, exports, duplicados…)
 │   │   │   ├── reminder_notification_job.rb
+│   │   │   ├── webhook_processor_job.rb
 │   │   │   ├── ad_sync_job.rb
 │   │   │   ├── export_generation_job.rb
-│   │   │   └── webhook_processor_job.rb
+│   │   │   └── whatsapp_delivery_job.rb
 │   │   └── mailers/
 │   ├── config/
 │   │   ├── initializers/
 │   │   │   ├── acts_as_tenant.rb
 │   │   │   ├── cors.rb
-│   │   │   ├── sidekiq.rb
 │   │   │   └── devise_jwt.rb
-│   │   ├── sidekiq.yml
+│   │   ├── recurring.yml                 # Scheduler de Solid Queue (jobs cron)
+│   │   ├── queue.yml                      # Config de Solid Queue
 │   │   ├── routes.rb
 │   │   └── application.rb
 │   ├── db/
-│   │   ├── migrate/                      # 20 migraciones (ver §6)
+│   │   ├── migrate/                      # 40 migraciones (ver §6)
 │   │   ├── schema.rb
 │   │   └── seeds.rb
 │   ├── spec/                             # RSpec
@@ -158,7 +158,7 @@ crm_iswo/
 - Resolución: middleware inspecciona `request.subdomain` → busca `Tenant` por `slug` → `ActsAsTenant.with_tenant(tenant) { ... }`.
 - Fallback: header `X-Tenant-Slug` para herramientas internas y tests.
 - Todas las consultas quedan auto-scopeadas; escribir fuera de scope lanza `ActsAsTenant::Errors::NoTenantSet`.
-- El admin global (super-usuario ISWO) es un rol especial en una tabla separada (no implementada en F1, bypass vía `ActsAsTenant.without_tenant { ... }` con auditoría).
+- El admin global (super-usuario ISWO) **está implementado**: es el admin del tenant plataforma `"iswo"`, autorizado por `IswoPlatformAuthorizable` sobre el namespace `/api/v1/admin/*` (p. ej. onboarding de tenants), con bypass de scope vía `ActsAsTenant.without_tenant { ... }` y auditoría. No es una tabla separada.
 
 ### Dominios de ejemplo
 
@@ -172,7 +172,7 @@ crm_iswo/
 
 ## 6. Migraciones (orden de ejecución)
 
-Todas las migraciones usan `ActiveRecord::Migration[8.1]`. Orden por timestamp:
+Todas las migraciones usan `ActiveRecord::Migration[8.1]`. La tabla lista las **20 migraciones núcleo (F1)**; a partir de ahí el esquema evolucionó con migraciones incrementales (notifications, campos por tenant, temperatura, cifrado PII Fase 2, RLS Fase 3, etc.) hasta **40 en total**. La fuente de verdad es `db/schema.rb`. Orden por timestamp:
 
 | # | Archivo                                                       | Descripción                                             |
 | - | ------------------------------------------------------------- | ------------------------------------------------------- |
@@ -499,43 +499,30 @@ Toda policy hereda de `ApplicationPolicy` y aplica scope por `tenant_id` automá
 
 ---
 
-## 10. Background jobs (Sidekiq)
+## 10. Background jobs (Solid Queue)
 
-`config/sidekiq.yml`:
+Jobs sobre **Solid Queue** (tablas `solid_queue_*` en PostgreSQL, sin Redis).
+Config del worker en `config/queue.yml`; tareas recurrentes en `config/recurring.yml`.
+Correr con `SOLID_QUEUE_IN_PUMA=true bin/rails s` (workers dentro de Puma) o `bin/jobs`
+en un proceso aparte. Setup inicial: `bundle exec rails solid:setup`.
 
-```yaml
-:concurrency: 10
-:queues:
-  - [critical, 4]
-  - [default, 2]
-  - [integrations, 2]
-  - [exports, 1]
-  - [low, 1]
-:scheduler:
-  :schedule:
-    reminder_notification_job:
-      cron: "* * * * *"
-      class: ReminderNotificationJob
-      queue: critical
-    ad_sync_job:
-      cron: "*/15 * * * *"
-      class: AdSyncJob
-      queue: integrations
-    cleanup_exports_job:
-      cron: "0 3 * * *"
-      class: CleanupExportsJob
-      queue: low
-```
+Tareas recurrentes (`config/recurring.yml`):
 
-Jobs clave:
+| Job | Cola | Frecuencia |
+|-----|------|-----------|
+| `ReminderNotificationJob` | critical | cada minuto (recordatorios vencidos) |
+| `ReminderUpcomingNotificationJob` | critical | cada minuto (avisos "por vencer") |
+| `AdSyncJob` | integrations | cada 15 min |
+| `CleanupExportsJob` | low | 3am diario |
+| `RefreshDuplicateCacheJob` | low | 4am diario |
+| `DailyBriefingJob` | low | 7am diario |
+| `clear_solid_queue_finished_jobs` (solo prod) | — | cada hora |
 
-- `ReminderNotificationJob` — corre cada minuto, envía recordatorios vencidos.
-- `WebhookProcessorJob` — ingesta de Meta Lead Ads / Google Lead Form / WhatsApp entrante.
-- `ExportGenerationJob` — genera CSV/XLSX y sube a storage (S3 / equivalente).
-- `AdSyncJob` — sincroniza estado de campañas y conversiones.
-- `DuplicateResolutionJob` — merges asíncronos pesados.
+Otros jobs clave (encolados bajo demanda): `WebhookProcessorJob` (ingesta Meta/Google/WhatsApp),
+`ExportGenerationJob` (CSV/XLSX a storage), `WhatsappDeliveryJob`, `DuplicateResolutionJob`,
+`LandingSubmissionProcessorJob`, `OpportunityTemperatureClassifyJob`, `UploadGoogleConversionJob`.
 
-Dashboard Sidekiq Web protegido con Devise + Pundit (solo `admin` global).
+Dashboard **Mission Control Jobs** montado en `/jobs`, protegido con HTTP Basic en producción.
 
 ---
 
@@ -549,7 +536,7 @@ Dashboard Sidekiq Web protegido con Devise + Pundit (solo `admin` global).
 | A.8.11 Enmascaramiento     | `Rails.application.config.filter_parameters += [:phone, :email, :password, :token]` |
 | A.8.16 Monitoreo           | `opportunity_logs` + `audit_events` 100% CRUD               |
 | A.8.28 Codificación segura | Secretos en `.env` / Rails credentials; nada hardcoded      |
-| A.6.8 Incidentes           | Rate limiting en webhooks con `rack-attack` (pendiente F1)  |
+| A.6.8 Incidentes           | Rate limiting con `rack-attack` (implementado: auth, webhooks, password reset) |
 | A.7.10 Medios              | Exportaciones con URL firmada + `expires_at`                |
 
 ---
@@ -567,7 +554,7 @@ Convenciones:
 
 - Cada modelo tiene spec con: validaciones, asociaciones, enums, scopes y multi-tenancy.
 - Requests specs cubren happy path + RBAC por rol.
-- Integraciones externas (Meta, Google, Twilio) con VCR cassettes.
+- Integraciones externas (Meta, Google, Twilio) mockeadas con WebMock.
 
 ---
 
@@ -577,7 +564,7 @@ Convenciones:
 - Comentarios y documentación de negocio en español.
 - Rubocop omakase (`rubocop-rails-omakase`).
 - `annotaterb` para anotar modelos con el schema.
-- Services devuelven `Result` (gema `dry-monads` opcional o pattern propio con `.success?`/`.failure?`).
+- Services devuelven objetos de resultado propios (`Struct` con predicados como `.duplicate?` / `.ai_used?`); no se usa `dry-monads`.
 - Controladores delgados; lógica en services; queries en scopes.
 
 ---
@@ -601,7 +588,7 @@ bin/rails db:migrate                           # migraciones
 bin/rails db:migrate:status                    # estado
 bin/rails db:rollback STEP=1                   # rollback
 bin/rails c                                    # consola
-bundle exec sidekiq                            # worker
+bin/jobs                                       # worker de Solid Queue
 bundle exec annotaterb models                  # anotar modelos
 bundle exec rubocop -A                         # auto-fix estilo
 ```

@@ -153,12 +153,20 @@ module Opportunities
     end
 
     # Normaliza a E.164. Toma el país del locale del tenant (p.ej. "es-CO" → "CO").
+    # Si el número NO es normalizable, devolvemos nil en vez del valor crudo:
+    # Contact valida `phone_e164` (Phonelib.valid?), así que guardar un raw
+    # inválido haría fallar el create! y se perdería el lead entero; además
+    # rompería la deduplicación por igualdad E.164. Se registra el raw para
+    # trazabilidad.
     def normalize_phone(raw)
       return nil if raw.blank?
 
       country = @tenant.locale.to_s.split("-").last.presence || "CO"
       parsed  = Phonelib.parse(raw, country)
-      parsed.valid? ? parsed.e164 : raw
+      return parsed.e164 if parsed.valid?
+
+      Rails.logger.warn("[LeadImporter] teléfono no normalizable descartado (tenant=#{@tenant.id}): #{raw.inspect}")
+      nil
     end
 
     def default_title
@@ -168,7 +176,9 @@ module Opportunities
     end
 
     def audit_new_contact!(contact)
-      AuditEvent.create!(
+      # Vía AuditLogger (regla del proyecto): aplica LogSanitizer a la metadata
+      # y falla en silencio sin tumbar la importación.
+      AuditLogger.record!(
         tenant:      @tenant,
         user:        nil,
         action:      "contact.create",
@@ -176,8 +186,6 @@ module Opportunities
         entity_id:   contact.id,
         metadata:    { origin: "system", source_kind: @source_kind, source_label: @source_label }.compact
       )
-    rescue StandardError => e
-      Rails.logger.warn("[AuditEvent] LeadImporter contact=#{contact.id} #{e.message}")
     end
 
     def round_robin_owner

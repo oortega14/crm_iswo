@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { currentAuth, requireAdmin } from '@/lib/authGuards'
+import { requireAdmin } from '@/lib/authGuards'
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Copy, MoreHorizontal, Shield, Mail, Search, UserPlus, RefreshCw } from 'lucide-react'

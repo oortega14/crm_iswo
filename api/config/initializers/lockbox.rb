@@ -32,9 +32,14 @@ unless ENV["LOCKBOX_MASTER_KEY"].present?
   end
 end
 
-Lockbox.master_key = ENV["LOCKBOX_MASTER_KEY"] if ENV["LOCKBOX_MASTER_KEY"].present?
-
-if ENV["LOCKBOX_MASTER_KEY"].blank?
+if ENV["LOCKBOX_MASTER_KEY"].present?
+  Lockbox.master_key = ENV["LOCKBOX_MASTER_KEY"]
+elsif Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank?
+  # En producción no arrancamos sin clave: cifrar integraciones/exports lanzaría
+  # 500 en runtime. Mejor fallar fuerte y temprano (SECRET_KEY_BASE_DUMMY excluye
+  # el paso de build de imagen). Defínela en los secretos de Kamal (config/deploy.yml).
+  raise "[Lockbox] Falta LOCKBOX_MASTER_KEY en producción (cifrado de integraciones/exports)."
+else
   Rails.logger.warn(
     "[Lockbox] LOCKBOX_MASTER_KEY ausente: integraciones y exports cifrados fallarán."
   )

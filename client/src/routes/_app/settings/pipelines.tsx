@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { requireSettingsRole } from '@/lib/authGuards'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -68,6 +69,7 @@ import { queryKeys } from '@/lib/queryClient'
 import { jsonApiPrimaryList, mapPipelineResource } from '@/lib/opportunityApi'
 
 export const Route = createFileRoute('/_app/settings/pipelines')({
+  beforeLoad: () => requireSettingsRole('admin'),
   component: PipelinesSettingsPage,
 })
 

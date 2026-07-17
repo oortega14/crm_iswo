@@ -1,5 +1,5 @@
 import api from '@/lib/api'
-import type { TemperatureAiResult, TemperatureSignal } from '@/lib/temperatureContext'
+import type { TemperatureAiResult } from '@/lib/temperatureContext'
 
 export type { TemperatureAiResult } from '@/lib/temperatureContext'
 
@@ -9,7 +9,6 @@ export interface ClaudeTemperatureCapabilities {
   /** Clasifica automáticamente al guardar dossier del lead */
   auto_on_save: boolean
   auto_on_bant_recalc: boolean
-  key_hint?: string | null
 }
 
 export interface ClassifyTemperatureResult extends TemperatureAiResult {

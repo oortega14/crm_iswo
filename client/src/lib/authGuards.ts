@@ -28,6 +28,18 @@ export function requireRole(...roles: UserRole[]) {
   }
 }
 
+/**
+ * Igual que requireRole pero pensado para páginas dentro de /settings:
+ * si el rol no está permitido redirige a /settings (el layout padre reenvía
+ * al primer ajuste visible del rol). Espeja el filtro de SETTINGS_NAV_ITEMS.
+ */
+export function requireSettingsRole(...roles: UserRole[]) {
+  const role = currentAuth().user?.role
+  if (!role || !roles.includes(role)) {
+    throw redirect({ to: '/settings' })
+  }
+}
+
 export function requireAdmin(fallback = '/settings') {
   if (currentAuth().user?.role !== 'admin') {
     throw redirect({ to: fallback })

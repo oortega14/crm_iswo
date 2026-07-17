@@ -22,6 +22,9 @@ end
 
 if SecurityKeyFormat.valid?(ENV["BLIND_INDEX_MASTER_KEY"])
   BlindIndex.master_key = ENV["BLIND_INDEX_MASTER_KEY"]
+elsif Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank?
+  raise "[BlindIndex] Falta BLIND_INDEX_MASTER_KEY (o LOCKBOX_MASTER_KEY explícita, 64 hex) " \
+        "en producción: las búsquedas exactas sobre PII cifrada fallarían."
 else
   Rails.logger.warn("[BlindIndex] BLIND_INDEX_MASTER_KEY ausente: búsquedas PII cifradas fallarán.")
 end

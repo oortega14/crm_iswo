@@ -8,14 +8,20 @@ module Leads
     module_function
 
     def call(tenant)
+      # La condición de "abierta" va en el ON del LEFT JOIN (no en el WHERE):
+      # así un consultor con solo oportunidades cerradas (won/lost) cuenta 0
+      # abiertas y sigue elegible, en vez de desaparecer del GROUP BY y quedar
+      # excluido para siempre del reparto.
+      open_join = ActiveRecord::Base.sanitize_sql_array(
+        ["LEFT JOIN opportunities ON opportunities.owner_user_id = users.id " \
+         "AND opportunities.status IN (?)", OPEN_STATUSES]
+      )
+
       consultant = tenant.users.kept
                          .where(role: "consultant", active: true)
-                         .left_joins(:owned_opportunities)
-                         .where(
-                           "opportunities.status IN (?) OR opportunities.id IS NULL",
-                           OPEN_STATUSES
-                         )
+                         .joins(open_join)
                          .group("users.id")
+                         .select("users.*")
                          .order(Arel.sql("COUNT(opportunities.id) ASC"))
                          .first
 

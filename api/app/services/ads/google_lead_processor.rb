@@ -61,15 +61,24 @@ module Ads
     private
 
     def resolve_integration!
-      # Google no manda page_id/customer_id en el webhook directamente; en
-      # producción se resuelve por form_id o campaign_id mapeado en metadata.
-      form_id = @payload["form_id"].to_s
-      scope   = AdIntegration.where(provider: "google", status: "active")
+      # Google no manda page_id/customer_id en el webhook directamente; se
+      # resuelve por form_id (o campaign_id) mapeado en la metadata de la
+      # integración. El job corre sin tenant (without_tenant), así que este
+      # scope abarca TODAS las integraciones google del sistema: NO se debe
+      # caer a `scope.first`, porque eso asignaría el lead a un tenant
+      # arbitrario (fuga cross-tenant). Si no hay match explícito, se falla.
+      form_id     = @payload["form_id"].to_s
+      campaign_id = @payload["campaign_id"].to_s
+      scope       = AdIntegration.where(provider: "google", status: "active")
 
-      integration = scope.find_by("metadata->>'form_id' = ?", form_id) if form_id.present?
-      integration ||= scope.first
+      integration   = scope.find_by("metadata->>'form_id' = ?", form_id) if form_id.present?
+      integration ||= scope.find_by("metadata->>'campaign_id' = ?", campaign_id) if campaign_id.present?
 
-      raise ArgumentError, "AdIntegration google no configurada" unless integration
+      unless integration
+        raise ArgumentError,
+              "AdIntegration google no resuelta (form_id=#{form_id.presence || '∅'}, " \
+              "campaign_id=#{campaign_id.presence || '∅'}): no se asigna el lead a un tenant arbitrario"
+      end
 
       integration
     end

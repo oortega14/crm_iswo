@@ -121,9 +121,9 @@ function LandingsPage() {
         slug: data.slug,
         description: data.description,
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       void invalidateLandings()
-      toast.success('Landing page creada exitosamente')
+      toast.success(result.message ?? 'Landing page creada exitosamente')
       setIsCreateDialogOpen(false)
       setNewLanding({ title: '', slug: '', description: '' })
     },
@@ -152,9 +152,9 @@ function LandingsPage() {
 
   const duplicateLandingMutation = useMutation({
     mutationFn: duplicateLandingPage,
-    onSuccess: () => {
+    onSuccess: (result) => {
       void invalidateLandings()
-      toast.success('Landing duplicada')
+      toast.success(result.message ?? 'Landing duplicada')
     },
     onError: (err: unknown) => {
       toast.error(formatRailsError(err, 'No se pudo duplicar la landing'))
@@ -315,10 +315,24 @@ function LandingsPage() {
                 <div className="flex items-start justify-between">
                   <div className="space-y-1">
                     <CardTitle className="text-base">{landing.title}</CardTitle>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant={landing.status === 'published' ? 'default' : 'secondary'}>
                         {landing.status === 'published' ? 'Publicada' : 'Borrador'}
                       </Badge>
+                      {landing.approvalStatus === 'pending' && (
+                        <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">
+                          Pendiente de aprobación
+                        </Badge>
+                      )}
+                      {landing.approvalStatus === 'rejected' && (
+                        <Badge
+                          variant="outline"
+                          className="text-destructive border-destructive/40 bg-destructive/10"
+                          title={landing.rejectionReason || undefined}
+                        >
+                          Rechazada
+                        </Badge>
+                      )}
                     </div>
                   </div>
                   <DropdownMenu>
@@ -364,13 +378,18 @@ function LandingsPage() {
                       {canManageLandings && (
                         <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
+                        disabled={landing.status !== 'published' && landing.approvalStatus !== 'approved'}
                         onClick={() => toggleStatusMutation.mutate({
                           id: landing.id,
                           status: landing.status === 'published' ? 'draft' : 'published'
                         })}
                       >
-                        {landing.status === 'published' ? 'Despublicar' : 'Publicar'}
+                        {landing.status === 'published'
+                          ? 'Despublicar'
+                          : landing.approvalStatus === 'approved'
+                            ? 'Publicar'
+                            : 'Publicar (pendiente de aprobación)'}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem

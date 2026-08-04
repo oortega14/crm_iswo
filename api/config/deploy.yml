@@ -23,7 +23,7 @@ servers:
 # Fase 1 seguridad — TLS en el proxy Kamal (Let's Encrypt). Requiere ASSUME_SSL=true en la app.
 proxy:
   ssl: true
-  host: crm.iswo.com.co
+  host: iswocrm.com
 
 # Where you keep your container images.
 registry:
@@ -47,10 +47,10 @@ env:
     - BLIND_INDEX_MASTER_KEY
     - POSTMARK_API_TOKEN
   clear:
-    APP_HOST: crm.iswo.com.co
+    APP_HOST: iswocrm.com
     ASSUME_SSL: "true"
     DB_SSLMODE: require
-    CORS_ALLOWED_ORIGINS: https://crm.iswo.com.co
+    CORS_ALLOWED_ORIGINS: https://app.iswocrm.com
     # Fase 3 seguridad — RLS PostgreSQL (requiere rol crm_iswo NOSUPERUSER/NOBYPASSRLS, ver SECURITY_FASE3.md)
     DB_RLS_ENABLED: "true"
 # Fase RFC §6.7 — exports cifrados en S3+SSE (descomentar en go-live)

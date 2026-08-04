@@ -36,6 +36,24 @@ RSpec.describe LandingPage, type: :model do
     end
   end
 
+  describe "aprobación" do
+    it "nace pending por defecto" do
+      page = create(:landing_page, tenant: tenant)
+      expect(page.approval_status_pending?).to be(true)
+    end
+
+    it "no permite publicar sin aprobación" do
+      page = build(:landing_page, tenant: tenant, published: true)
+      expect(page).not_to be_valid
+      expect(page.errors[:published]).to be_present
+    end
+
+    it "permite publicar una vez aprobada" do
+      page = create(:landing_page, :approved, tenant: tenant, published: false)
+      expect(page.update(published: true)).to be(true)
+    end
+  end
+
   describe "callbacks" do
     it "normaliza el slug a minúsculas antes de validar" do
       page = build(:landing_page, tenant: tenant, slug: "  MiLanding  ")
@@ -44,7 +62,7 @@ RSpec.describe LandingPage, type: :model do
     end
 
     it "setea published_at cuando se publica por primera vez" do
-      page = create(:landing_page, tenant: tenant, published: false, published_at: nil)
+      page = create(:landing_page, :approved, tenant: tenant, published: false, published_at: nil)
       page.update!(published: true)
       expect(page.published_at).to be_present
     end
@@ -82,9 +100,9 @@ RSpec.describe LandingPage, type: :model do
   describe "#public_url" do
     let(:page) { build(:landing_page, tenant: tenant, slug: "black-friday") }
 
-    it "en production usa subdominio crm.iswo.com.co" do
+    it "en production usa subdominio iswocrm.com" do
       allow(Rails.env).to receive(:production?).and_return(true)
-      expect(page.public_url).to eq("https://#{tenant.slug}.crm.iswo.com.co/black-friday")
+      expect(page.public_url).to eq("https://#{tenant.slug}.iswocrm.com/black-friday")
     end
 
     it "en development simula subdominio .localhost" do

@@ -297,7 +297,11 @@ module Landings
           published_at:    attrs[:published] ? (lp.published_at || Time.current) : nil,
           view_count:      attrs[:view_count],
           lead_count:      attrs[:lead_count],
-          content:         content
+          content:         content,
+          # Plantillas sembradas por el sistema durante onboarding (ya iniciado
+          # por el super-admin) — no requieren pasar por la cola de aprobación.
+          approval_status: attrs[:published] ? "approved" : lp.approval_status,
+          reviewed_at:     attrs[:published] ? (lp.reviewed_at || Time.current) : lp.reviewed_at
         )
         lp.save!
         lp

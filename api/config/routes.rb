@@ -225,6 +225,12 @@ Rails.application.routes.draw do
       # ========================================================================
       namespace :admin do
         resources :tenants, only: %i[index create update]
+        resources :landing_page_requests, only: %i[index] do
+          member do
+            post :approve
+            post :reject
+          end
+        end
       end
     end
   end

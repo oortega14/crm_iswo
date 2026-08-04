@@ -28,6 +28,7 @@ import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/use
 import { Route as AppSettingsTenantOnboardingRouteImport } from './routes/_app/settings/tenant-onboarding'
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
 import { Route as AppSettingsLeadSourcesRouteImport } from './routes/_app/settings/lead-sources'
+import { Route as AppSettingsLandingRequestsRouteImport } from './routes/_app/settings/landing-requests'
 import { Route as AppSettingsIntegrationsRouteImport } from './routes/_app/settings/integrations'
 import { Route as AppSettingsGeneralRouteImport } from './routes/_app/settings/general'
 import { Route as AppSettingsFieldsRouteImport } from './routes/_app/settings/fields'
@@ -129,6 +130,12 @@ const AppSettingsLeadSourcesRoute = AppSettingsLeadSourcesRouteImport.update({
   path: '/lead-sources',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsLandingRequestsRoute =
+  AppSettingsLandingRequestsRouteImport.update({
+    id: '/landing-requests',
+    path: '/landing-requests',
+    getParentRoute: () => AppSettingsRoute,
+  } as any)
 const AppSettingsIntegrationsRoute = AppSettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -175,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/settings/fields': typeof AppSettingsFieldsRoute
   '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/landing-requests': typeof AppSettingsLandingRequestsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
@@ -200,6 +208,7 @@ export interface FileRoutesByTo {
   '/settings/fields': typeof AppSettingsFieldsRoute
   '/settings/general': typeof AppSettingsGeneralRoute
   '/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/settings/landing-requests': typeof AppSettingsLandingRequestsRoute
   '/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
@@ -227,6 +236,7 @@ export interface FileRoutesById {
   '/_app/settings/fields': typeof AppSettingsFieldsRoute
   '/_app/settings/general': typeof AppSettingsGeneralRoute
   '/_app/settings/integrations': typeof AppSettingsIntegrationsRoute
+  '/_app/settings/landing-requests': typeof AppSettingsLandingRequestsRoute
   '/_app/settings/lead-sources': typeof AppSettingsLeadSourcesRoute
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/_app/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/settings/fields'
     | '/settings/general'
     | '/settings/integrations'
+    | '/settings/landing-requests'
     | '/settings/lead-sources'
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
@@ -279,6 +290,7 @@ export interface FileRouteTypes {
     | '/settings/fields'
     | '/settings/general'
     | '/settings/integrations'
+    | '/settings/landing-requests'
     | '/settings/lead-sources'
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
@@ -305,6 +317,7 @@ export interface FileRouteTypes {
     | '/_app/settings/fields'
     | '/_app/settings/general'
     | '/_app/settings/integrations'
+    | '/_app/settings/landing-requests'
     | '/_app/settings/lead-sources'
     | '/_app/settings/pipelines'
     | '/_app/settings/tenant-onboarding'
@@ -455,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsLeadSourcesRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/landing-requests': {
+      id: '/_app/settings/landing-requests'
+      path: '/landing-requests'
+      fullPath: '/settings/landing-requests'
+      preLoaderRoute: typeof AppSettingsLandingRequestsRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/integrations': {
       id: '/_app/settings/integrations'
       path: '/integrations'
@@ -499,6 +519,7 @@ interface AppSettingsRouteChildren {
   AppSettingsFieldsRoute: typeof AppSettingsFieldsRoute
   AppSettingsGeneralRoute: typeof AppSettingsGeneralRoute
   AppSettingsIntegrationsRoute: typeof AppSettingsIntegrationsRoute
+  AppSettingsLandingRequestsRoute: typeof AppSettingsLandingRequestsRoute
   AppSettingsLeadSourcesRoute: typeof AppSettingsLeadSourcesRoute
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
   AppSettingsTenantOnboardingRoute: typeof AppSettingsTenantOnboardingRoute
@@ -511,6 +532,7 @@ const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsFieldsRoute: AppSettingsFieldsRoute,
   AppSettingsGeneralRoute: AppSettingsGeneralRoute,
   AppSettingsIntegrationsRoute: AppSettingsIntegrationsRoute,
+  AppSettingsLandingRequestsRoute: AppSettingsLandingRequestsRoute,
   AppSettingsLeadSourcesRoute: AppSettingsLeadSourcesRoute,
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,
   AppSettingsTenantOnboardingRoute: AppSettingsTenantOnboardingRoute,

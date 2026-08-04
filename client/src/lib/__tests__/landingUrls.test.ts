@@ -44,7 +44,7 @@ describe('getTenantFromHostname', () => {
   })
 
   it('extrae tenant de subdominio de producción', () => {
-    mockHostname('libranzas.crm.iswo.com.co')
+    mockHostname('libranzas.iswocrm.com')
     expect(getTenantFromHostname()).toBe('libranzas')
   })
 

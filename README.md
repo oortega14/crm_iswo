@@ -86,7 +86,7 @@ TWILIO_AUTH_TOKEN=
 WHATSAPP_PROVIDER=twilio   # twilio | cloud_api
 
 POSTMARK_API_TOKEN=
-MAIL_FROM=no-reply@crm.iswo.com.co
+MAIL_FROM=no-reply@iswocrm.com
 
 # Claude — temperatura de leads (POST /opportunities/:id/classify)
 ANTHROPIC_API_KEY=
@@ -164,9 +164,9 @@ crm_iswo/
 
 | Tenant     | Subdominio                         |
 | ---------- | ---------------------------------- |
-| ISWO       | `iswo.crm.iswo.com.co`             |
-| Mi Casita  | `micasita.crm.iswo.com.co`         |
-| Libranzas  | `libranzas.crm.iswo.com.co`        |
+| ISWO       | `iswo.iswocrm.com`                 |
+| Mi Casita  | `micasita.iswocrm.com`             |
+| Libranzas  | `libranzas.iswocrm.com`            |
 
 ---
 

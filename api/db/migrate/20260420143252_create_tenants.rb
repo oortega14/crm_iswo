@@ -4,7 +4,7 @@
 # tenants — raíz multi-tenant
 # ----------------------------------------------------------------------------
 # Cada negocio/vertical (ISWO, Mi Casita, Libranzas, …) es un tenant.
-# Resolución por subdominio: <slug>.crm.iswo.com.co.
+# Resolución por subdominio: <slug>.iswocrm.com.
 # ============================================================================
 class CreateTenants < ActiveRecord::Migration[8.1]
   def change

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_04_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -184,12 +184,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_120000) do
   end
 
   create_table "landing_pages", force: :cascade do |t|
+    t.string "approval_status", default: "pending", null: false
     t.jsonb "content", default: {}, null: false, comment: "Estructura GrapeJS"
     t.datetime "created_at", null: false
     t.integer "lead_count", default: 0, null: false
     t.string "og_image_url"
     t.boolean "published", default: false, null: false
     t.datetime "published_at"
+    t.string "rejection_reason"
+    t.bigint "requested_by_user_id"
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_user_id"
     t.string "seo_description"
     t.string "seo_title"
     t.string "slug", null: false
@@ -199,6 +204,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_120000) do
     t.string "title", null: false
     t.datetime "updated_at", null: false
     t.integer "view_count", default: 0, null: false
+    t.index ["approval_status"], name: "index_landing_pages_on_approval_status"
     t.index ["tenant_id", "published"], name: "index_landing_pages_on_tenant_id_and_published"
     t.index ["tenant_id", "slug"], name: "index_landing_pages_on_tenant_id_and_slug", unique: true
     t.index ["tenant_id"], name: "index_landing_pages_on_tenant_id"
@@ -626,6 +632,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_120000) do
   add_foreign_key "landing_form_submissions", "opportunities"
   add_foreign_key "landing_form_submissions", "tenants"
   add_foreign_key "landing_pages", "tenants"
+  add_foreign_key "landing_pages", "users", column: "requested_by_user_id"
+  add_foreign_key "landing_pages", "users", column: "reviewed_by_user_id"
   add_foreign_key "lead_sources", "tenants"
   add_foreign_key "notifications", "tenants"
   add_foreign_key "notifications", "users"

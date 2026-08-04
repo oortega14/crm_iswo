@@ -34,12 +34,32 @@ RSpec.describe "Api::V1::LandingPages", type: :request do
   end
 
   describe "POST /api/v1/landing_pages" do
-    it "admin crea landing" do
+    it "admin crea landing en estado pending y recibe el mensaje de solicitud" do
       post "/api/v1/landing_pages",
            headers: auth_headers(admin),
            params: { landing_page: { title: "Nueva Landing", slug: "nueva-landing" } }.to_json
       expect(response).to have_http_status(:created)
       expect(json.dig("data", "attributes", "slug")).to eq("nueva-landing")
+      expect(json.dig("data", "attributes", "approval_status")).to eq("pending")
+      expect(json.dig("meta", "message")).to include("administrador de la plataforma")
+
+      created = LandingPage.find(json.dig("data", "id"))
+      expect(created.requested_by_user_id).to eq(admin.id)
+    end
+
+    it "notifica a los admins del tenant plataforma al crear" do
+      platform_result = ActsAsTenant.without_tenant { Tenants::PlatformSeeder.call! }
+      platform_admin  = platform_result.admin_user
+
+      count_for_platform_admin = -> {
+        ActsAsTenant.without_tenant { platform_admin.notifications.where(kind: "landing_request_submitted").count }
+      }
+
+      expect {
+        post "/api/v1/landing_pages",
+             headers: auth_headers(admin),
+             params: { landing_page: { title: "Otra Landing", slug: "otra-landing" } }.to_json
+      }.to change { count_for_platform_admin.call }.by(1)
     end
 
     it "consultant no puede crear" do
@@ -58,7 +78,16 @@ RSpec.describe "Api::V1::LandingPages", type: :request do
   end
 
   describe "POST /api/v1/landing_pages/:id/publish + unpublish" do
-    it "publica y despublica una landing" do
+    it "403 si la landing no fue aprobada por el super-admin" do
+      post "/api/v1/landing_pages/#{landing.id}/publish", headers: auth_headers(admin)
+      expect(response).to have_http_status(:forbidden)
+      expect(json["error"]).to eq("not_approved")
+      expect(landing.reload.published).to be(false)
+    end
+
+    it "publica y despublica una landing ya aprobada" do
+      landing.update!(approval_status: "approved", reviewed_at: Time.current)
+
       post "/api/v1/landing_pages/#{landing.id}/publish", headers: auth_headers(admin)
       expect(response).to have_http_status(:ok)
       expect(landing.reload.published).to be(true)
@@ -70,12 +99,15 @@ RSpec.describe "Api::V1::LandingPages", type: :request do
   end
 
   describe "POST /api/v1/landing_pages/:id/duplicate" do
-    it "crea una copia despublicada" do
+    it "crea una copia despublicada y pendiente de aprobación, aunque el original esté aprobado" do
+      landing.update!(approval_status: "approved", published: true, reviewed_at: Time.current)
+
       post "/api/v1/landing_pages/#{landing.id}/duplicate", headers: auth_headers(admin)
       expect(response).to have_http_status(:created)
       copy_title = json.dig("data", "attributes", "title")
       expect(copy_title).to include("copia")
       expect(json.dig("data", "attributes", "published")).to be(false)
+      expect(json.dig("data", "attributes", "approval_status")).to eq("pending")
     end
   end
 

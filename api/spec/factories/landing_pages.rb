@@ -13,7 +13,13 @@ FactoryBot.define do
     view_count { 0 }
     lead_count { 0 }
 
+    trait :approved do
+      approval_status { "approved" }
+      reviewed_at { Time.current }
+    end
+
     trait :published do
+      approval_status { "approved" }
       published { true }
       published_at { Time.current }
     end

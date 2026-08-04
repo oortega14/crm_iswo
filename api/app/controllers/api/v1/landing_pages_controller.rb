@@ -8,6 +8,10 @@ module Api
     # El endpoint público (sin auth) vive en Api::V1::Public::LandingPages.
     # ========================================================================
     class LandingPagesController < BaseController
+      APPROVAL_REQUEST_MESSAGE =
+        "Tu petición ha sido registrada y enviada al administrador de la plataforma. " \
+        "En cuanto sea aprobada, te avisaremos que ya está habilitada."
+
       auditable_resource :landing
       before_action :set_landing, only: %i[show update destroy publish unpublish duplicate metrics]
 
@@ -26,9 +30,10 @@ module Api
       def create
         authorize LandingPage
         landing = current_tenant.landing_pages.new(permitted)
+        landing.requested_by_user_id = current_user.id
         if landing.save
           @landing = landing
-          render_created(landing, with: LandingPageSerializer)
+          render_pending_request(landing, status: :created)
         else
           render_unprocessable(landing)
         end
@@ -51,6 +56,13 @@ module Api
 
       def publish
         authorize @landing, :update?
+        unless @landing.approval_status_approved?
+          return render json: {
+            error:   "not_approved",
+            message: "Esta landing todavía no fue aprobada por el administrador de la plataforma. " \
+                      "Te avisaremos por notificación cuando esté habilitada."
+          }, status: :forbidden
+        end
         @landing.update!(published: true)
         render_resource(@landing, with: LandingPageSerializer)
       end
@@ -100,18 +112,30 @@ module Api
         authorize @landing, :create?
         copy = @landing.dup
         copy.assign_attributes(
-          title:        "#{@landing.title} (copia)",
-          slug:         "#{@landing.slug}-copy-#{SecureRandom.hex(3)}",
-          published:    false,
-          published_at: nil,
-          view_count:   0,
-          lead_count:   0
+          title:                "#{@landing.title} (copia)",
+          slug:                 "#{@landing.slug}-copy-#{SecureRandom.hex(3)}",
+          published:            false,
+          published_at:         nil,
+          view_count:           0,
+          lead_count:           0,
+          approval_status:      "pending",
+          requested_by_user_id: current_user.id,
+          reviewed_by_user_id:  nil,
+          reviewed_at:          nil,
+          rejection_reason:     nil
         )
         copy.save!
-        render_created(copy, with: LandingPageSerializer)
+        render_pending_request(copy, status: :created)
       end
 
       private
+
+      def render_pending_request(landing, status:)
+        Notifications::LandingRequestNotifier.submitted(landing: landing, requested_by: current_user)
+        payload = LandingPageSerializer.new(landing).serializable_hash
+        payload[:meta] = { message: APPROVAL_REQUEST_MESSAGE }
+        render json: payload, status: status
+      end
 
       def set_landing
         @landing = current_tenant.landing_pages.find(params[:id])

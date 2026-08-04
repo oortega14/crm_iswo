@@ -12,7 +12,7 @@ class LandingPageSerializer < ApplicationSerializer
 
   attributes :title, :slug, :seo_title, :seo_description, :og_image_url,
              :thumbnail_url, :published, :published_at, :view_count, :lead_count,
-             :conversion_rate
+             :conversion_rate, :approval_status, :reviewed_at, :rejection_reason
 
   attribute :public_url do |l|
     l.public_url

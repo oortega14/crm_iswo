@@ -8,6 +8,7 @@ export { PLATFORM_HOME }
 const PLATFORM_EXACT_PATHS = new Set([
   '/settings',
   '/settings/tenant-onboarding',
+  '/settings/landing-requests',
   '/settings/users',
   '/settings/audit',
 ])

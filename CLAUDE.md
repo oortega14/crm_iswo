@@ -144,7 +144,7 @@ entidades, sin tocar cada controlador individualmente.
 ### Multi-tenancy (RFC D3)
 
 Se resolvió usando **ambas** estrategias:
-- Subdominio (`micasita.crm.iswo.com.co`) resuelto por `TenantResolver`.
+- Subdominio (`micasita.iswocrm.com`) resuelto por `TenantResolver`.
 - Header HTTP `X-Tenant-Slug` como fallback para clientes que no soporten subdominios.
 
 ---
@@ -238,7 +238,7 @@ Variables: `AWS_S3_BUCKET`, `AWS_REGION`, opcional `AWS_KMS_KEY_ID`, `LOCKBOX_MA
 
 ### Landings públicas — subdominio por tenant (RFC §6.5)
 
-**Producción:** `https://{tenant}.crm.iswo.com.co/{slug}` — tenant por subdominio,
+**Producción:** `https://{tenant}.iswocrm.com/{slug}` — tenant por subdominio,
 sin prefijo `/l/`.
 
 **Desarrollo:** mismo modelo con `{tenant}.localhost:3001/{slug}` (Vite `host: true`).

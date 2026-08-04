@@ -2,6 +2,7 @@ import api, { formatRailsError } from '@/lib/api'
 import { jsonApiPrimaryList, jsonApiPrimaryOne, type JsonApiResource } from '@/lib/opportunityApi'
 
 export type LandingPageStatus = 'draft' | 'published'
+export type LandingApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 export interface LandingPageSummary {
   id: string
@@ -10,6 +11,8 @@ export interface LandingPageSummary {
   description: string
   publicUrl: string
   status: LandingPageStatus
+  approvalStatus: LandingApprovalStatus
+  rejectionReason: string
   views: number
   leads: number
   conversionRate: number
@@ -49,6 +52,9 @@ export function mapLandingPageResource(resource: JsonApiResource): LandingPageSu
   const views = Number(a.view_count ?? 0)
   const leads = Number(a.lead_count ?? 0)
   const conversionRate = views > 0 ? Number(((leads / views) * 100).toFixed(1)) : 0
+  const approvalStatus = ['pending', 'approved', 'rejected'].includes(String(a.approval_status))
+    ? (a.approval_status as LandingApprovalStatus)
+    : 'pending'
 
   return {
     id: String(resource.id),
@@ -57,6 +63,8 @@ export function mapLandingPageResource(resource: JsonApiResource): LandingPageSu
     description: String(a.seo_description ?? ''),
     publicUrl: String(a.public_url ?? ''),
     status: a.published ? 'published' : 'draft',
+    approvalStatus,
+    rejectionReason: String(a.rejection_reason ?? ''),
     views: Number.isFinite(views) ? views : 0,
     leads: Number.isFinite(leads) ? leads : 0,
     conversionRate,
@@ -103,8 +111,8 @@ export async function fetchLandingPageDetail(id: string): Promise<JsonApiResourc
   return jsonApiPrimaryOne(response.data)
 }
 
-export async function createLandingPage(input: CreateLandingInput): Promise<void> {
-  await api.post('/landing_pages', {
+export async function createLandingPage(input: CreateLandingInput): Promise<{ message?: string }> {
+  const response = await api.post('/landing_pages', {
     landing_page: {
       title: input.title.trim(),
       slug: input.slug.trim(),
@@ -114,6 +122,7 @@ export async function createLandingPage(input: CreateLandingInput): Promise<void
       styles: {},
     },
   })
+  return { message: response.data?.meta?.message }
 }
 
 export async function updateLandingPage(
@@ -134,8 +143,9 @@ export async function unpublishLandingPage(id: string): Promise<void> {
   await api.post(`/landing_pages/${id}/unpublish`)
 }
 
-export async function duplicateLandingPage(id: string): Promise<void> {
-  await api.post(`/landing_pages/${id}/duplicate`)
+export async function duplicateLandingPage(id: string): Promise<{ message?: string }> {
+  const response = await api.post(`/landing_pages/${id}/duplicate`)
+  return { message: response.data?.meta?.message }
 }
 
 export async function deleteLandingPage(id: string): Promise<void> {

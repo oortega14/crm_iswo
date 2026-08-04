@@ -17,6 +17,7 @@ import {
   ListChecks,
   FileSearch,
   Building2,
+  ClipboardCheck,
 } from 'lucide-react'
 import type { Tenant, UserRole } from '@/types'
 import { isPlatformTenant } from '@/lib/platformTenant'
@@ -45,12 +46,14 @@ export type SettingsNavItem = {
 /** Orden del sidebar super-admin (RFC F5). */
 const PLATFORM_SETTINGS_ORDER = [
   '/settings/tenant-onboarding',
+  '/settings/landing-requests',
   '/settings/users',
   '/settings/audit',
 ] as const
 
 const PLATFORM_SIDEBAR_LABELS: Partial<Record<(typeof PLATFORM_SETTINGS_ORDER)[number], string>> = {
   '/settings/tenant-onboarding': 'Tenants',
+  '/settings/landing-requests': 'Landings por aprobar',
   '/settings/users': 'Operadores',
   '/settings/audit': 'Auditoría',
 }
@@ -219,6 +222,15 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     title: 'Tenants',
     description: 'Alta, activación y administración de empresas cliente',
     icon: Building2,
+    roles: ['admin'],
+    visible: (tenant) => isPlatformTenant(tenant),
+  },
+  {
+    href: '/settings/landing-requests',
+    label: 'Landings por aprobar',
+    title: 'Landings por aprobar',
+    description: 'Solicitudes de publicación de landings de todos los tenants',
+    icon: ClipboardCheck,
     roles: ['admin'],
     visible: (tenant) => isPlatformTenant(tenant),
   },

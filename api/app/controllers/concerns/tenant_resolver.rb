@@ -5,7 +5,7 @@
 # ============================================================================
 # Prioridad:
 #   1. Header `X-Tenant-Slug` (SPA, login, tests).
-#   2. Subdominio (`micasita.crm.iswo.com.co` → slug "micasita") o
+#   2. Subdominio (`micasita.iswocrm.com` → slug "micasita") o
 #      `{tenant}.localhost` en dev/test si no hay header.
 #
 # Si no resuelve, responde 400 para evitar caer en `ActsAsTenant::NoTenantSet`

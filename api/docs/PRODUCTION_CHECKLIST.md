@@ -11,9 +11,9 @@ bundle exec rails prod:security_dry_run
 
 ## 1. Repo / Kamal (`config/deploy.yml`) — ya en código
 
-- [x] `proxy.ssl: true`, `host: crm.iswo.com.co`
+- [x] `proxy.ssl: true`, `host: iswocrm.com`
 - [x] `ASSUME_SSL`, `DB_SSLMODE=require`, `APP_HOST`, `DB_RLS_ENABLED`, `SOLID_QUEUE_IN_PUMA`
-- [x] `CORS_ALLOWED_ORIGINS: https://crm.iswo.com.co`
+- [x] `CORS_ALLOWED_ORIGINS: https://app.iswocrm.com`
 - [x] Secretos listados: `RAILS_MASTER_KEY`, `CRM_ISWO_DATABASE_PASSWORD`, `DEVISE_JWT_SECRET_KEY`, `LOCKBOX_MASTER_KEY`, `BLIND_INDEX_MASTER_KEY`, `POSTMARK_API_TOKEN`
 - [ ] IP/host real en `servers.web` (hoy placeholder)
 - [ ] Descomentar `AWS_S3_BUCKET`, `AWS_REGION` (+ opcional `AWS_KMS_KEY_ID`) para exports en prod
@@ -31,8 +31,10 @@ cp .kamal/secrets.example .kamal/secrets
 
 ## 3. TLS / landings (RFC §6.5)
 
-- [ ] DNS `crm.iswo.com.co` → servidor Kamal
-- [ ] Wildcard o hosts extra para `{tenant}.crm.iswo.com.co` (Cloudflare Full SSL o proxy Kamal)
+- [ ] DNS `iswocrm.com` → servidor Kamal
+- [ ] Wildcard o hosts extra para `{tenant}.iswocrm.com` (Cloudflare Full SSL o proxy Kamal) —
+      confirmar que el dominio wildcard esté agregado y verificado si el frontend
+      se sirve desde Vercel (el proxy Kamal por sí solo no cubre subdominios de tenant).
 
 ## 4. PostgreSQL — rol app + RLS
 

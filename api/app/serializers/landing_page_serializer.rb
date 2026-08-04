@@ -20,6 +20,4 @@ class LandingPageSerializer < ApplicationSerializer
 
   attribute :content, if: ->(_r, params) { params && params[:include_content] }
   attribute :styles,  if: ->(_r, params) { params && params[:include_content] }
-
-  belongs_to :default_owner, serializer: :user, record_type: :user, if: Proc.new { |l| l.respond_to?(:default_owner_id) }
 end

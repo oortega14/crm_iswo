@@ -79,6 +79,21 @@ RSpec.describe "Api::V1::Public::LandingFormSubmissions", type: :request do
       expect(response.status).to be_in([404, 500])
     end
 
+    it "422 si el payload excede el límite de tamaño" do
+      oversized_body = {
+        payload: { name: "Oscar", notes: "x" * (LandingFormSubmission::MAX_PAYLOAD_BYTES + 1) }
+      }.to_json
+
+      expect {
+        post "/api/v1/public/landings/#{landing.slug}/submit",
+             params: oversized_body,
+             headers: { "Content-Type" => "application/json", "X-Tenant-Slug" => tenant.slug }
+      }.not_to change(LandingFormSubmission, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(json["details"]).to be_present
+    end
+
     it "400 si no resuelve tenant" do
       post "/api/v1/public/landings/#{landing.slug}/submit",
            params: body,

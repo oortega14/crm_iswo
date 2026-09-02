@@ -103,12 +103,15 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       expect(ids).not_to include(bare.id)
     end
 
-    it "consultant solo ve sus contactos via policy_scope" do
+    it "consultant ve sus contactos y los sin dueño (bandeja sin asignar), no los de otro consultor" do
       own = create(:contact, tenant: tenant, owner_user: consultant)
+      other_owner = create(:user, :consultant, tenant: tenant)
+      foreign = create(:contact, tenant: tenant, owner_user: other_owner)
+
       get "/api/v1/contacts", headers: auth_headers(consultant)
       ids = json["data"].map { |d| d["id"].to_i }
-      expect(ids).to include(own.id)
-      expect(ids).not_to include(contact_a.id, contact_b.id)
+      expect(ids).to include(own.id, contact_a.id, contact_b.id) # contact_a/b sin owner_user (RFC §6.6, bandeja compartida)
+      expect(ids).not_to include(foreign.id)
     end
 
     it "expone can_edit según ContactPolicy#update?" do
@@ -116,13 +119,19 @@ RSpec.describe "Api::V1::Contacts", type: :request do
       shared = create(:contact, tenant: tenant, owner_user: manager)
       create(:opportunity, tenant: tenant, contact: shared, owner_user: consultant,
              pipeline: pipe, pipeline_stage: pipe.pipeline_stages.first)
+      other_owner = create(:user, :consultant, tenant: tenant)
+      foreign = create(:contact, tenant: tenant, owner_user: other_owner)
 
       get "/api/v1/contacts", headers: auth_headers(consultant)
       row = json["data"].find { |d| d["id"].to_i == shared.id }
       expect(row.dig("attributes", "can_edit")).to be(true)
 
-      foreign = json["data"].find { |d| d["id"].to_i == contact_a.id }
-      expect(foreign).to be_nil
+      # Sin dueño: visible (bandeja compartida) pero no editable hasta reclamarlo.
+      unassigned_row = json["data"].find { |d| d["id"].to_i == contact_a.id }
+      expect(unassigned_row.dig("attributes", "can_edit")).to be(false)
+
+      foreign_row = json["data"].find { |d| d["id"].to_i == foreign.id }
+      expect(foreign_row).to be_nil
     end
   end
 
@@ -180,6 +189,31 @@ RSpec.describe "Api::V1::Contacts", type: :request do
             params: { contact: { first_name: "Hackeado" } }.to_json,
             headers: auth_headers(consultant)
       expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe "POST /api/v1/contacts/:id/claim" do
+    let(:admin) { create(:user, :admin, tenant: tenant) }
+
+    it "consultant reclama un contacto sin dueño (bandeja sin asignar)" do
+      unowned = create(:contact, tenant: tenant)
+      post "/api/v1/contacts/#{unowned.id}/claim", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:ok)
+      expect(unowned.reload.owner_user_id).to eq(consultant.id)
+    end
+
+    it "404 si el contacto ya tiene dueño (invisible vía policy_scope para otro consultor)" do
+      taken = create(:contact, tenant: tenant, owner_user: manager)
+      post "/api/v1/contacts/#{taken.id}/claim", headers: auth_headers(consultant)
+      expect(response).to have_http_status(:not_found)
+      expect(taken.reload.owner_user_id).to eq(manager.id)
+    end
+
+    it "403 si un admin intenta reclamar un contacto que ya tiene dueño" do
+      taken = create(:contact, tenant: tenant, owner_user: manager)
+      post "/api/v1/contacts/#{taken.id}/claim", headers: auth_headers(admin)
+      expect(response).to have_http_status(:forbidden)
+      expect(taken.reload.owner_user_id).to eq(manager.id)
     end
   end
 

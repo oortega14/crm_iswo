@@ -9,7 +9,7 @@ module Api
       include ExportAuditable
       include ExportDownloadable
 
-      before_action :set_contact, only: %i[show update destroy]
+      before_action :set_contact, only: %i[show update destroy claim]
 
       # GET /api/v1/contacts/stats
       def stats
@@ -97,6 +97,14 @@ module Api
         else
           render_unprocessable(@contact)
         end
+      end
+
+      # POST /api/v1/contacts/:id/claim — "Tomar lead" desde la bandeja "sin asignar".
+      def claim
+        authorize @contact, :claim?
+        @contact.update!(owner_user_id: current_user.id)
+        audit_contact!("contact.claim", @contact)
+        render_resource(@contact, with: ContactSerializer, params: { current_user: current_user })
       end
 
       def destroy

@@ -52,4 +52,18 @@ RSpec.describe "Api::V1::WhatsappMessages (oportunidad)", type: :request do
       expect(json["error"]).to eq("whatsapp_not_configured")
     end
   end
+
+  describe "GET /api/v1/whatsapp_messages?contact_id=" do
+    it "filtra el hilo completo por contacto (usado por el inbox)" do
+      other_contact = create(:contact, tenant: tenant)
+      mine = create(:whatsapp_message, tenant: tenant, contact: contact, direction: "in")
+      create(:whatsapp_message, tenant: tenant, contact: other_contact, direction: "in")
+
+      get "/api/v1/whatsapp_messages", params: { contact_id: contact.id }, headers: auth_headers(admin)
+
+      expect(response).to have_http_status(:ok)
+      ids = json["data"].map { |d| d["id"].to_i }
+      expect(ids).to eq([mine.id])
+    end
+  end
 end

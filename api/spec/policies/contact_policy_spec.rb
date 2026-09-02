@@ -163,5 +163,49 @@ RSpec.describe ContactPolicy do
     it "scope.none si no hay usuario" do
       expect(described_class::Scope.new(nil, Contact).resolve).to be_empty
     end
+
+    it "consultant también ve contactos sin dueño (bandeja compartida sin asignar)" do
+      unowned = create(:contact, tenant: tenant)
+      expect(described_class::Scope.new(consultant, Contact).resolve).to include(own_contact, unowned)
+      expect(described_class::Scope.new(consultant, Contact).resolve).not_to include(foreign_contact)
+    end
+  end
+
+  describe "claim?" do
+    it "permite a admin/manager/consultant reclamar un contacto sin dueño" do
+      unowned = create(:contact, tenant: tenant)
+      [admin, manager, consultant].each do |u|
+        expect(described_class.new(u, unowned).claim?).to be(true)
+      end
+    end
+
+    it "deniega si el contacto ya tiene dueño" do
+      expect(described_class.new(consultant, foreign_contact).claim?).to be(false)
+    end
+
+    it "viewer nunca puede reclamar" do
+      unowned = create(:contact, tenant: tenant)
+      expect(described_class.new(viewer, unowned).claim?).to be(false)
+    end
+  end
+
+  describe "reply_whatsapp?" do
+    it "admin y manager siempre pueden responder" do
+      expect(described_class.new(admin,   foreign_contact).reply_whatsapp?).to be(true)
+      expect(described_class.new(manager, foreign_contact).reply_whatsapp?).to be(true)
+    end
+
+    it "consultant puede responder si es dueño del contacto" do
+      expect(described_class.new(consultant, own_contact).reply_whatsapp?).to be(true)
+    end
+
+    it "consultant puede responder si el contacto no tiene dueño (sin asignar)" do
+      unowned = create(:contact, tenant: tenant)
+      expect(described_class.new(consultant, unowned).reply_whatsapp?).to be(true)
+    end
+
+    it "consultant NO puede responder por un contacto de otro" do
+      expect(described_class.new(consultant, foreign_contact).reply_whatsapp?).to be(false)
+    end
   end
 end

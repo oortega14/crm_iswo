@@ -24,6 +24,7 @@ import {
 import { logoutSession } from '@/lib/authSession'
 import { fetchDuplicateFlagsStats } from '@/lib/duplicateFlagsApi'
 import { fetchReminderStats } from '@/lib/reminderApi'
+import { fetchConversationStats } from '@/lib/whatsappInboxApi'
 import { tenantHasModule } from '@/lib/tenantModules'
 import { canUseReminders } from '@/lib/reminderChannels'
 import { filterMainNav, getSidebarSections, MAIN_NAV_ITEMS } from '@/lib/settingsNav'
@@ -94,6 +95,15 @@ export function AppLayout({ children }: AppLayoutProps) {
     refetchOnWindowFocus: true,
   })
 
+  const { data: inboxStats } = useQuery({
+    queryKey: queryKeys.whatsappConversations.stats(authScope),
+    queryFn: fetchConversationStats,
+    enabled: Boolean(authScope),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  })
+
   const mainNavBase = useMemo(
     () => filterMainNav(MAIN_NAV_ITEMS, user?.role, tenant),
     [user?.role, tenant],
@@ -108,9 +118,11 @@ export function AppLayout({ children }: AppLayoutProps) {
             ? pendingRemindersCount
             : item.href === '/duplicates'
               ? duplicateStats?.pending
-              : undefined,
+              : item.href === '/inbox'
+                ? inboxStats?.unread
+                : undefined,
       })),
-    [mainNavBase, pendingRemindersCount, duplicateStats?.pending],
+    [mainNavBase, pendingRemindersCount, duplicateStats?.pending, inboxStats?.unread],
   )
 
   const sidebar = useMemo(

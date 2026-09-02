@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_04_100000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -605,11 +605,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_100000) do
     t.bigint "tenant_id", null: false
     t.string "to_number", null: false
     t.datetime "updated_at", null: false
+    t.index ["contact_id", "direction", "read_at"], name: "index_whatsapp_messages_on_contact_direction_read"
     t.index ["contact_id"], name: "index_whatsapp_messages_on_contact_id"
     t.index ["opportunity_id", "created_at"], name: "index_whatsapp_messages_on_opportunity_id_and_created_at"
     t.index ["opportunity_id"], name: "index_whatsapp_messages_on_opportunity_id"
     t.index ["provider", "provider_message_id"], name: "index_whatsapp_messages_unique_provider_id", unique: true, where: "(provider_message_id IS NOT NULL)"
     t.index ["status"], name: "index_whatsapp_messages_on_status"
+    t.index ["tenant_id", "contact_id", "created_at"], name: "index_whatsapp_messages_on_tenant_contact_created"
     t.index ["tenant_id", "created_at"], name: "index_whatsapp_messages_on_tenant_id_and_created_at"
     t.index ["tenant_id"], name: "index_whatsapp_messages_on_tenant_id"
   end

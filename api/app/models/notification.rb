@@ -7,6 +7,7 @@
 #   - ReminderNotificationJob (todos los canales → campana in-app)
 #   - Notifications::NewLeadNotifier (LeadImporter, landing, alta manual por otro usuario)
 #   - Notifications::StageChangeNotifier
+#   - Notifications::WhatsappMessageNotifier (WebhookProcessorJob, mensaje entrante)
 #   - detección de duplicados en OpportunitiesController
 # Se consume desde:
 #   - GET /api/v1/notifications
@@ -18,6 +19,7 @@ class Notification < ApplicationRecord
     reminder_due reminder_created reminder_upcoming
     new_lead stage_change duplicate_found
     landing_request_submitted landing_request_approved landing_request_rejected
+    whatsapp_message_received
   ].freeze
   enum :kind, KINDS.zip(KINDS).to_h, prefix: true, default: "reminder_due"
 

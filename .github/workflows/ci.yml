@@ -42,7 +42,9 @@ jobs:
           working-directory: api
 
       - name: Preparar base de datos (primary/queue/cache)
-        run: bin/rails db:prepare
+        # bundle exec en vez de bin/rails: el binstub está trackeado sin bit
+        # de ejecución (100644) en el repo, así que falla con "Permission denied".
+        run: bundle exec rails db:prepare
 
       - name: RSpec
         run: bundle exec rspec

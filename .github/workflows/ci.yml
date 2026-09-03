@@ -37,7 +37,7 @@ jobs:
 
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: api/.ruby-version
+          ruby-version: .ruby-version
           bundler-cache: true
           working-directory: api
 
@@ -59,11 +59,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: npm
-          cache-dependency-path: client/package-lock.json
 
       - name: Instalar dependencias
-        run: npm ci
+        # client/package-lock.json está en .gitignore (convención del repo, no
+        # se commitea): sin lockfile no hay nada estable para `npm ci` ni para
+        # cachear por hash, así que se instala en frío con `npm install`.
+        run: npm install
 
       - name: Type-check
         run: npx tsc -b

@@ -17,6 +17,7 @@ import {
   ListChecks,
   FileSearch,
   Building2,
+  MessageCircle,
 } from 'lucide-react'
 import type { Tenant, UserRole } from '@/types'
 import { isPlatformTenant } from '@/lib/platformTenant'
@@ -81,6 +82,12 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
     icon: Users,
     roles: ['admin', 'manager', 'consultant', 'viewer'],
     module: 'contacts',
+  },
+  {
+    href: '/inbox',
+    label: 'WhatsApp',
+    icon: MessageCircle,
+    roles: ['admin', 'manager', 'consultant', 'viewer'],
   },
   {
     href: '/reminders',

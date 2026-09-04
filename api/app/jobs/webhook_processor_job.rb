@@ -115,7 +115,7 @@ class WebhookProcessorJob < ApplicationJob
 
       contact     = upsert_contact(tenant, from_number)
       opportunity = find_opportunity_for_inbound(tenant, contact, from_number)
-      tenant.whatsapp_messages.create!(
+      msg = tenant.whatsapp_messages.create!(
         contact:             contact,
         opportunity:         opportunity,
         direction:           "in",
@@ -129,6 +129,7 @@ class WebhookProcessorJob < ApplicationJob
         raw_payload:         payload
       )
       opportunity&.touch_activity!
+      Notifications::WhatsappMessageNotifier.call(message: msg)
     end
   end
 
@@ -162,7 +163,7 @@ class WebhookProcessorJob < ApplicationJob
             profile_name = profile_name_from_cloud_contacts(value["contacts"], from)
             contact      = upsert_contact(tenant, from, profile_name: profile_name)
             opportunity  = find_opportunity_for_inbound(tenant, contact, from)
-            tenant.whatsapp_messages.create!(
+            msg = tenant.whatsapp_messages.create!(
               contact:             contact,
               opportunity:         opportunity,
               direction:           "in",
@@ -176,6 +177,7 @@ class WebhookProcessorJob < ApplicationJob
               raw_payload:         m
             )
             opportunity&.touch_activity!
+            Notifications::WhatsappMessageNotifier.call(message: msg)
           end
         end
       end
@@ -230,7 +232,7 @@ class WebhookProcessorJob < ApplicationJob
 
       contact     = upsert_contact(tenant, from_number)
       opportunity = find_opportunity_for_inbound(tenant, contact, from_number)
-      tenant.whatsapp_messages.create!(
+      msg = tenant.whatsapp_messages.create!(
         contact:             contact,
         opportunity:         opportunity,
         direction:           "in",
@@ -243,6 +245,7 @@ class WebhookProcessorJob < ApplicationJob
         raw_payload:         data
       )
       opportunity&.touch_activity!
+      Notifications::WhatsappMessageNotifier.call(message: msg)
     end
   end
 

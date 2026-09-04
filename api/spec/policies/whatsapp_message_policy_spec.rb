@@ -52,4 +52,45 @@ RSpec.describe WhatsappMessagePolicy do
       expect(described_class.new(consultant, msg).destroy?).to be(false)
     end
   end
+
+  describe "Scope" do
+    let(:other_consultant) { create(:user, :consultant, tenant: tenant) }
+
+    def resolved_ids(user)
+      described_class::Scope.new(user, WhatsappMessage.all).resolve.pluck(:id)
+    end
+
+    it "admin/manager/viewer ven todo" do
+      msg
+      [admin, manager, viewer].each do |u|
+        expect(resolved_ids(u)).to include(msg.id)
+      end
+    end
+
+    it "consultant ve mensajes de su propia oportunidad" do
+      msg
+      expect(resolved_ids(consultant)).to include(msg.id)
+    end
+
+    it "consultant NO ve mensajes de una oportunidad ajena (fuera de su red)" do
+      msg
+      expect(resolved_ids(other_consultant)).not_to include(msg.id)
+    end
+
+    it "consultant ve mensajes huérfanos (sin oportunidad) de un contacto que posee" do
+      owned_contact = create(:contact, tenant: tenant, owner_user: consultant)
+      orphan = create(:whatsapp_message, tenant: tenant, contact: owned_contact, opportunity: nil, direction: "in")
+
+      expect(resolved_ids(consultant)).to include(orphan.id)
+      expect(resolved_ids(other_consultant)).not_to include(orphan.id)
+    end
+
+    it "TODO consultor ve mensajes sin oportunidad y sin dueño (bandeja compartida sin asignar)" do
+      unowned_contact = create(:contact, tenant: tenant)
+      unassigned = create(:whatsapp_message, tenant: tenant, contact: unowned_contact, opportunity: nil, direction: "in")
+
+      expect(resolved_ids(consultant)).to include(unassigned.id)
+      expect(resolved_ids(other_consultant)).to include(unassigned.id)
+    end
+  end
 end

@@ -82,6 +82,9 @@ Rails.application.routes.draw do
           post   :export                # encola ExportGenerationJob
           delete :bulk_destroy          # { ids: [...] }
         end
+        member do
+          post :claim                   # "Tomar lead" — inbox WhatsApp sin asignar
+        end
       end
 
       # ---- Oportunidades -----------------------------------------------------
@@ -186,10 +189,26 @@ Rails.application.routes.draw do
 
       # ---- WhatsApp standalone ----------------------------------------------
       resources :whatsapp_messages, only: %i[index show]
+      resources :whatsapp_templates
+
+      # ---- Bandeja de entrada WhatsApp (inbox) --------------------------------
+      resources :whatsapp_conversations, only: [:index], param: :contact_id do
+        collection { get :stats }
+        member { patch :mark_read; post :send_message }
+      end
 
       # ---- Exports ----------------------------------------------------------
       resources :exports, only: %i[index show create] do
         member { get :download }
+      end
+
+      # ---- Biblioteca de valor ("Dar Valor Primero") -------------------------
+      resources :assets, only: %i[index show create update destroy]
+
+      # ---- Campañas WhatsApp (mensajería masiva) ------------------------------
+      resources :whatsapp_campaigns, only: %i[index show create update] do
+        collection { get :audience_preview }
+        member { post :launch; post :pause; post :resume; post :cancel }
       end
 
       # ========================================================================
@@ -218,6 +237,9 @@ Rails.application.routes.draw do
       namespace :public, path: "public" do
         get  "/landings/:slug",        to: "landing_pages#show", as: :landing_page
         post "/landings/:slug/submit", to: "landing_form_submissions#create", as: :landing_submit
+
+        # Fallback dev/self-hosted cuando no hay S3 (ver Assets::PublicUrlResolver)
+        get "/assets/:id/download", to: "asset_downloads#show", as: :asset_download
       end
 
       # ========================================================================

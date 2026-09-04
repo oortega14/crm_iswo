@@ -47,21 +47,37 @@ export type ThreadMessage = {
 }
 
 interface WhatsAppThreadProps {
-  opportunityId: string
+  /** Hilo dentro de una oportunidad (OpportunitySlideOver) — comportamiento original. */
+  opportunityId?: string
+  /** Hilo standalone por contacto (bandeja de entrada /inbox), sin oportunidad. */
+  contactId?: string
   contactName: string
   contactPhone: string
   messages: ThreadMessage[]
+  /** false para viewer: oculta el input de envío (la policy ya lo bloquea en backend). */
+  canSend?: boolean
+  /** Borrar hilo completo — solo disponible en modo oportunidad (no hay endpoint standalone). */
+  canDelete?: boolean
 }
 
 export function WhatsAppThread({
   opportunityId,
+  contactId,
   contactName,
   contactPhone,
   messages,
+  canSend: canSendProp = true,
+  canDelete = Boolean(opportunityId),
 }: WhatsAppThreadProps) {
   const queryClient = useQueryClient()
   const canManageIntegrations = useAuthStore((s) => s.isAdmin() || s.isManager())
   const [draft, setDraft] = useState('')
+  const sendUrl = opportunityId
+    ? `/opportunities/${opportunityId}/whatsapp_messages`
+    : `/whatsapp_conversations/${contactId}/send_message`
+  const messagesKey = opportunityId
+    ? queryKeys.opportunities.messages(opportunityId)
+    : queryKeys.whatsappConversations.messages(contactId ?? '')
   /** Si el contacto no tiene teléfono en CRM, el usuario puede escribir el destino aquí. */
   const [manualTo, setManualTo] = useState('')
 
@@ -70,7 +86,7 @@ export function WhatsAppThread({
     return normalizePhoneForWhatsAppDial(raw)
   }, [contactPhone, manualTo])
 
-  const canSend = toNumber.replace(/\D/g, '').length >= 10
+  const canSend = canSendProp && toNumber.replace(/\D/g, '').length >= 10
 
   /** Último mensaje entrante — si pasaron >24h (o nunca escribió), Meta rechaza texto libre. */
   const lastInboundAt = useMemo(() => {
@@ -113,7 +129,7 @@ export function WhatsAppThread({
       await api.delete(`/opportunities/${opportunityId}/whatsapp_messages`)
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.messages(opportunityId) })
+      void queryClient.invalidateQueries({ queryKey: messagesKey })
       toast.success('Conversación eliminada')
     },
     onError: (e: unknown) => toast.error(formatRailsError(e)),
@@ -129,7 +145,7 @@ export function WhatsAppThread({
             provider_message_id?: string | null
           }
         }
-      }>(`/opportunities/${opportunityId}/whatsapp_messages`, {
+      }>(sendUrl, {
         to_number: toNumber,
         body,
       })
@@ -152,9 +168,7 @@ export function WhatsAppThread({
       } else {
         toast.success('Mensaje enviado')
       }
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.opportunities.messages(opportunityId),
-      })
+      void queryClient.invalidateQueries({ queryKey: messagesKey })
     },
     onError: (e: unknown) => {
       toast.error(formatRailsError(e))
@@ -165,7 +179,7 @@ export function WhatsAppThread({
     mutationFn: async () => {
       const res = await api.post<{
         data?: { attributes?: { status?: string; error_message?: string | null } }
-      }>(`/opportunities/${opportunityId}/whatsapp_messages`, {
+      }>(sendUrl, {
         to_number: toNumber,
         whatsapp_template_id: templateId,
         template_params: templateVars,
@@ -181,7 +195,7 @@ export function WhatsAppThread({
       }
       setTemplateId('')
       setTemplateVars([])
-      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.messages(opportunityId) })
+      void queryClient.invalidateQueries({ queryKey: messagesKey })
     },
     onError: (e: unknown) => toast.error(formatRailsError(e)),
   })
@@ -263,37 +277,39 @@ export function WhatsAppThread({
           <Button variant="ghost" size="icon" className="text-primary-foreground hover:bg-primary-foreground/15" type="button">
             <Phone className="h-5 w-5" />
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-primary-foreground hover:bg-destructive/80 hover:text-white"
-                type="button"
-                disabled={clearMutation.isPending || messages.length === 0}
-                title="Eliminar conversación"
-              >
-                <Trash2 className="h-5 w-5" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>¿Eliminar toda la conversación?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Se eliminarán los {messages.length} mensajes de este hilo. Esta acción no se puede deshacer.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => clearMutation.mutate()}
+          {canDelete && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-primary-foreground hover:bg-destructive/80 hover:text-white"
+                  type="button"
+                  disabled={clearMutation.isPending || messages.length === 0}
+                  title="Eliminar conversación"
                 >
-                  Eliminar
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <Trash2 className="h-5 w-5" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar toda la conversación?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Se eliminarán los {messages.length} mensajes de este hilo. Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => clearMutation.mutate()}
+                  >
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </div>
 
@@ -347,7 +363,7 @@ export function WhatsAppThread({
         </div>
       </ScrollArea>
 
-      {!contactPhone.trim() && (
+      {canSendProp && !contactPhone.trim() && (
         <div className="shrink-0 border-t border-border/60 px-4 py-2">
           <label className="text-xs font-medium text-muted-foreground" htmlFor="wa-dest">
             Destino (E.164 o móvil CO)
@@ -363,7 +379,7 @@ export function WhatsAppThread({
         </div>
       )}
 
-      {templates.length > 0 && (
+      {canSendProp && templates.length > 0 && (
         <div className="shrink-0 border-t border-border/60 bg-muted/30 px-3 py-2">
           <div className="flex items-center gap-2">
             <MessageSquareText className="size-3.5 shrink-0 text-muted-foreground" />
@@ -408,31 +424,33 @@ export function WhatsAppThread({
         </div>
       )}
 
-      <div className="flex shrink-0 items-center gap-2 border-t bg-muted/50 p-3">
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            canSend ? 'Escribe un mensaje…' : 'Indica un número válido arriba o en el contacto'
-          }
-          className="flex-1"
-          disabled={!canSend || sendMutation.isPending}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
+      {canSendProp && (
+        <div className="flex shrink-0 items-center gap-2 border-t bg-muted/50 p-3">
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={
+              canSend ? 'Escribe un mensaje…' : 'Indica un número válido arriba o en el contacto'
             }
-          }}
-        />
-        <Button
-          size="icon"
-          type="button"
-          disabled={!canSend || sendMutation.isPending}
-          onClick={handleSend}
-        >
-          <Send className="h-4 w-4" />
-        </Button>
-      </div>
+            className="flex-1"
+            disabled={!canSend || sendMutation.isPending}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSend()
+              }
+            }}
+          />
+          <Button
+            size="icon"
+            type="button"
+            disabled={!canSend || sendMutation.isPending}
+            onClick={handleSend}
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

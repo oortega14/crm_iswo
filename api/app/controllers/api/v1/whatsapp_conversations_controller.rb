@@ -1,0 +1,156 @@
+# frozen_string_literal: true
+
+module Api
+  module V1
+    # ========================================================================
+    # WhatsappConversationsController — bandeja de entrada (inbox) de WhatsApp
+    # ========================================================================
+    # Agrupa WhatsappMessage por contacto (última actividad + no leídos) en vez
+    # de exigir abrir una oportunidad puntual para ver mensajes (RFC §6.6).
+    #
+    # `?scope=mine|unassigned` filtra el bucket mostrado; sin parámetro devuelve
+    # todo lo que `policy_scope(WhatsappMessage)` ya resuelve para el rol
+    # (para consultant eso es: propias + red + sin dueño — ver
+    # WhatsappMessagePolicy::Scope).
+    # ========================================================================
+    class WhatsappConversationsController < BaseController
+      before_action :set_contact, only: %i[mark_read send_message]
+
+      # GET /api/v1/whatsapp_conversations
+      def index
+        base = policy_scope(WhatsappMessage).where.not(contact_id: nil)
+        base = apply_bucket_scope(base)
+
+        unread_counts = base.direction_in.where(read_at: nil).group(:contact_id).count
+
+        # distinct(false): WhatsappMessagePolicy::Scope ya deja `.distinct` puesto
+        # para consultores (LEFT JOIN a opportunity/contact); combinarlo con nuestro
+        # "DISTINCT ON" genera SQL inválido ("SELECT DISTINCT DISTINCT ON (...)").
+        latest_ids = base.distinct(false)
+                          .select("DISTINCT ON (whatsapp_messages.contact_id) whatsapp_messages.id")
+                          .order(:contact_id, created_at: :desc)
+
+        conversations = WhatsappMessage
+                        .where(id: latest_ids)
+                        .includes(contact: :owner_user, opportunity: %i[pipeline_stage owner_user])
+                        .order(created_at: :desc)
+
+        if ActiveModel::Type::Boolean.new.cast(params[:unread])
+          conversations = conversations.where(contact_id: unread_counts.keys)
+        end
+
+        render_collection(
+          conversations,
+          with:   WhatsappConversationSerializer,
+          params: { unread_counts: unread_counts, current_user: current_user }
+        )
+      end
+
+      # GET /api/v1/whatsapp_conversations/stats
+      def stats
+        authorize WhatsappMessage, :index?
+        unread = policy_scope(WhatsappMessage)
+                 .where.not(contact_id: nil)
+                 .direction_in.where(read_at: nil)
+                 .distinct
+                 .count(:contact_id)
+
+        render json: { data: { unread: unread } }, status: :ok
+      end
+
+      # PATCH /api/v1/whatsapp_conversations/:contact_id/mark_read
+      def mark_read
+        authorize @contact, :show?
+        count = policy_scope(WhatsappMessage)
+                .inbound
+                .where(contact_id: @contact.id, read_at: nil)
+                .update_all(read_at: Time.current)
+
+        Notification.where(
+          user: current_user, resource: @contact,
+          kind: "whatsapp_message_received", read_at: nil
+        ).update_all(read_at: Time.current)
+
+        AuditLogger.record!(
+          tenant:      current_tenant,
+          user:        current_user,
+          action:      "whatsapp_conversation_read",
+          entity_type: "Contact",
+          entity_id:   @contact.id,
+          metadata:    { count: count },
+          ip_address:  request.remote_ip,
+          user_agent:  request.user_agent
+        )
+        head :no_content
+      end
+
+      # POST /api/v1/whatsapp_conversations/:contact_id/send_message
+      # body: { to_number, body, media_url? }
+      def send_message
+        authorize @contact, :reply_whatsapp?
+
+        opportunity = @contact.opportunities.where.not(status: %w[won lost])
+                              .order(last_activity_at: :desc).first
+
+        result = WhatsApp::OutboundSender.call(
+          tenant:               current_tenant,
+          contact:              @contact,
+          opportunity:          opportunity,
+          to_number:            params.require(:to_number),
+          body:                 params[:body],
+          media_url:            params[:media_url],
+          whatsapp_template_id: params[:whatsapp_template_id],
+          template_params:      params[:template_params]
+        )
+
+        case result.error_code
+        when :not_configured
+          render json: {
+            error:   "whatsapp_not_configured",
+            message: "Configura el envío saliente en Ajustes → Integraciones: " \
+                     "WhatsApp Cloud API (Phone number ID + access token), " \
+                     "Twilio (Account SID + Auth Token + número E.164) " \
+                     "u OpenWA (URL + API Key + Session ID)."
+          }, status: :unprocessable_entity
+        when :invalid
+          render_unprocessable(result.message)
+        else
+          AuditLogger.record!(
+            tenant:      current_tenant,
+            user:        current_user,
+            action:      "whatsapp_message_sent",
+            entity_type: "WhatsappMessage",
+            entity_id:   result.message.id,
+            metadata:    { contact_id: @contact.id, provider: result.message.provider, status: result.message.status },
+            ip_address:  request.remote_ip,
+            user_agent:  request.user_agent
+          )
+          render json: WhatsappMessageSerializer.new(result.message).serializable_hash, status: :accepted
+        end
+      end
+
+      private
+
+      def apply_bucket_scope(scope)
+        case params[:scope]
+        when "mine"
+          scope.left_joins(:opportunity)
+               .where(
+                 "opportunities.owner_user_id = :uid OR whatsapp_messages.contact_id IN (:contact_ids)",
+                 uid: current_user.id,
+                 contact_ids: current_tenant.contacts.kept.where(owner_user_id: current_user.id).select(:id)
+               )
+        when "unassigned"
+          scope.where(opportunity_id: nil)
+               .where(contact_id: current_tenant.contacts.kept.where(owner_user_id: nil).select(:id))
+        else
+          scope
+        end
+      end
+
+      def set_contact
+        @contact = policy_scope(Contact).kept.find(params[:contact_id])
+      end
+    end
+  end
+end

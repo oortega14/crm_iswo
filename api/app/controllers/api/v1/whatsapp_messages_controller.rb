@@ -11,12 +11,14 @@ module Api
       before_action :set_opportunity, only: %i[create destroy_all]
       before_action :set_message, only: :show
 
-      # GET /api/v1/whatsapp_messages (standalone o anidado)
+      # GET /api/v1/whatsapp_messages (standalone, anidado, o por contacto)
       def index
         scope = if params[:opportunity_id].present?
                   opp = policy_scope(Opportunity).kept.find(params[:opportunity_id])
                   authorize opp, :show?
                   opp.whatsapp_messages
+                elsif params[:contact_id].present?
+                  policy_scope(WhatsappMessage).where(contact_id: params[:contact_id])
                 else
                   policy_scope(WhatsappMessage)
                 end
@@ -44,43 +46,31 @@ module Api
       def create
         authorize @opportunity, :update?
 
-        to_raw = params.require(:to_number)
-        to_number = WhatsappPhone.normalize_to_e164(to_raw)
+        result = WhatsApp::OutboundSender.call(
+          tenant:               current_tenant,
+          contact:              @opportunity.contact,
+          opportunity:          @opportunity,
+          to_number:            params.require(:to_number),
+          body:                 params[:body],
+          media_url:            params[:media_url],
+          whatsapp_template_id: params[:whatsapp_template_id],
+          template_params:      params[:template_params]
+        )
 
-        provider    = current_tenant.whatsapp_outbound_provider
-        from_number = current_tenant.whatsapp_outbound_from_number_for(provider)
-        if from_number.blank?
-          return render json: {
+        case result.error_code
+        when :not_configured
+          render json: {
             error:   "whatsapp_not_configured",
             message: "Configura el envío saliente en Ajustes → Integraciones: " \
                      "WhatsApp Cloud API (Phone number ID + access token), " \
                      "Twilio (Account SID + Auth Token + número E.164) " \
                      "u OpenWA (URL + API Key + Session ID)."
           }, status: :unprocessable_entity
-        end
-
-        msg = @opportunity.whatsapp_messages.new(
-          tenant:      current_tenant,
-          contact:     @opportunity.contact,
-          direction:   "out",
-          provider:    provider,
-          from_number: from_number,
-          to_number:   to_number,
-          body:        params[:body],
-          media_url:   params[:media_url],
-          status:      "queued"
-        )
-
-        if msg.save
-          # Envío síncrono: así no dependemos de Solid Queue / Sidekiq levantados para
-          # que el mensaje llegue al proveedor antes de responder al cliente SPA.
-          dispatch_whatsapp_delivery!(msg)
-          msg.reload
-          @opportunity.touch_activity!
-          log_whatsapp_audit!("whatsapp_message_sent", message: msg)
-          render json: WhatsappMessageSerializer.new(msg).serializable_hash, status: :accepted
+        when :invalid
+          render_unprocessable(result.message)
         else
-          render_unprocessable(msg)
+          log_whatsapp_audit!("whatsapp_message_sent", message: result.message)
+          render json: WhatsappMessageSerializer.new(result.message).serializable_hash, status: :accepted
         end
       end
 
@@ -104,15 +94,6 @@ module Api
           ip_address:  request.remote_ip,
           user_agent:  request.user_agent
         )
-      end
-
-      def dispatch_whatsapp_delivery!(msg)
-        return unless defined?(WhatsappDeliveryJob)
-
-        # perform_now: el SPA espera el resultado del proveedor en esta misma
-        # petición (status / error_message). perform_later deja el mensaje en
-        # "queued" para siempre si Solid Queue no está levantado.
-        WhatsappDeliveryJob.perform_now(msg.id)
       end
 
       def set_opportunity

@@ -115,7 +115,19 @@ module WhatsApp
       def build_payload(message)
         to = normalize_e164(message.to_number).sub(/\A\+/, "")
 
-        if message.media_url.present?
+        if message.message_type_template?
+          {
+            messaging_product: "whatsapp",
+            recipient_type:    "individual",
+            to:                to,
+            type:              "template",
+            template:          {
+              name:       message.template_name,
+              language:   { code: message.template_language },
+              components: template_components(message.template_params)
+            }.compact
+          }
+        elsif message.media_url.present?
           {
             messaging_product: "whatsapp",
             recipient_type:    "individual",
@@ -135,6 +147,13 @@ module WhatsApp
             text:              { body: message.body.to_s, preview_url: false }
           }
         end
+      end
+
+      def template_components(params)
+        values = Array(params)
+        return nil if values.empty?
+
+        [{ type: "body", parameters: values.map { |v| { type: "text", text: v.to_s } } }]
       end
 
       # Heurística mínima por extensión. Para producción conviene apoyarse

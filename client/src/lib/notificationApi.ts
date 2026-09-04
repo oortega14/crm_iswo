@@ -8,6 +8,7 @@ export type NotificationKind =
   | 'stage_change'
   | 'new_lead'
   | 'duplicate_found'
+  | 'whatsapp_message_received'
 
 export interface AppNotification {
   id: string
@@ -15,6 +16,7 @@ export interface AppNotification {
   title: string
   message: string
   opportunityId: string | null
+  contactId: string | null
   unread: boolean
   createdAt: string
 }
@@ -27,7 +29,8 @@ function parseKind(value: unknown): NotificationKind {
     k === 'reminder_upcoming' ||
     k === 'stage_change' ||
     k === 'new_lead' ||
-    k === 'duplicate_found'
+    k === 'duplicate_found' ||
+    k === 'whatsapp_message_received'
   ) {
     return k
   }
@@ -40,6 +43,7 @@ export function mapNotification(resource: JsonApiResource): AppNotification | nu
   const resourceType =
     typeof a.resource_type === 'string' ? a.resource_type.toLowerCase() : ''
   const isOpportunity = resourceType === 'opportunity'
+  const isContact = resourceType === 'contact'
   const resourceId = a.resource_id
 
   return {
@@ -48,6 +52,7 @@ export function mapNotification(resource: JsonApiResource): AppNotification | nu
     title: String(a.title ?? ''),
     message: a.body != null ? String(a.body) : '',
     opportunityId: isOpportunity && resourceId != null ? String(resourceId) : null,
+    contactId: isContact && resourceId != null ? String(resourceId) : null,
     unread: Boolean(a.unread ?? a.read_at == null),
     createdAt: String(a.created_at ?? ''),
   }

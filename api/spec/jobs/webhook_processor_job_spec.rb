@@ -110,6 +110,26 @@ RSpec.describe WebhookProcessorJob, type: :job do
         expect(inbound).to be_present
         expect(inbound.body).to eq("hola sin plus")
       end
+
+      it "notifica a admin/manager cuando el contacto creado no tiene dueño (bandeja sin asignar)" do
+        t = create(:tenant)
+        admin = ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :twilio, tenant: t, account_identifier: "+15559876543")
+          create(:user, :admin, tenant: t)
+        end
+        payload = {
+          "From" => "whatsapp:+573001234567",
+          "To" => "whatsapp:+15559876543",
+          "Body" => "hola nuevo lead",
+          "MessageSid" => "SMnotif1"
+        }
+
+        described_class.new.perform("whatsapp_twilio", payload)
+
+        notif = ActsAsTenant.with_tenant(t) { Notification.find_by(kind: "whatsapp_message_received") }
+        expect(notif).to be_present
+        expect(notif.user_id).to eq(admin.id)
+      end
     end
   end
 
@@ -216,6 +236,35 @@ RSpec.describe WebhookProcessorJob, type: :job do
           expect(inbound.contact.last_name).to eq("Laverdetman")
         end
       end
+
+      it "notifica al dueño del contacto si ya existe con owner_user" do
+        t = create(:tenant)
+        owner = ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :cloud, tenant: t, account_identifier: "7794189252778687")
+          u = create(:user, :consultant, tenant: t)
+          create(:contact, tenant: t, owner_user: u, phone_e164: "+17863559966")
+          u
+        end
+
+        payload = {
+          "entry" => [{
+            "changes" => [{
+              "value" => {
+                "metadata" => { "display_phone_number" => "15551797781", "phone_number_id" => "7794189252778687" },
+                "contacts" => [{ "profile" => { "name" => "Jessica" }, "wa_id" => "17863559966" }],
+                "messages" => [{ "from" => "17863559966", "id" => "wamid.notif1",
+                                  "timestamp" => "1758254144", "text" => { "body" => "Hola" }, "type" => "text" }]
+              }
+            }]
+          }]
+        }
+
+        described_class.new.perform("whatsapp_cloud", payload)
+
+        notif = ActsAsTenant.with_tenant(t) { Notification.find_by(kind: "whatsapp_message_received") }
+        expect(notif).to be_present
+        expect(notif.user_id).to eq(owner.id)
+      end
     end
   end
 
@@ -292,6 +341,20 @@ RSpec.describe WebhookProcessorJob, type: :job do
                                                                          from: "99999@c.us",
                                                                          to:   "88888@c.us"))
         }.not_to change { ActsAsTenant.without_tenant { WhatsappMessage.count } }
+      end
+
+      it "dispara Notifications::WhatsappMessageNotifier tras crear el mensaje" do
+        t = create(:tenant)
+        manager = ActsAsTenant.with_tenant(t) do
+          create(:ad_integration, :openwa, tenant: t, account_identifier: "test-session")
+          create(:user, :manager, tenant: t)
+        end
+
+        described_class.new.perform("whatsapp_openwa", openwa_payload(event: "message.received", msg_id: "OWID_NOTIF"))
+
+        notif = ActsAsTenant.with_tenant(t) { Notification.find_by(kind: "whatsapp_message_received") }
+        expect(notif).to be_present
+        expect(notif.user_id).to eq(manager.id)
       end
     end
 

@@ -17,6 +17,7 @@ import {
   ListChecks,
   FileSearch,
   Building2,
+  MessageSquareText,
 } from 'lucide-react'
 import type { Tenant, UserRole } from '@/types'
 import { isPlatformTenant } from '@/lib/platformTenant'
@@ -145,6 +146,16 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     title: 'Fuentes de lead',
     description: 'Orígenes de oportunidades y landings',
     icon: Megaphone,
+    roles: ['admin', 'manager'],
+    commercialOnly: true,
+    visible: (tenant) => tenantHasModule(tenant, 'opportunities'),
+  },
+  {
+    href: '/settings/whatsapp-templates',
+    label: 'Plantillas WhatsApp',
+    title: 'Plantillas de WhatsApp',
+    description: 'Catálogo de plantillas aprobadas por Meta para iniciar conversaciones en frío',
+    icon: MessageSquareText,
     roles: ['admin', 'manager'],
     commercialOnly: true,
     visible: (tenant) => tenantHasModule(tenant, 'opportunities'),

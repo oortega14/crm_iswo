@@ -24,6 +24,7 @@ import { Route as AppLandingsRouteImport } from './routes/_app/landings'
 import { Route as AppExportsRouteImport } from './routes/_app/exports'
 import { Route as AppDuplicatesRouteImport } from './routes/_app/duplicates'
 import { Route as AppContactsRouteImport } from './routes/_app/contacts'
+import { Route as AppSettingsWhatsappTemplatesRouteImport } from './routes/_app/settings/whatsapp-templates'
 import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/users'
 import { Route as AppSettingsTenantOnboardingRouteImport } from './routes/_app/settings/tenant-onboarding'
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
@@ -108,6 +109,12 @@ const AppContactsRoute = AppContactsRouteImport.update({
   path: '/contacts',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsWhatsappTemplatesRoute =
+  AppSettingsWhatsappTemplatesRouteImport.update({
+    id: '/whatsapp-templates',
+    path: '/whatsapp-templates',
+    getParentRoute: () => AppSettingsRoute,
+  } as any)
 const AppSettingsUsersRoute = AppSettingsUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -179,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
+  '/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRoutesByTo {
   '/$slug': typeof SlugRoute
@@ -204,6 +212,7 @@ export interface FileRoutesByTo {
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
+  '/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -231,6 +240,7 @@ export interface FileRoutesById {
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/_app/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/_app/settings/users': typeof AppSettingsUsersRoute
+  '/_app/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
     | '/settings/users'
+    | '/settings/whatsapp-templates'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/$slug'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
     | '/settings/users'
+    | '/settings/whatsapp-templates'
   id:
     | '__root__'
     | '/$slug'
@@ -309,6 +321,7 @@ export interface FileRouteTypes {
     | '/_app/settings/pipelines'
     | '/_app/settings/tenant-onboarding'
     | '/_app/settings/users'
+    | '/_app/settings/whatsapp-templates'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -427,6 +440,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppContactsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/settings/whatsapp-templates': {
+      id: '/_app/settings/whatsapp-templates'
+      path: '/whatsapp-templates'
+      fullPath: '/settings/whatsapp-templates'
+      preLoaderRoute: typeof AppSettingsWhatsappTemplatesRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/users': {
       id: '/_app/settings/users'
       path: '/users'
@@ -503,6 +523,7 @@ interface AppSettingsRouteChildren {
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
   AppSettingsTenantOnboardingRoute: typeof AppSettingsTenantOnboardingRoute
   AppSettingsUsersRoute: typeof AppSettingsUsersRoute
+  AppSettingsWhatsappTemplatesRoute: typeof AppSettingsWhatsappTemplatesRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
@@ -515,6 +536,7 @@ const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,
   AppSettingsTenantOnboardingRoute: AppSettingsTenantOnboardingRoute,
   AppSettingsUsersRoute: AppSettingsUsersRoute,
+  AppSettingsWhatsappTemplatesRoute: AppSettingsWhatsappTemplatesRoute,
 }
 
 const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(

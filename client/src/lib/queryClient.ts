@@ -107,7 +107,12 @@ export const queryKeys = {
   leadSources: {
     all: ['leadSources'] as const,
   },
-  
+
+  // WhatsApp Templates
+  whatsappTemplates: {
+    all: ['whatsappTemplates'] as const,
+  },
+
   // Landing Pages (authScope — listas y métricas por sesión)
   landingPages: {
     all: ['landingPages'] as const,

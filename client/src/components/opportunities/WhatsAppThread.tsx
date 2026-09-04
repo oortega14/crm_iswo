@@ -1,11 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/stores/auth'
-import { Send, Phone, Video, Trash2, Check, CheckCheck, AlertCircle } from 'lucide-react'
+import { Send, Phone, Video, Trash2, Check, CheckCheck, AlertCircle, MessageSquareText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +30,10 @@ import { cn, normalizePhoneForWhatsAppDial } from '@/lib/utils'
 import { toast } from 'sonner'
 import api, { formatRailsError } from '@/lib/api'
 import { queryKeys } from '@/lib/queryClient'
+import { fetchWhatsappTemplates } from '@/lib/whatsappTemplatesApi'
+
+/** WhatsApp cierra la ventana de servicio 24h después del último mensaje del contacto. */
+const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 export type ThreadMessage = {
   id: string
@@ -60,6 +71,24 @@ export function WhatsAppThread({
   }, [contactPhone, manualTo])
 
   const canSend = toNumber.replace(/\D/g, '').length >= 10
+
+  /** Último mensaje entrante — si pasaron >24h (o nunca escribió), Meta rechaza texto libre. */
+  const lastInboundAt = useMemo(() => {
+    const inbound = messages.filter((m) => !m.isOutgoing)
+    if (inbound.length === 0) return null
+    return inbound.reduce<string>((latest, m) => (m.timestamp > latest ? m.timestamp : latest), inbound[0].timestamp)
+  }, [messages])
+  const serviceWindowOpen = !!lastInboundAt && Date.now() - new Date(lastInboundAt).getTime() < SERVICE_WINDOW_MS
+
+  const [templateId, setTemplateId] = useState('')
+  const [templateVars, setTemplateVars] = useState<string[]>([])
+
+  const { data: templates = [] } = useQuery({
+    queryKey: queryKeys.whatsappTemplates.all,
+    queryFn: () => fetchWhatsappTemplates(true),
+    staleTime: 5 * 60 * 1000,
+  })
+  const selectedTemplate = templates.find((t) => t.id === templateId) ?? null
 
   const authIssueMessage = messages
     .filter((m) => m.status === 'failed' && m.isOutgoing)
@@ -132,11 +161,44 @@ export function WhatsAppThread({
     },
   })
 
+  const sendTemplateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post<{
+        data?: { attributes?: { status?: string; error_message?: string | null } }
+      }>(`/opportunities/${opportunityId}/whatsapp_messages`, {
+        to_number: toNumber,
+        whatsapp_template_id: templateId,
+        template_params: templateVars,
+      })
+      return res.data
+    },
+    onSuccess: (payload) => {
+      const attrs = payload?.data?.attributes
+      if (attrs?.status === 'failed') {
+        toast.error(attrs.error_message?.trim() || 'Meta rechazó la plantilla. Revisa el nombre y el idioma.')
+      } else {
+        toast.success('Plantilla enviada — ya puedes seguir la conversación con texto libre')
+      }
+      setTemplateId('')
+      setTemplateVars([])
+      void queryClient.invalidateQueries({ queryKey: queryKeys.opportunities.messages(opportunityId) })
+    },
+    onError: (e: unknown) => toast.error(formatRailsError(e)),
+  })
+
   const handleSend = () => {
     const text = draft.trim()
     if (!text || !canSend) return
     sendMutation.mutate(text)
   }
+
+  const handleSelectTemplate = (id: string) => {
+    setTemplateId(id)
+    const tpl = templates.find((t) => t.id === id)
+    setTemplateVars(tpl ? tpl.variableLabels.map(() => '') : [])
+  }
+
+  const canSendTemplate = canSend && !!selectedTemplate && templateVars.every((v) => v.trim())
 
   const getStatusIcon = (status: ThreadMessage['status'], outgoing: boolean) => {
     if (!outgoing) return null
@@ -298,6 +360,51 @@ export function WhatsAppThread({
             className="mt-1"
             disabled={sendMutation.isPending}
           />
+        </div>
+      )}
+
+      {templates.length > 0 && (
+        <div className="shrink-0 border-t border-border/60 bg-muted/30 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <MessageSquareText className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">
+              {serviceWindowOpen ? 'Enviar plantilla' : 'Iniciar con plantilla (fuera de ventana 24h)'}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <Select value={templateId} onValueChange={handleSelectTemplate}>
+              <SelectTrigger className="h-8 flex-1 min-w-[160px] text-xs">
+                <SelectValue placeholder="Elegir plantilla…" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedTemplate?.variableLabels.map((label, i) => (
+              <Input
+                key={i}
+                value={templateVars[i] ?? ''}
+                onChange={(e) =>
+                  setTemplateVars((vars) => vars.map((v, idx) => (idx === i ? e.target.value : v)))
+                }
+                placeholder={label}
+                className="h-8 flex-1 min-w-[120px] text-xs"
+              />
+            ))}
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 shrink-0"
+              disabled={!canSendTemplate || sendTemplateMutation.isPending}
+              onClick={() => sendTemplateMutation.mutate()}
+            >
+              {sendTemplateMutation.isPending ? 'Enviando…' : 'Enviar plantilla'}
+            </Button>
+          </div>
         </div>
       )}
 

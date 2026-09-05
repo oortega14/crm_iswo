@@ -24,6 +24,7 @@ class Tenant < ApplicationRecord
   has_many :landing_form_submissions, dependent: :destroy
   has_many :ad_integrations,        dependent: :destroy
   has_many :whatsapp_messages,      dependent: :destroy
+  has_many :whatsapp_templates,     dependent: :destroy
   has_many :exports,                dependent: :destroy
   has_many :audit_events,           dependent: :nullify
   has_one  :bant_criterion,         dependent: :destroy

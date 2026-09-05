@@ -47,12 +47,14 @@ module Api
         authorize @opportunity, :update?
 
         result = WhatsApp::OutboundSender.call(
-          tenant:      current_tenant,
-          contact:     @opportunity.contact,
-          opportunity: @opportunity,
-          to_number:   params.require(:to_number),
-          body:        params[:body],
-          media_url:   params[:media_url]
+          tenant:               current_tenant,
+          contact:              @opportunity.contact,
+          opportunity:          @opportunity,
+          to_number:            params.require(:to_number),
+          body:                 params[:body],
+          media_url:            params[:media_url],
+          whatsapp_template_id: params[:whatsapp_template_id],
+          template_params:      params[:template_params]
         )
 
         case result.error_code

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_04_170500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "btree_gist"
   enable_extension "pg_catalog.plpgsql"
@@ -589,6 +589,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
     t.string "from_number", null: false
     t.string "media_content_type"
     t.string "media_url"
+    t.string "message_type", default: "text", null: false, comment: "text | template"
     t.bigint "opportunity_id"
     t.string "provider", null: false, comment: "twilio | whatsapp_cloud"
     t.string "provider_message_id"
@@ -596,11 +597,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
     t.datetime "read_at"
     t.datetime "sent_at"
     t.string "status", default: "pending", null: false, comment: "pending | queued | sent | delivered | read | failed"
+    t.string "template_language"
+    t.string "template_name"
+    t.jsonb "template_params", default: [], null: false
     t.bigint "tenant_id", null: false
     t.string "to_number", null: false
     t.datetime "updated_at", null: false
     t.index ["contact_id", "direction", "read_at"], name: "index_whatsapp_messages_on_contact_direction_read"
     t.index ["contact_id"], name: "index_whatsapp_messages_on_contact_id"
+    t.index ["message_type"], name: "index_whatsapp_messages_on_message_type"
     t.index ["opportunity_id", "created_at"], name: "index_whatsapp_messages_on_opportunity_id_and_created_at"
     t.index ["opportunity_id"], name: "index_whatsapp_messages_on_opportunity_id"
     t.index ["provider", "provider_message_id"], name: "index_whatsapp_messages_unique_provider_id", unique: true, where: "(provider_message_id IS NOT NULL)"
@@ -608,6 +613,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
     t.index ["tenant_id", "contact_id", "created_at"], name: "index_whatsapp_messages_on_tenant_contact_created"
     t.index ["tenant_id", "created_at"], name: "index_whatsapp_messages_on_tenant_id_and_created_at"
     t.index ["tenant_id"], name: "index_whatsapp_messages_on_tenant_id"
+  end
+
+  create_table "whatsapp_templates", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.string "language", null: false
+    t.string "meta_template_name", null: false
+    t.string "name", null: false
+    t.bigint "tenant_id", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "variable_labels", default: [], null: false
+    t.index ["tenant_id", "meta_template_name", "language"], name: "index_whatsapp_templates_on_tenant_and_meta_name_and_lang", unique: true
+    t.index ["tenant_id"], name: "index_whatsapp_templates_on_tenant_id"
   end
 
   add_foreign_key "ad_integrations", "tenants"
@@ -660,4 +678,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_090000) do
   add_foreign_key "whatsapp_messages", "contacts"
   add_foreign_key "whatsapp_messages", "opportunities"
   add_foreign_key "whatsapp_messages", "tenants"
+  add_foreign_key "whatsapp_templates", "tenants"
 end

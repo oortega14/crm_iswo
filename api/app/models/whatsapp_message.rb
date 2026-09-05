@@ -7,13 +7,15 @@ class WhatsappMessage < ApplicationRecord
   include TenantScoped
   include DataClassifiable
 
-  DIRECTIONS = %w[in out].freeze
-  PROVIDERS  = %w[twilio whatsapp_cloud openwa].freeze
-  STATUSES   = %w[pending queued sent delivered read failed].freeze
+  DIRECTIONS    = %w[in out].freeze
+  PROVIDERS     = %w[twilio whatsapp_cloud openwa].freeze
+  STATUSES      = %w[pending queued sent delivered read failed].freeze
+  MESSAGE_TYPES = %w[text template].freeze
 
-  enum :direction, DIRECTIONS.zip(DIRECTIONS).to_h, prefix: true
-  enum :provider,  PROVIDERS.zip(PROVIDERS).to_h,   prefix: true
-  enum :status,    STATUSES.zip(STATUSES).to_h,     prefix: :status, default: "pending"
+  enum :direction,    DIRECTIONS.zip(DIRECTIONS).to_h,       prefix: true
+  enum :provider,     PROVIDERS.zip(PROVIDERS).to_h,         prefix: true
+  enum :status,       STATUSES.zip(STATUSES).to_h,           prefix: :status, default: "pending"
+  enum :message_type, MESSAGE_TYPES.zip(MESSAGE_TYPES).to_h, prefix: true,    default: "text"
 
   belongs_to :tenant
   belongs_to :opportunity, optional: true
@@ -25,6 +27,7 @@ class WhatsappMessage < ApplicationRecord
   validates :from_number, :to_number, presence: true
   validates :provider_message_id,
             uniqueness: { scope: :provider, allow_nil: true }
+  validates :template_name, :template_language, presence: true, if: :message_type_template?
 
   scope :inbound,  -> { direction_in }
   scope :outbound, -> { direction_out }

@@ -189,6 +189,7 @@ Rails.application.routes.draw do
 
       # ---- WhatsApp standalone ----------------------------------------------
       resources :whatsapp_messages, only: %i[index show]
+      resources :whatsapp_templates
 
       # ---- Bandeja de entrada WhatsApp (inbox) --------------------------------
       resources :whatsapp_conversations, only: [:index], param: :contact_id do

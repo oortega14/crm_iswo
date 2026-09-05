@@ -60,6 +60,34 @@ RSpec.describe WhatsApp::OutboundSender do
     expect(result.message.opportunity_id).to be_nil
   end
 
+  it "arma un mensaje de plantilla cuando se pasa whatsapp_template_id" do
+    template = create(:whatsapp_template, tenant: tenant, meta_template_name: "primer_contacto",
+                                           language: "es_CO", variable_labels: ["Nombre"])
+
+    result = described_class.call(
+      tenant: tenant, contact: contact, to_number: "3001234567",
+      body: nil, whatsapp_template_id: template.id, template_params: ["Oscar"]
+    )
+
+    expect(result.success?).to be(true)
+    expect(result.message.message_type).to eq("template")
+    expect(result.message.template_name).to eq("primer_contacto")
+    expect(result.message.template_language).to eq("es_CO")
+    expect(result.message.template_params).to eq(["Oscar"])
+    expect(result.message.body).to be_nil
+  end
+
+  it "eleva RecordNotFound si el whatsapp_template_id no existe en el catálogo activo del tenant" do
+    inactive = create(:whatsapp_template, tenant: tenant, active: false)
+
+    expect do
+      described_class.call(
+        tenant: tenant, contact: contact, to_number: "3001234567",
+        body: nil, whatsapp_template_id: inactive.id
+      )
+    end.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
   it "devuelve error_code :not_configured si el tenant no tiene envío saliente" do
     twilio_integration.destroy!
 

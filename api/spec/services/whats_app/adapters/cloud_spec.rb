@@ -99,6 +99,45 @@ RSpec.describe WhatsApp::Adapters::Cloud do
       expect(stub).to have_been_requested
     end
 
+    it "construye payload tipo template con variables" do
+      template_message = create(:whatsapp_message, :outbound, :cloud,
+                                 tenant: tenant, to_number: "+573001112233", body: nil,
+                                 message_type: "template", template_name: "primer_contacto",
+                                 template_language: "es_CO", template_params: ["Oscar"])
+
+      stub = stub_request(:post, endpoint)
+             .with(body: hash_including(
+               "type"     => "template",
+               "template" => hash_including(
+                 "name"       => "primer_contacto",
+                 "language"   => { "code" => "es_CO" },
+                 "components" => [{ "type" => "body", "parameters" => [{ "type" => "text", "text" => "Oscar" }] }]
+               )
+             ))
+             .to_return(status: 200,
+                        body: { messages: [{ id: "wamid.tpl" }] }.to_json,
+                        headers: { "Content-Type" => "application/json" })
+
+      adapter.deliver(template_message)
+      expect(stub).to have_been_requested
+    end
+
+    it "omite components cuando la plantilla no tiene variables" do
+      template_message = create(:whatsapp_message, :outbound, :cloud,
+                                 tenant: tenant, to_number: "+573001112233", body: nil,
+                                 message_type: "template", template_name: "sin_variables",
+                                 template_language: "es_CO", template_params: [])
+
+      stub = stub_request(:post, endpoint)
+             .with { |req| !JSON.parse(req.body)["template"].key?("components") }
+             .to_return(status: 200,
+                        body: { messages: [{ id: "wamid.novars" }] }.to_json,
+                        headers: { "Content-Type" => "application/json" })
+
+      adapter.deliver(template_message)
+      expect(stub).to have_been_requested
+    end
+
     it "eleva DeliveryError con code cuando Meta responde error" do
       stub_request(:post, endpoint).to_return(
         status:  400,

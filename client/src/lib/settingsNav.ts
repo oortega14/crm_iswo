@@ -84,7 +84,7 @@ export const MAIN_NAV_ITEMS: MainNavItem[] = [
     module: 'contacts',
   },
   {
-    href: '/inbox',
+    href: '/whatsapp',
     label: 'WhatsApp',
     icon: MessageCircle,
     roles: ['admin', 'manager', 'consultant', 'viewer'],

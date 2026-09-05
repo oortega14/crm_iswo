@@ -23,13 +23,16 @@ module WhatsApp
       new(...).call
     end
 
-    def initialize(tenant:, contact:, to_number:, body:, opportunity: nil, media_url: nil)
-      @tenant      = tenant
-      @contact     = contact
-      @to_number   = to_number
-      @body        = body
-      @opportunity = opportunity
-      @media_url   = media_url
+    def initialize(tenant:, contact:, to_number:, body:, opportunity: nil, media_url: nil, whatsapp_template_id: nil,
+                   template_params: [])
+      @tenant                = tenant
+      @contact               = contact
+      @to_number             = to_number
+      @body                  = body
+      @opportunity           = opportunity
+      @media_url             = media_url
+      @whatsapp_template_id  = whatsapp_template_id
+      @template_params       = template_params
     end
 
     def call
@@ -37,7 +40,9 @@ module WhatsApp
       from_number = @tenant.whatsapp_outbound_from_number_for(provider)
       return Result.new(error_code: :not_configured) if from_number.blank?
 
-      msg = build_message(provider, from_number)
+      template = @tenant.whatsapp_templates.active.find(@whatsapp_template_id) if @whatsapp_template_id.present?
+
+      msg = build_message(provider, from_number, template)
       return Result.new(message: msg, error_code: :invalid) unless msg.save
 
       WhatsappDeliveryJob.perform_now(msg.id)
@@ -49,18 +54,22 @@ module WhatsApp
 
     private
 
-    def build_message(provider, from_number)
+    def build_message(provider, from_number, template)
       WhatsappMessage.new(
-        tenant:      @tenant,
-        opportunity: @opportunity,
-        contact:     @contact,
-        direction:   "out",
-        provider:    provider,
-        from_number: from_number,
-        to_number:   WhatsappPhone.normalize_to_e164(@to_number),
-        body:        @body,
-        media_url:   @media_url,
-        status:      "queued"
+        tenant:             @tenant,
+        opportunity:        @opportunity,
+        contact:            @contact,
+        direction:          "out",
+        provider:           provider,
+        from_number:        from_number,
+        to_number:          WhatsappPhone.normalize_to_e164(@to_number),
+        body:               template ? nil : @body,
+        media_url:          template ? nil : @media_url,
+        message_type:       template ? "template" : "text",
+        template_name:      template&.meta_template_name,
+        template_language:  template&.language,
+        template_params:    template ? Array(@template_params) : [],
+        status:             "queued"
       )
     end
   end

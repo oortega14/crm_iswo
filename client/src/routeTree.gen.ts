@@ -16,16 +16,15 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as LSlugRouteImport } from './routes/l.$slug'
+import { Route as AppWhatsappRouteImport } from './routes/_app/whatsapp'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppRemindersRouteImport } from './routes/_app/reminders'
 import { Route as AppOpportunitiesRouteImport } from './routes/_app/opportunities'
 import { Route as AppNetworkRouteImport } from './routes/_app/network'
 import { Route as AppLandingsRouteImport } from './routes/_app/landings'
-import { Route as AppInboxRouteImport } from './routes/_app/inbox'
 import { Route as AppExportsRouteImport } from './routes/_app/exports'
 import { Route as AppDuplicatesRouteImport } from './routes/_app/duplicates'
 import { Route as AppContactsRouteImport } from './routes/_app/contacts'
-import { Route as AppSettingsWhatsappTemplatesRouteImport } from './routes/_app/settings/whatsapp-templates'
 import { Route as AppSettingsUsersRouteImport } from './routes/_app/settings/users'
 import { Route as AppSettingsTenantOnboardingRouteImport } from './routes/_app/settings/tenant-onboarding'
 import { Route as AppSettingsPipelinesRouteImport } from './routes/_app/settings/pipelines'
@@ -70,6 +69,11 @@ const LSlugRoute = LSlugRouteImport.update({
   path: '/l/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppWhatsappRoute = AppWhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -95,11 +99,6 @@ const AppLandingsRoute = AppLandingsRouteImport.update({
   path: '/landings',
   getParentRoute: () => AppRoute,
 } as any)
-const AppInboxRoute = AppInboxRouteImport.update({
-  id: '/inbox',
-  path: '/inbox',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppExportsRoute = AppExportsRouteImport.update({
   id: '/exports',
   path: '/exports',
@@ -115,12 +114,6 @@ const AppContactsRoute = AppContactsRouteImport.update({
   path: '/contacts',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSettingsWhatsappTemplatesRoute =
-  AppSettingsWhatsappTemplatesRouteImport.update({
-    id: '/whatsapp-templates',
-    path: '/whatsapp-templates',
-    getParentRoute: () => AppSettingsRoute,
-  } as any)
 const AppSettingsUsersRoute = AppSettingsUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -177,12 +170,12 @@ export interface FileRoutesByFullPath {
   '/contacts': typeof AppContactsRoute
   '/duplicates': typeof AppDuplicatesRoute
   '/exports': typeof AppExportsRoute
-  '/inbox': typeof AppInboxRoute
   '/landings': typeof AppLandingsRoute
   '/network': typeof AppNetworkRoute
   '/opportunities': typeof AppOpportunitiesRoute
   '/reminders': typeof AppRemindersRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/whatsapp': typeof AppWhatsappRoute
   '/l/$slug': typeof LSlugRoute
   '/settings/audit': typeof AppSettingsAuditRoute
   '/settings/bant': typeof AppSettingsBantRoute
@@ -193,7 +186,6 @@ export interface FileRoutesByFullPath {
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
-  '/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRoutesByTo {
   '/$slug': typeof SlugRoute
@@ -203,12 +195,12 @@ export interface FileRoutesByTo {
   '/contacts': typeof AppContactsRoute
   '/duplicates': typeof AppDuplicatesRoute
   '/exports': typeof AppExportsRoute
-  '/inbox': typeof AppInboxRoute
   '/landings': typeof AppLandingsRoute
   '/network': typeof AppNetworkRoute
   '/opportunities': typeof AppOpportunitiesRoute
   '/reminders': typeof AppRemindersRoute
   '/settings': typeof AppSettingsRouteWithChildren
+  '/whatsapp': typeof AppWhatsappRoute
   '/l/$slug': typeof LSlugRoute
   '/': typeof AppIndexRoute
   '/settings/audit': typeof AppSettingsAuditRoute
@@ -220,7 +212,6 @@ export interface FileRoutesByTo {
   '/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/settings/users': typeof AppSettingsUsersRoute
-  '/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -232,12 +223,12 @@ export interface FileRoutesById {
   '/_app/contacts': typeof AppContactsRoute
   '/_app/duplicates': typeof AppDuplicatesRoute
   '/_app/exports': typeof AppExportsRoute
-  '/_app/inbox': typeof AppInboxRoute
   '/_app/landings': typeof AppLandingsRoute
   '/_app/network': typeof AppNetworkRoute
   '/_app/opportunities': typeof AppOpportunitiesRoute
   '/_app/reminders': typeof AppRemindersRoute
   '/_app/settings': typeof AppSettingsRouteWithChildren
+  '/_app/whatsapp': typeof AppWhatsappRoute
   '/l/$slug': typeof LSlugRoute
   '/_app/': typeof AppIndexRoute
   '/_app/settings/audit': typeof AppSettingsAuditRoute
@@ -249,7 +240,6 @@ export interface FileRoutesById {
   '/_app/settings/pipelines': typeof AppSettingsPipelinesRoute
   '/_app/settings/tenant-onboarding': typeof AppSettingsTenantOnboardingRoute
   '/_app/settings/users': typeof AppSettingsUsersRoute
-  '/_app/settings/whatsapp-templates': typeof AppSettingsWhatsappTemplatesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -262,12 +252,12 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/duplicates'
     | '/exports'
-    | '/inbox'
     | '/landings'
     | '/network'
     | '/opportunities'
     | '/reminders'
     | '/settings'
+    | '/whatsapp'
     | '/l/$slug'
     | '/settings/audit'
     | '/settings/bant'
@@ -278,7 +268,6 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
     | '/settings/users'
-    | '/settings/whatsapp-templates'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/$slug'
@@ -288,12 +277,12 @@ export interface FileRouteTypes {
     | '/contacts'
     | '/duplicates'
     | '/exports'
-    | '/inbox'
     | '/landings'
     | '/network'
     | '/opportunities'
     | '/reminders'
     | '/settings'
+    | '/whatsapp'
     | '/l/$slug'
     | '/'
     | '/settings/audit'
@@ -305,7 +294,6 @@ export interface FileRouteTypes {
     | '/settings/pipelines'
     | '/settings/tenant-onboarding'
     | '/settings/users'
-    | '/settings/whatsapp-templates'
   id:
     | '__root__'
     | '/$slug'
@@ -316,12 +304,12 @@ export interface FileRouteTypes {
     | '/_app/contacts'
     | '/_app/duplicates'
     | '/_app/exports'
-    | '/_app/inbox'
     | '/_app/landings'
     | '/_app/network'
     | '/_app/opportunities'
     | '/_app/reminders'
     | '/_app/settings'
+    | '/_app/whatsapp'
     | '/l/$slug'
     | '/_app/'
     | '/_app/settings/audit'
@@ -333,7 +321,6 @@ export interface FileRouteTypes {
     | '/_app/settings/pipelines'
     | '/_app/settings/tenant-onboarding'
     | '/_app/settings/users'
-    | '/_app/settings/whatsapp-templates'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -396,6 +383,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/whatsapp': {
+      id: '/_app/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/whatsapp'
+      preLoaderRoute: typeof AppWhatsappRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -431,13 +425,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLandingsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/inbox': {
-      id: '/_app/inbox'
-      path: '/inbox'
-      fullPath: '/inbox'
-      preLoaderRoute: typeof AppInboxRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/exports': {
       id: '/_app/exports'
       path: '/exports'
@@ -458,13 +445,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/contacts'
       preLoaderRoute: typeof AppContactsRouteImport
       parentRoute: typeof AppRoute
-    }
-    '/_app/settings/whatsapp-templates': {
-      id: '/_app/settings/whatsapp-templates'
-      path: '/whatsapp-templates'
-      fullPath: '/settings/whatsapp-templates'
-      preLoaderRoute: typeof AppSettingsWhatsappTemplatesRouteImport
-      parentRoute: typeof AppSettingsRoute
     }
     '/_app/settings/users': {
       id: '/_app/settings/users'
@@ -542,7 +522,6 @@ interface AppSettingsRouteChildren {
   AppSettingsPipelinesRoute: typeof AppSettingsPipelinesRoute
   AppSettingsTenantOnboardingRoute: typeof AppSettingsTenantOnboardingRoute
   AppSettingsUsersRoute: typeof AppSettingsUsersRoute
-  AppSettingsWhatsappTemplatesRoute: typeof AppSettingsWhatsappTemplatesRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
@@ -555,7 +534,6 @@ const AppSettingsRouteChildren: AppSettingsRouteChildren = {
   AppSettingsPipelinesRoute: AppSettingsPipelinesRoute,
   AppSettingsTenantOnboardingRoute: AppSettingsTenantOnboardingRoute,
   AppSettingsUsersRoute: AppSettingsUsersRoute,
-  AppSettingsWhatsappTemplatesRoute: AppSettingsWhatsappTemplatesRoute,
 }
 
 const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
@@ -566,12 +544,12 @@ interface AppRouteChildren {
   AppContactsRoute: typeof AppContactsRoute
   AppDuplicatesRoute: typeof AppDuplicatesRoute
   AppExportsRoute: typeof AppExportsRoute
-  AppInboxRoute: typeof AppInboxRoute
   AppLandingsRoute: typeof AppLandingsRoute
   AppNetworkRoute: typeof AppNetworkRoute
   AppOpportunitiesRoute: typeof AppOpportunitiesRoute
   AppRemindersRoute: typeof AppRemindersRoute
   AppSettingsRoute: typeof AppSettingsRouteWithChildren
+  AppWhatsappRoute: typeof AppWhatsappRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
@@ -579,12 +557,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppContactsRoute: AppContactsRoute,
   AppDuplicatesRoute: AppDuplicatesRoute,
   AppExportsRoute: AppExportsRoute,
-  AppInboxRoute: AppInboxRoute,
   AppLandingsRoute: AppLandingsRoute,
   AppNetworkRoute: AppNetworkRoute,
   AppOpportunitiesRoute: AppOpportunitiesRoute,
   AppRemindersRoute: AppRemindersRoute,
   AppSettingsRoute: AppSettingsRouteWithChildren,
+  AppWhatsappRoute: AppWhatsappRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

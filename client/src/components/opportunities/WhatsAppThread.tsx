@@ -49,7 +49,7 @@ export type ThreadMessage = {
 interface WhatsAppThreadProps {
   /** Hilo dentro de una oportunidad (OpportunitySlideOver) — comportamiento original. */
   opportunityId?: string
-  /** Hilo standalone por contacto (bandeja de entrada /inbox), sin oportunidad. */
+  /** Hilo standalone por contacto (bandeja de entrada /whatsapp), sin oportunidad. */
   contactId?: string
   contactName: string
   contactPhone: string

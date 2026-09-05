@@ -1,5 +1,3 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { requireSettingsRole } from '@/lib/authGuards'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Edit, X } from 'lucide-react'
@@ -40,14 +38,14 @@ import {
 import { queryKeys } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/auth'
 
-export const Route = createFileRoute('/_app/settings/whatsapp-templates')({
-  beforeLoad: () => requireSettingsRole('admin', 'manager'),
-  component: WhatsappTemplatesSettingsPage,
-})
-
 const emptyForm = { name: '', metaTemplateName: '', language: 'es_CO', variableLabels: [] as string[] }
 
-function WhatsappTemplatesSettingsPage() {
+/**
+ * Gestión del catálogo de plantillas de WhatsApp aprobadas por Meta. Solo
+ * admin/manager llegan a este tab (ver visibilidad en la página /whatsapp);
+ * el backend igual exige manager_or_admin? para crear/editar.
+ */
+export function WhatsappTemplatesPanel() {
   const queryClient = useQueryClient()
   const isAdmin = useAuthStore((s) => s.isAdmin())
   const [dialogOpen, setDialogOpen] = useState(false)

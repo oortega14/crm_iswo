@@ -122,6 +122,21 @@ RSpec.describe "Api::V1::WhatsappConversations (inbox)", type: :request do
       expect(response).to have_http_status(:accepted)
     end
 
+    it "acepta whatsapp_template_id para iniciar conversación fuera de la ventana de 24h" do
+      contact = create(:contact, tenant: tenant, owner_user: admin, phone_e164: "+573001234567")
+      template = create(:whatsapp_template, tenant: tenant, meta_template_name: "primer_contacto",
+                                             language: "es_CO", variable_labels: ["Nombre"])
+
+      post "/api/v1/whatsapp_conversations/#{contact.id}/send_message",
+           params:  { to_number: "3001234567", whatsapp_template_id: template.id, template_params: ["Oscar"] }.to_json,
+           headers: auth_headers(admin)
+
+      expect(response).to have_http_status(:accepted)
+      attrs = json["data"]["attributes"]
+      expect(attrs["message_type"]).to eq("template")
+      expect(attrs["template_name"]).to eq("primer_contacto")
+    end
+
     it "un consultor NO puede responder por el contacto de otro consultor" do
       other_owner = create(:user, :consultant, tenant: tenant)
       foreign = create(:contact, tenant: tenant, owner_user: other_owner, phone_e164: "+573001234567")

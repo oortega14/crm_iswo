@@ -134,7 +134,7 @@ export function NotificationDropdown() {
   const handleSelect = (n: AppNotification) => {
     readMutation.mutate(n.id)
     if (n.type === 'whatsapp_message_received' && n.contactId) {
-      void navigate({ to: '/inbox', search: { contact: n.contactId } })
+      void navigate({ to: '/whatsapp', search: { contact: n.contactId } })
       return
     }
     if (n.opportunityId) {

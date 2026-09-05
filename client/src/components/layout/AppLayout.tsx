@@ -118,7 +118,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             ? pendingRemindersCount
             : item.href === '/duplicates'
               ? duplicateStats?.pending
-              : item.href === '/inbox'
+              : item.href === '/whatsapp'
                 ? inboxStats?.unread
                 : undefined,
       })),

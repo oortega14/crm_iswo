@@ -51,6 +51,34 @@ RSpec.describe "Api::V1::WhatsappMessages (oportunidad)", type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(json["error"]).to eq("whatsapp_not_configured")
     end
+
+    it "con whatsapp_template_id envía plantilla en vez de texto libre" do
+      allow(WhatsappDeliveryJob).to receive(:perform_now)
+      template = create(:whatsapp_template, tenant: tenant, meta_template_name: "primer_contacto", language: "es_CO",
+                                             variable_labels: ["Nombre"])
+
+      post "/api/v1/opportunities/#{opportunity.id}/whatsapp_messages",
+           params:  {
+             to_number: contact.phone_e164, whatsapp_template_id: template.id, template_params: ["Oscar"]
+           }.to_json,
+           headers: auth_headers(admin)
+
+      expect(response).to have_http_status(:accepted)
+      attrs = json["data"]["attributes"]
+      expect(attrs["message_type"]).to eq("template")
+      expect(attrs["template_name"]).to eq("primer_contacto")
+      expect(attrs["template_language"]).to eq("es_CO")
+      expect(attrs["template_params"]).to eq(["Oscar"])
+      expect(attrs["body"]).to be_nil
+    end
+
+    it "404 si el whatsapp_template_id no existe en el catálogo del tenant" do
+      post "/api/v1/opportunities/#{opportunity.id}/whatsapp_messages",
+           params:  { to_number: contact.phone_e164, whatsapp_template_id: 0 }.to_json,
+           headers: auth_headers(admin)
+
+      expect(response).to have_http_status(:not_found)
+    end
   end
 
   describe "GET /api/v1/whatsapp_messages?contact_id=" do

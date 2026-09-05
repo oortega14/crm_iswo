@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (RSpec)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    env:
+      RAILS_ENV: test
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          bundler-cache: true
+          working-directory: api
+
+      - name: Preparar base de datos (primary/queue/cache)
+        # bundle exec en vez de bin/rails: el binstub está trackeado sin bit
+        # de ejecución (100644) en el repo, así que falla con "Permission denied".
+        run: bundle exec rails db:prepare
+
+      - name: RSpec
+        run: bundle exec rspec
+
+  frontend:
+    name: Frontend (tsc + Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Instalar dependencias
+        # client/package-lock.json está en .gitignore (convención del repo, no
+        # se commitea): sin lockfile no hay nada estable para `npm ci` ni para
+        # cachear por hash, así que se instala en frío con `npm install`.
+        run: npm install
+
+      - name: Type-check
+        run: npx tsc -b
+
+      - name: Vitest
+        run: npx vitest run
